@@ -1,0 +1,70 @@
+User,Channel,channel_count,Type,type_count
+AB,['B' 'C' 'A'],3,"['press conference' 'special reports' 'interview' 'speech' 'debate'
+ 'news bulletin']",6
+Abhishek,['A' 'B' 'C' 'F' 'E' 'I' 'J' 'K' 'D'],9,"['interview' 'special reports' 'speech' 'discussion-show' 'news bulletin'
+ 'press conference' 'debate']",7
+Abhishek Sri,['C' 'B' 'A' 'E' 'D' 'K' 'J'],7,"['interview' 'discussion-show' 'speech' 'news bulletin' 'press conference'
+ 'special reports' 'debate']",7
+Adarsh (Frammer),['A' 'B' 'D' 'C' 'L '],5,"['news bulletin' 'interview' 'special reports' 'speech' 'press conference'
+ 'debate']",6
+Alok Rai,['C' 'A' 'B' 'F' 'G' 'D' 'H' 'K'],8,['news bulletin' 'interview' 'speech' 'special reports' 'press conference'],5
+Anamika Singh,['A' 'B' 'D' 'G' 'C' 'E'],6,"['special reports' 'interview' 'news bulletin' 'debate' 'press conference'
+ 'speech' 'discussion-show']",7
+Arijit Chatterjee,['F' 'A'],2,['special reports'],1
+Arun J,['C'],1,['press conference' 'special reports'],2
+Ashween,['A' 'C' 'B'],3,['interview' 'news bulletin' 'speech' 'debate'],4
+Auto Upload,['B' 'C' 'A'],3,"['special reports' 'news bulletin' 'debate' 'press conference' 'interview'
+ 'speech' nan]",6
+Chandan,['A' 'B' 'D' 'E' 'C' 'G' 'H' 'F'],8,"['news bulletin' 'interview' 'speech' 'special reports' 'debate'
+ 'press conference' 'discussion-show']",7
+Deepika Uniyal (QA testaing.com),['A' 'B' 'G' 'C' 'F' 'D' 'E' 'K' 'J'],9,"['interview' 'news bulletin' 'speech' 'press conference' 'debate'
+ 'special reports']",6
+Dheeraj Pareek(QA theveritycorp.com),['A' 'D' 'B' 'E' 'F' 'G' 'C'],7,"['news bulletin' 'speech' 'special reports' 'interview' 'press conference'
+ 'debate']",6
+Dheerendra Kumar,['D' 'A'],2,['interview' 'news bulletin'],2
+Divyanshu Dutta Roy,['C' 'B' 'A' 'F' 'P'],5,['interview' 'debate' 'speech' 'news bulletin' 'special reports'],5
+Harish,['A' 'C' 'L '],3,['news bulletin' 'interview' 'speech'],3
+Kallol Pratim,['H' 'J' 'E' 'B' 'K' 'A' 'F'],7,['special reports' 'interview' 'news bulletin' 'speech' 'debate'],5
+Kawaljit Singh Bedi,['C' 'F'],2,['speech' 'news bulletin' 'debate' 'special reports'],4
+Neha,['A' 'B' 'D' 'F' 'G' 'H' 'E' 'J' 'N ' 'K' 'C'],11,"['news bulletin' 'interview' 'debate' 'special reports' 'press conference'
+ 'speech' nan 'podcast']",7
+Nitesh,['B' 'C' 'A' 'L ' 'D' 'F' 'E'],7,"['special reports' 'speech' 'interview' 'press conference' 'news bulletin'
+ 'debate']",6
+Prithviraj,['A' 'B' 'C' 'J' 'F'],5,['news bulletin' 'speech' 'special reports' 'interview' 'debate'],5
+QA-Amit,['A' 'E'],2,['news bulletin' 'interview' 'sports show' 'speech'],4
+QA-Aniket,['B' 'C' 'F' 'E' 'A' 'N '],6,"['interview' 'special reports' 'news bulletin' 'press conference'
+ 'podcast' 'speech' 'sports show' 'debate']",8
+QA-Ankith ,['C' 'B'],2,['speech' 'interview' 'news bulletin' 'special reports'],4
+QA-Bhargavi,['C' 'B' 'E' 'A' 'F'],5,"['debate' 'news bulletin' 'interview' 'special reports' 'speech'
+ 'press conference']",6
+QA-Purushottam,['B' 'C' 'A' 'E' 'F' 'I' 'N ' 'O' 'G'],9,"['speech' 'interview' 'special reports' 'debate' 'news bulletin'
+ 'press conference' 'sports show' 'podcast']",8
+Rakesh (devops@frammer.com),['B'],1,['interview' 'speech' 'news bulletin'],3
+Ravi Pratap Rai,['B' 'A' 'C'],3,"['news bulletin' 'special reports' 'interview' 'debate' 'speech'
+ 'press conference']",6
+Richa,['B' 'A' 'E' 'D'],4,['news bulletin' 'interview' 'debate' 'speech'],4
+Ritwik,['A' 'B'],2,['speech' 'interview' 'news bulletin' 'debate'],4
+Safdar,['A' 'B'],2,['speech' 'debate' 'news bulletin' 'interview' 'special reports'],5
+Sandeep Belaki,['A' 'B' 'C' 'I' 'J' 'K' 'F' 'L ' 'H' 'N '],10,"['interview' 'press conference' 'speech' 'news bulletin' 'special reports'
+ 'debate' 'sports show' 'drama' 'podcast']",9
+Shadab,['D' 'B' 'A' 'H' 'F'],5,"['speech' 'interview' 'press conference' 'special reports' 'news bulletin'
+ 'debate']",6
+Subhash (moolya),['A' 'B' 'C' 'E' 'H' 'L ' 'M' 'I' 'F' 'O' 'Q' 'G' 'K' 'P' 'R' 'J' 'N '],17,"['interview' 'special reports' 'news bulletin' 'press conference' 'speech'
+ 'debate' 'in-brief' 'podcast' 'sports show' nan]",9
+Subhesh,['B' 'A' 'C' 'F' 'D' 'J' 'P' 'N ' 'L ' 'G' 'I' 'E'],12,"['interview' 'press conference' 'news bulletin' 'special reports' 'speech'
+ 'debate' 'podcast']",7
+Sumit (Frammer),['C'],1,['interview' 'debate'],2
+Test User,['C' 'G' 'B'],3,['special reports' 'interview' 'news bulletin' 'speech'],4
+Trivendra,['B' 'A' 'E' 'C' 'D' 'G'],6,"['debate' 'speech' 'news bulletin' 'interview' 'special reports'
+ 'press conference' 'discussion-show']",7
+Vaibhav,['A' 'C' 'B' 'D'],4,"['speech' 'interview' 'press conference' 'news bulletin' 'special reports'
+ 'debate']",6
+deleteme@frammer.com,['B'],1,['interview' nan 'news bulletin'],2
+parakh,['E' 'A'],2,['news bulletin' 'interview'],2
+sukhleen,['B' 'A' 'E' 'H' 'C' 'F' 'G' 'D'],8,"['speech' 'special reports' 'press conference' 'debate' 'interview'
+ 'discussion-show' 'news bulletin']",7
+swathi.bharadwaj@moolya.com,['C'],1,['special reports' nan],1
+vikas.s@moolya.com,['A' 'B' 'C' 'H' 'E' 'I' 'G' 'K' 'F' 'J'],10,"['speech' 'interview' 'news bulletin' 'press conference' 'special reports'
+ 'debate' 'drama' 'sports show']",8
+vinay singh,['C' 'B' 'G' 'I' 'F' 'A' 'R'],7,"['news bulletin' 'press conference' 'debate' 'special reports' 'interview'
+ 'speech']",6
