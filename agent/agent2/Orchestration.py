@@ -1,6 +1,12 @@
 import json
-from typing import TypedDict, Any, Dict
+import os
+from typing import TypedDict, Any, Dict, Optional
+from xml.sax.saxutils import escape
 from logger_setup import get_logger
+
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 
 logger = get_logger(__name__)
 
@@ -16,13 +22,29 @@ load_dotenv()
 
 # We will use Gemini as a stand-in for the various models (Sonnet, Haiku, FRT). 
 # You can replace the model strings later with actual Anthropic models if needed.
-llm_orchestrator = HuggingFaceEndpoint(repo_id="Qwen/Qwen3.5-35B-A3B") # Acting as "Sonnet"
-llm_haiku = HuggingFaceEndpoint(repo_id="Qwen/Qwen3.5-35B-A3B")      # Acting as "Haiku"
-llm_frt = HuggingFaceEndpoint(repo_id="Qwen/Qwen3.5-35B-A3B")        # Acting as "FRT"
+HF_API_KEY = (
+    os.getenv("HUGGINGFACEHUB_API_TOKEN")
+    or os.getenv("HF_TOKEN")
+    or os.getenv("HUGGINGFACE_API_KEY")
+)
+USE_MOCK_LLM = not HF_API_KEY
 
-model = ChatHuggingFace(llm=llm_orchestrator)
-model_haiku = ChatHuggingFace(llm=llm_haiku)
-model_frt = ChatHuggingFace(llm=llm_frt)
+if USE_MOCK_LLM:
+    logger.warning(
+        "No Hugging Face API key found. Running in mock LLM mode. "
+        "Set HUGGINGFACEHUB_API_TOKEN (or HF_TOKEN) to enable real model calls."
+    )
+    model = None
+    model_haiku = None
+    model_frt = None
+else:
+    llm_orchestrator = HuggingFaceEndpoint(repo_id="Qwen/Qwen3.5-35B-A3B") # Acting as "Sonnet"
+    llm_haiku = HuggingFaceEndpoint(repo_id="Qwen/Qwen3.5-35B-A3B")      # Acting as "Haiku"
+    llm_frt = HuggingFaceEndpoint(repo_id="Qwen/Qwen3.5-35B-A3B")        # Acting as "FRT"
+
+    model = ChatHuggingFace(llm=llm_orchestrator)
+    model_haiku = ChatHuggingFace(llm=llm_haiku)
+    model_frt = ChatHuggingFace(llm=llm_frt)
 
 # 1. Define the Global State matching the diagram
 class OrchestratorState(TypedDict):
@@ -42,7 +64,69 @@ def mcp_lookup_table_schema(table_name: str) -> str:
     return f"Schema for {table_name}: id INT, name VARCHAR, value FLOAT"
 
 tools = [mcp_lookup_table_schema]
-orchestrator_with_tools = model.bind_tools(tools)
+orchestrator_with_tools = model.bind_tools(tools) if model else None
+
+
+def _escape_sql_literal(value: Any) -> str:
+    return str(value).replace("'", "''")
+
+
+def _mock_sql_from_user_request(user_req: Dict[str, Any]) -> str:
+    params = user_req.get("parameters", {}) if isinstance(user_req, dict) else {}
+    filters = []
+
+    region = params.get("region")
+    quarter = params.get("quarter")
+
+    if region:
+        filters.append(f"region = '{_escape_sql_literal(region)}'")
+    if quarter:
+        filters.append(f"quarter = '{_escape_sql_literal(quarter)}'")
+
+    where_clause = f" WHERE {' AND '.join(filters)}" if filters else ""
+    return f"SELECT SUM(value) AS total_sales FROM sales{where_clause};"
+
+
+def _mock_haiku_summary(data_payload: str) -> str:
+    try:
+        rows = json.loads(data_payload) if data_payload else []
+    except json.JSONDecodeError:
+        rows = []
+
+    if not isinstance(rows, list) or not rows:
+        return "No rows were returned from the database."
+
+    total_value = 0.0
+    for row in rows:
+        if isinstance(row, dict) and isinstance(row.get("value"), (int, float)):
+            total_value += float(row["value"])
+
+    return (
+        f"Returned {len(rows)} records. "
+        f"Total value is {total_value:.2f}. "
+        "No anomalies detected in this small sample."
+    )
+
+
+def _mock_xml(data_payload: str) -> str:
+    try:
+        rows = json.loads(data_payload) if data_payload else []
+    except json.JSONDecodeError:
+        rows = []
+
+    if not isinstance(rows, list):
+        rows = []
+
+    parts = ["<response>"]
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        parts.append("  <item>")
+        for key, value in row.items():
+            parts.append(f"    <{escape(str(key))}>{escape(str(value))}</{escape(str(key))}>")
+        parts.append("  </item>")
+    parts.append("</response>")
+    return "\n".join(parts)
 
 
 # 3. Define the Nodes
@@ -65,10 +149,13 @@ def orchestrator_node(state: OrchestratorState) -> OrchestratorState:
     User JSON Request: {json.dumps(user_req)}
     """
     
-    response = orchestrator_with_tools.invoke([HumanMessage(content=prompt)])
-    # In a real tool-use flow, you would handle tool messages here. 
-    # For this architecture diagram, we assume it outputs the query directly.
-    query = response.content.replace("```sql", "").replace("```", "").strip()
+    if USE_MOCK_LLM:
+        query = _mock_sql_from_user_request(user_req)
+    else:
+        response = orchestrator_with_tools.invoke([HumanMessage(content=prompt)])
+        # In a real tool-use flow, you would handle tool messages here. 
+        # For this architecture diagram, we assume it outputs the query directly.
+        query = response.content.replace("```sql", "").replace("```", "").strip()
     return {"sql_query": query}
 
 
@@ -122,8 +209,10 @@ def haiku_node(state: OrchestratorState) -> OrchestratorState:
     - Keep your response structured, concise, and business-focused.
     - Do not output code; only provide natural language insights.
     """
+    if USE_MOCK_LLM:
+        return {"haiku_analysis": _mock_haiku_summary(data)}
+
     response = model_haiku.invoke([HumanMessage(content=prompt)])
-    
     return {"haiku_analysis": response.content}
 
 
@@ -146,8 +235,11 @@ def frt_node(state: OrchestratorState) -> OrchestratorState:
     2. Convert dictionary keys into XML tags and dictionary values into text nodes.
     3. Return ONLY the raw XML string. Do not include markdown code block syntax (like ```xml), do not include any preamble, and do not include any conversational text. 
     """
-    response = model_frt.invoke([HumanMessage(content=prompt)])
-    xml_output = response.content.replace("```xml", "").replace("```", "").strip()
+    if USE_MOCK_LLM:
+        xml_output = _mock_xml(data)
+    else:
+        response = model_frt.invoke([HumanMessage(content=prompt)])
+        xml_output = response.content.replace("```xml", "").replace("```", "").strip()
     
     return {"frt_xml": xml_output}
 
@@ -172,51 +264,257 @@ graph.add_edge("Haiku_Agent", END)
 graph.add_edge("FRT_Agent", END)             # FRT XML -> User
 
 # Compile
-app = graph.compile()
+orchestration_graph = graph.compile()
 
 
-# 5. Testing the Orchestration Flow
-if __name__ == "__main__":
-    logger.info("--- Starting Orchestration Flow ---")
-    
-    # 1. User inputs JSON
-    initial_user_input = {
-        "intent": "Get total sales figures",
-        "parameters": {"region": "US", "quarter": "Q3"}
-    }
-    
-    initial_state = {"user_json": initial_user_input}
-    
-    logger.info("[User Input] (JSON):")
-    logger.info(json.dumps(initial_user_input, indent=2))
-    
-    # 2. Run the Graph
-    logger.info("--- Executing Graph Nodes ---")
+# ------------------------------------------------------------------ #
+# 5. FastAPI Application                                               #
+# ------------------------------------------------------------------ #
+
+api = FastAPI(
+    title="Orchestration Agent API",
+    description=(
+        "REST interface for the LangGraph Orchestrator pipeline.\n\n"
+        "Pipeline stages:\n"
+        "User JSON → Orchestrator (SQL Gen) → SQL DB → Data Processor → "
+        "Haiku Agent (analysis) + FRT Agent (XML)"
+    ),
+    version="1.0.0",
+)
+
+api.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ---------- Pydantic Schemas ----------
+
+class UserRequest(BaseModel):
+    intent: str = Field(..., example="Get total sales figures")
+    parameters: Optional[Dict[str, Any]] = Field(default={}, example={"region": "US", "quarter": "Q3"})
+
+
+class SQLResponse(BaseModel):
+    sql_query: str
+
+
+class ProcessedDataResponse(BaseModel):
+    sql_query: str
+    raw_data: Any   # list of row dicts
+
+
+class AnalysisResponse(BaseModel):
+    sql_query: str
+    haiku_analysis: str
+
+
+class XMLResponse(BaseModel):
+    sql_query: str
+    frt_xml: str
+
+
+class FullPipelineResponse(BaseModel):
+    sql_query: str
+    raw_data: Any
+    haiku_analysis: str
+    frt_xml: str
+
+
+class SchemaResponse(BaseModel):
+    table_name: str
+    schema_info: str
+
+
+class HealthResponse(BaseModel):
+    status: str
+    llm_mode: str
+    version: str
+
+
+# ---------- Helper: build initial state ----------
+
+def _build_state(req: UserRequest) -> OrchestratorState:
+    return {"user_json": {"intent": req.intent, "parameters": req.parameters or {}}}
+
+
+# ---------- Endpoints ----------
+
+@api.get(
+    "/health",
+    response_model=HealthResponse,
+    summary="Health check",
+    tags=["Utility"],
+)
+def health_check():
+    """Returns API health status and current LLM mode (real vs mock)."""
+    return HealthResponse(
+        status="ok",
+        llm_mode="mock" if USE_MOCK_LLM else "live",
+        version="1.0.0",
+    )
+
+
+@api.get(
+    "/schema/{table_name}",
+    response_model=SchemaResponse,
+    summary="Look up a table's schema",
+    tags=["Utility"],
+)
+def get_table_schema(table_name: str):
+    """Exposes the MCP `mcp_lookup_table_schema` tool as a REST endpoint."""
+    schema_info = mcp_lookup_table_schema.invoke({"table_name": table_name})
+    return SchemaResponse(table_name=table_name, schema_info=schema_info)
+
+
+@api.post(
+    "/sql",
+    response_model=SQLResponse,
+    summary="Generate SQL from user intent",
+    tags=["Pipeline Stages"],
+)
+def generate_sql(req: UserRequest):
+    """
+    Runs only the **Orchestrator** node.  
+    Translates the user's intent + parameters into a SQL query string without
+    hitting the database.
+    """
     try:
-        for output in app.stream(initial_state):
-            for node_name, state_snapshot in output.items():
-                logger.info(f"Completed Node: {node_name}")
-                
-                # Print significant outputs from nodes depending on what they did
-                if "sql_query" in state_snapshot and node_name == "Orchestrator":
-                    logger.info(f"Generated Query: {state_snapshot['sql_query']}")
-                elif "db_result_mixed" in state_snapshot and node_name == "SQL_DB":
-                     logger.info(f"DB Mixed Output (Data + JSON): {state_snapshot['db_result_mixed']}")
-                elif "processed_data" in state_snapshot and node_name == "Data_Processor":
-                     logger.info(f"Extracted Pure Data: {state_snapshot['processed_data']}")
+        result = orchestrator_node(_build_state(req))   # type: ignore[arg-type]
+        return SQLResponse(sql_query=result["sql_query"])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-        
-        # 3. Retrieve and display the final outputs of the Sub-Agents
-        final_state = app.invoke(initial_state)
-        
-        logger.info("--- Final Outputs ---")
-        logger.info(f"[Haiku Sub-Agent Analysis]:\n{final_state.get('haiku_analysis')}")
-        logger.info(f"[FRT Sub-Agent Output] (XML sent to User):\n{final_state.get('frt_xml')}")
-        
-    except BaseException as e:
-        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-            logger.error("API Rate Limit Reached (429 RESOURCE_EXHAUSTED).")
-            logger.error("The orchestration logic is correct, but your LLM API quota is currently maxed out.")
-            logger.error("Please wait a minute and run the script again.")
-        else:
-            logger.error(f"An error occurred during execution: {e}")
+
+@api.post(
+    "/process",
+    response_model=ProcessedDataResponse,
+    summary="Generate SQL and fetch raw data",
+    tags=["Pipeline Stages"],
+)
+def process_data(req: UserRequest):
+    """
+    Runs the pipeline up to the **Data Processor** node:  
+    Orchestrator → SQL DB → Data Processor.  
+    Returns the generated SQL query plus the cleaned row data.
+    """
+    try:
+        state: OrchestratorState = _build_state(req)   # type: ignore[assignment]
+        state = {**state, **orchestrator_node(state)}
+        state = {**state, **sql_db_node(state)}
+        state = {**state, **data_processor_node(state)}
+        return ProcessedDataResponse(
+            sql_query=state["sql_query"],
+            raw_data=json.loads(state.get("processed_data", "[]") or "[]"),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api.post(
+    "/analyze",
+    response_model=AnalysisResponse,
+    summary="Run pipeline and return Haiku analysis",
+    tags=["Pipeline Stages"],
+)
+def analyze(req: UserRequest):
+    """
+    Runs the full pipeline but returns **only** the natural-language summary
+    produced by the Haiku sub-agent.
+    """
+    try:
+        state: OrchestratorState = _build_state(req)   # type: ignore[assignment]
+        state = {**state, **orchestrator_node(state)}
+        state = {**state, **sql_db_node(state)}
+        state = {**state, **data_processor_node(state)}
+        state = {**state, **haiku_node(state)}
+        return AnalysisResponse(
+            sql_query=state["sql_query"],
+            haiku_analysis=state["haiku_analysis"],
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api.post(
+    "/format",
+    response_model=XMLResponse,
+    summary="Run pipeline and return FRT XML output",
+    tags=["Pipeline Stages"],
+)
+def format_xml(req: UserRequest):
+    """
+    Runs the full pipeline but returns **only** the XML payload produced by the
+    FRT (Format Rendering Tool) sub-agent.
+    """
+    try:
+        state: OrchestratorState = _build_state(req)   # type: ignore[assignment]
+        state = {**state, **orchestrator_node(state)}
+        state = {**state, **sql_db_node(state)}
+        state = {**state, **data_processor_node(state)}
+        state = {**state, **frt_node(state)}
+        return XMLResponse(
+            sql_query=state["sql_query"],
+            frt_xml=state["frt_xml"],
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api.post(
+    "/run",
+    response_model=FullPipelineResponse,
+    summary="Run the complete orchestration pipeline",
+    tags=["Orchestration"],
+)
+def run_pipeline(req: UserRequest):
+    """
+    Executes the **full LangGraph pipeline** end-to-end via `graph.invoke()`:  
+    `Orchestrator → SQL DB → Data Processor → Haiku Agent + FRT Agent`  
+    Returns all outputs: generated SQL, raw data, natural-language analysis, and XML.
+    """
+    try:
+        final_state = orchestration_graph.invoke(_build_state(req))
+        return FullPipelineResponse(
+            sql_query=final_state.get("sql_query", ""),
+            raw_data=json.loads(final_state.get("processed_data", "[]") or "[]"),
+            haiku_analysis=final_state.get("haiku_analysis", ""),
+            frt_xml=final_state.get("frt_xml", ""),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api.post(
+    "/run/stream",
+    summary="Stream the orchestration pipeline node-by-node",
+    tags=["Orchestration"],
+)
+def run_pipeline_stream(req: UserRequest):
+    """
+    Streams each **node's output** as it completes, returning a list of
+    `{node, state_snapshot}` dicts — one per executed node in order.
+    Useful for real-time progress tracking on the frontend.
+    """
+    try:
+        steps = []
+        for output in orchestration_graph.stream(_build_state(req)):
+            for node_name, state_snapshot in output.items():
+                # Serialise only JSON-safe values
+                safe_snapshot = {k: v for k, v in state_snapshot.items()}
+                steps.append({"node": node_name, "output": safe_snapshot})
+        return {"steps": steps, "total_nodes": len(steps)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ------------------------------------------------------------------ #
+# 6. Testing the Orchestration Flow (direct execution)                 #
+# ------------------------------------------------------------------ #
+if __name__ == "__main__":
+    import uvicorn
+    logger.info("--- Starting Orchestration API Server ---")
+    logger.info("Docs available at: http://127.0.0.1:8000/docs")
+    uvicorn.run(api, host="0.0.0.0", port=8000, reload=False)
