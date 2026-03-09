@@ -1,0 +1,41 @@
+2026-03-08 18:00:44,990 - __main__ - INFO - --- Starting Orchestration Flow ---
+2026-03-08 18:00:44,991 - __main__ - INFO - [User Input] (JSON):
+2026-03-08 18:00:44,991 - __main__ - INFO - {
+  "intent": "Get total sales figures",
+  "parameters": {
+    "region": "US",
+    "quarter": "Q3"
+  }
+}
+2026-03-08 18:00:44,991 - __main__ - INFO - --- Executing Graph Nodes ---
+2026-03-08 18:00:47,436 - __main__ - INFO - Completed Node: Orchestrator
+2026-03-08 18:00:47,436 - __main__ - INFO - Generated Query: 
+2026-03-08 18:00:47,436 - __main__ - INFO - Executing SQL: 
+2026-03-08 18:00:47,437 - __main__ - INFO - Completed Node: SQL_DB
+2026-03-08 18:00:47,437 - __main__ - INFO - DB Mixed Output (Data + JSON): {'metadata_json': {'query_time': '0.01s', 'rows_returned': 2}, 'raw_data': [{'id': 1, 'name': 'Item A', 'value': 100}, {'id': 2, 'name': 'Item B', 'value': 200}]}
+2026-03-08 18:00:47,437 - __main__ - INFO - Completed Node: Data_Processor
+2026-03-08 18:00:47,437 - __main__ - INFO - Extracted Pure Data: [{"id": 1, "name": "Item A", "value": 100}, {"id": 2, "name": "Item B", "value": 200}]
+2026-03-08 18:00:58,563 - __main__ - INFO - Completed Node: FRT_Agent
+2026-03-08 18:01:07,854 - __main__ - INFO - Completed Node: Haiku_Agent
+2026-03-08 18:01:09,891 - __main__ - INFO - Executing SQL: 
+2026-03-08 18:01:21,361 - __main__ - INFO - --- Final Outputs ---
+2026-03-08 18:01:21,361 - __main__ - INFO - [Haiku Sub-Agent Analysis]:
+**Data Summary Report**
+
+*   **Total Aggregate Value:** The dataset represents a combined total of **300 units**.
+*   **Value Distribution:** Item B is the primary driver, contributing approximately **67%** of the total value, while Item A accounts for the remaining **33%**.
+*   **Performance Variance:** There is a significant disparity between entries; Item B's value is exactly **double** that of Item A.
+*   **Scope Note:** Due to the limited sample size (n=2), broad trend analysis is restricted, though the current ratio suggests Item B warrants priority attention in resource allocation.
+2026-03-08 18:01:21,362 - __main__ - INFO - [FRT Sub-Agent Output] (XML sent to User):
+<response>
+  <item>
+    <id>1</id>
+    <name>Item A</name>
+    <value>100</value>
+  </item>
+  <item>
+    <id>2</id>
+    <name>Item B</name>
+    <value>200</value>
+  </item>
+</response>
