@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Logs
 logs
 *.log
@@ -22,3 +23,26 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+=======
+# Environments
+.env
+.venv/
+venv/
+env/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Databases
+*.db
+*.sqlite3
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Any locally generated outputs
+chart_output.json
+>>>>>>> e6d0eca80253840a868fc49ba4afba4daacb0d43
