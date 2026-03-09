@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Frammer Analytics Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface2: #21262d;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --accent2: #bc8cff;
+      --green: #3fb950;
+      --teal: #39d353;
+      --orange: #f78166;
+
+      --blue: 58, 166, 255;
+      --purple: 188, 140, 255;
+      --tealc: 57, 211, 83;
+      --greenc: 63, 185, 80;
+      --orangec: 247, 129, 102;
+      --redc: 248, 81, 73;
+
+      --radius: 12px;
+      --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── Header ─────────────────────────────────────────────── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 20px 32px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .logo {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: -0.5px;
+    }
+
+    .logo span {
+      color: var(--text);
+    }
+
+    .tagline {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    /* ── Query bar ──────────────────────────────────────────── */
+    .query-section {
+      padding: 28px 32px 20px;
+      background: linear-gradient(180deg, rgba(88, 166, 255, 0.06) 0%, transparent 100%);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .query-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      margin-bottom: 10px;
+    }
+
+    .query-bar {
+      display: flex;
+      gap: 10px;
+      max-width: 900px;
+    }
+
+    .query-bar input {
+      flex: 1;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 13px 18px;
+      color: var(--text);
+      font-size: 15px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color .2s, box-shadow .2s;
+    }
+
+    .query-bar input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(var(--blue), 0.15);
+    }
+
+    .query-bar input::placeholder {
+      color: var(--muted);
+    }
+
+    .query-bar button {
+      background: linear-gradient(135deg, #1158b8, #2671d9);
+      border: none;
+      border-radius: var(--radius);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 13px 26px;
+      cursor: pointer;
+      transition: transform .1s, box-shadow .2s;
+      white-space: nowrap;
+    }
+
+    .query-bar button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 16px rgba(var(--blue), .45);
+    }
+
+    .query-bar button:active {
+      transform: translateY(0);
+    }
+
+    .query-bar button:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .examples {
+      margin-top: 10px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .example-chip {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-size: 12px;
+      color: var(--muted);
+      cursor: pointer;
+      transition: border-color .15s, color .15s;
+    }
+
+    .example-chip:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* ── Main content ───────────────────────────────────────── */
+    main {
+      padding: 28px 32px;
+    }
+
+    /* ── Status / loading ──────────────────────────────────── */
+    #status {
+      display: none;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 18px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 24px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 2.5px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* ── SQL pill ───────────────────────────────────────────── */
+    #sql-section {
+      display: none;
+      margin-bottom: 24px;
+    }
+
+    .sql-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .sql-code {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      color: #f0883e;
+      overflow-x: auto;
+      white-space: pre;
+    }
+
+    /* ── Dashboard grid ─────────────────────────────────────── */
+    #dashboard {
+      display: none;
+    }
+
+    .row-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      color: var(--muted);
+      margin: 24px 0 12px;
+    }
+
+    .row-label:first-child {
+      margin-top: 0;
+    }
+
+    .widget-row {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 4px;
+      flex-wrap: wrap;
+    }
+
+    /* KPI */
+    .kpi-card {
+      flex: 1;
+      min-width: 140px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+      transition: transform .15s, box-shadow .15s;
+    }
+
+    .kpi-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow);
+    }
+
+    .kpi-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: var(--kpi-color, var(--accent));
+    }
+
+    .kpi-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .kpi-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .kpi-unit {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    /* Chart cards */
+    .chart-card {
+      flex: 1;
+      min-width: 280px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: var(--shadow);
+    }
+
+    .chart-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 16px;
+    }
+
+    .chart-container {
+      position: relative;
+      height: 280px;
+    }
+
+    /* ── Insights ───────────────────────────────────────────── */
+    #insights-section {
+      display: none;
+      margin-top: 28px;
+    }
+
+    .insights-card {
+      background: linear-gradient(135deg, rgba(var(--purple), .08), rgba(var(--blue), .06));
+      border: 1px solid rgba(var(--purple), .25);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+    }
+
+    .insights-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      color: var(--accent2);
+      margin-bottom: 12px;
+    }
+
+    .insights-body {
+      font-size: 14px;
+      line-height: 1.75;
+      color: var(--text);
+      white-space: pre-wrap;
+    }
+
+    /* ── Error ──────────────────────────────────────────────── */
+    .error-card {
+      background: rgba(248, 81, 73, .08);
+      border: 1px solid rgba(248, 81, 73, .3);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      color: #f85149;
+      font-size: 14px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <header>
+    <div>
+      <div class="logo">Frammer <span>Analytics</span></div>
+      <div class="tagline">Live database · AI-powered dashboards</div>
+    </div>
+  </header>
+
+  <div class="query-section">
+    <div class="query-label">Ask your data anything</div>
+    <div class="query-bar">
+      <input id="queryInput" type="text" placeholder="e.g. Show me published counts by language as a bar chart"
+        onkeydown="if(event.key==='Enter') submitQuery()" />
+      <button id="queryBtn" onclick="submitQuery()">Generate Dashboard</button>
+    </div>
+    <div class="examples">
+      <span class="example-chip" onclick="setQuery(this)">Channel metrics bar chart</span>
+      <span class="example-chip" onclick="setQuery(this)">Published counts by language</span>
+      <span class="example-chip" onclick="setQuery(this)">Total uploaded vs created by month</span>
+      <span class="example-chip" onclick="setQuery(this)">Output type distribution pie chart</span>
+      <span class="example-chip" onclick="setQuery(this)">Top 10 videos by views</span>
+    </div>
+  </div>
+
+  <main>
+    <div id="status">
+      <div class="spinner"></div> <span id="statusText">Generating your dashboard…</span>
+    </div>
+
+    <div id="sql-section">
+      <div class="sql-label">SQL Query</div>
+      <div class="sql-code" id="sqlCode"></div>
+    </div>
+
+    <div id="dashboard"></div>
+
+    <div id="insights-section">
+      <div class="insights-card">
+        <div class="insights-header">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <path
+              d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm.25 3.5a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zm-.25 2.5a.75.75 0 0 1 .75.75v3a.75.75 0 0 1-1.5 0v-3A.75.75 0 0 1 8 7z" />
+          </svg>
+          AI Insights
+        </div>
+        <div class="insights-body" id="insightsBody"></div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // ── Colour palettes ──────────────────────────────────────────────────────────
+    const PALETTES = {
+      multi: [
+        'rgba(88,166,255,0.85)', 'rgba(188,140,255,0.85)',
+        'rgba(57,211,83,0.85)', 'rgba(247,129,102,0.85)',
+        'rgba(255,196,0,0.85)', 'rgba(248,81,73,0.85)',
+      ],
+      blue: ['rgba(88,166,255,0.8)'],
+      purple: ['rgba(188,140,255,0.8)'],
+      teal: ['rgba(57,211,83,0.8)'],
+      green: ['rgba(63,185,80,0.8)'],
+      orange: ['rgba(247,129,102,0.8)'],
+      red: ['rgba(248,81,73,0.8)'],
+    };
+
+    const KPI_COLORS = {
+      blue: '#58a6ff', purple: '#bc8cff', teal: '#39d353',
+      green: '#3fb950', orange: '#f78166', red: '#f85149',
+    };
+
+    let chartInstances = [];
+
+    function setQuery(el) {
+      document.getElementById('queryInput').value = el.textContent;
+      submitQuery();
+    }
+
+    async function submitQuery() {
+      const q = document.getElementById('queryInput').value.trim();
+      if (!q) return;
+
+      // Reset UI
+      document.getElementById('status').style.display = 'flex';
+      document.getElementById('sql-section').style.display = 'none';
+      document.getElementById('dashboard').style.display = 'none';
+      document.getElementById('insights-section').style.display = 'none';
+      document.getElementById('queryBtn').disabled = true;
+      document.getElementById('dashboard').innerHTML = '';
+
+      // Destroy previous charts
+      chartInstances.forEach(c => c.destroy());
+      chartInstances = [];
+
+      try {
+        const res = await fetch('/api/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: q }),
+        });
+        const data = await res.json();
+
+        document.getElementById('status').style.display = 'none';
+
+        if (!res.ok) throw new Error(data.detail || 'Server error');
+
+        // SQL
+        if (data.sql) {
+          document.getElementById('sqlCode').textContent = data.sql;
+          document.getElementById('sql-section').style.display = 'block';
+        }
+
+        // Dashboard
+        if (data.xml && data.xml.trim().startsWith('<?xml')) {
+          renderDashboard(data.xml);
+        } else if (data.error) {
+          document.getElementById('dashboard').innerHTML =
+            `<div class="error-card">${data.error}</div>`;
+          document.getElementById('dashboard').style.display = 'block';
+        }
+
+        // Insights
+        if (data.insights) {
+          document.getElementById('insightsBody').textContent = data.insights;
+          document.getElementById('insights-section').style.display = 'block';
+        }
+
+      } catch (err) {
+        document.getElementById('status').style.display = 'none';
+        document.getElementById('dashboard').innerHTML =
+          `<div class="error-card">Error: ${err.message}</div>`;
+        document.getElementById('dashboard').style.display = 'block';
+      } finally {
+        document.getElementById('queryBtn').disabled = false;
+      }
+    }
+
+    // ── XML → Dashboard renderer ─────────────────────────────────────────────────
+    function renderDashboard(xmlStr) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(xmlStr, 'application/xml');
+      const dash = document.getElementById('dashboard');
+      dash.innerHTML = '';
+
+      const rows = doc.querySelectorAll('layout > row');
+      rows.forEach(row => {
+        const label = row.getAttribute('label');
+        if (label) {
+          const lbl = document.createElement('div');
+          lbl.className = 'row-label';
+          lbl.textContent = label;
+          dash.appendChild(lbl);
+        }
+
+        const rowDiv = document.createElement('div');
+        rowDiv.className = 'widget-row';
+
+        row.querySelectorAll('widget').forEach(w => {
+          const type = w.getAttribute('type');
+          const span = parseInt(w.getAttribute('span') || '12');
+          const flexBasis = `calc(${(span / 12) * 100}% - 16px)`;
+
+          let el;
+          if (type === 'kpi') {
+            el = buildKPI(w, label);
+          } else if (['bar-chart', 'line-chart', 'pie-chart'].includes(type)) {
+            el = buildChart(w, type, label);
+          } else {
+            el = buildChart(w, 'bar-chart', label);
+          }
+
+          el.style.flexBasis = flexBasis;
+          el.style.minWidth = span < 4 ? '140px' : '280px';
+          el.style.flex = `0 1 ${flexBasis}`;
+          rowDiv.appendChild(el);
+        });
+
+        dash.appendChild(rowDiv);
+      });
+
+      dash.style.display = 'block';
+    }
+
+    function buildKPI(w) {
+      const card = document.createElement('div');
+      card.className = 'kpi-card';
+
+      const scheme = w.getAttribute('color-scheme') || 'blue';
+      card.style.setProperty('--kpi-color', KPI_COLORS[scheme] || '#58a6ff');
+
+      const title = document.createElement('div');
+      title.className = 'kpi-title';
+      title.textContent = w.getAttribute('title') || '';
+
+      const value = document.createElement('div');
+      value.className = 'kpi-value';
+      value.textContent = '—';   // placeholder; populated via /api/data in a real wiring
+
+      const unit = w.getAttribute('unit');
+      if (unit) {
+        const u = document.createElement('div');
+        u.className = 'kpi-unit';
+        u.textContent = unit;
+        card.appendChild(u);
+      }
+
+      card.appendChild(title);
+      card.appendChild(value);
+      return card;
+    }
+
+    // We hold per-chart records from the latest API response.
+    // Key: widget title (sub_question), Value: array of row objects.
+    let _chartDataMap = {};
+
+    function buildChart(w, type, rowLabel) {
+      const card = document.createElement('div');
+      card.className = 'chart-card';
+
+      const titleEl = document.createElement('div');
+      titleEl.className = 'chart-title';
+      titleEl.textContent = w.getAttribute('title') || '';
+      card.appendChild(titleEl);
+
+      const container = document.createElement('div');
+      container.className = 'chart-container';
+      const canvas = document.createElement('canvas');
+      container.appendChild(canvas);
+      card.appendChild(container);
+
+      const xField = w.getAttribute('x-field') || w.getAttribute('name-field');
+      const yFieldsRaw = w.getAttribute('y-fields') || w.getAttribute('value-field') || '';
+      const yFields = yFieldsRaw.split(',').map(s => s.trim()).filter(Boolean);
+      const yLabels = (w.getAttribute('y-labels') || '').split(',').map(s => s.trim());
+      const scheme = w.getAttribute('color-scheme') || 'blue';
+      const palette = PALETTES[scheme] || PALETTES.multi;
+      const widgetTitle = w.getAttribute('title') || '';
+
+      // Records lookup priority:
+      // 1. rowLabel (the <row label=...> which equals the sub_question in merged XML)
+      // 2. widgetTitle
+      // 3. First available dataset (single-chart fallback)
+      let records = _chartDataMap[rowLabel] || _chartDataMap[widgetTitle];
+      if (!records) {
+        const keys = Object.keys(_chartDataMap);
+        records = keys.length ? _chartDataMap[keys[0]] : [];
+      }
+
+      buildChartFromRecords(canvas, type, xField, yFields, yLabels, palette, widgetTitle, records);
+      return card;
+    }
+
+    function buildChartFromRecords(canvas, type, xField, yFields, yLabels, palette, title, records) {
+      records = records || [];
+      if (!records.length) return;
+
+      const labels = records.map(r => String(r[xField] ?? ''));
+
+      let config;
+      if (type === 'pie-chart') {
+        config = {
+          type: 'doughnut',
+          data: {
+            labels,
+            datasets: [{
+              data: records.map(r => Number(r[yFields[0]] ?? 0)),
+              backgroundColor: palette,
+              borderColor: '#161b22',
+              borderWidth: 3,
+            }],
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+              legend: { position: 'right', labels: { color: '#8b949e', font: { size: 12 } } },
+              title: { display: false },
+            },
+          },
+        };
+      } else if (type === 'line-chart') {
+        config = {
+          type: 'line',
+          data: {
+            labels,
+            datasets: yFields.map((f, i) => ({
+              label: yLabels[i] || f,
+              data: records.map(r => Number(r[f] ?? 0)),
+              borderColor: palette[i % palette.length].replace('0.8', '1'),
+              backgroundColor: palette[i % palette.length].replace('0.8', '0.12'),
+              pointRadius: 4, pointHoverRadius: 6,
+              tension: 0.4, fill: true,
+            })),
+          },
+          options: chartOptions(title),
+        };
+      } else {
+        // bar
+        config = {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: yFields.map((f, i) => ({
+              label: yLabels[i] || f,
+              data: records.map(r => Number(r[f] ?? 0)),
+              backgroundColor: palette[i % palette.length],
+              borderRadius: 6, borderSkipped: false,
+            })),
+          },
+          options: chartOptions(title),
+        };
+      }
+
+      const instance = new Chart(canvas, config);
+      chartInstances.push(instance);
+    }
+
+    function chartOptions(title) {
+      return {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: '#8b949e', font: { size: 12 } } },
+          title: { display: false },
+          tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y?.toLocaleString() ?? ctx.parsed}` } },
+        },
+        scales: {
+          x: {
+            ticks: { color: '#8b949e', font: { size: 11 }, maxRotation: 40, minRotation: 0 },
+            grid: { color: '#21262d' },
+          },
+          y: {
+            ticks: { color: '#8b949e', font: { size: 11 } },
+            grid: { color: 'rgba(48,54,61,0.5)' },
+            beginAtZero: true,
+          },
+        },
+      };
+    }
+
+    // ── Main submit function ─────────────────────────────────────────────────────
+    window.submitQuery = async function () {
+      const q = document.getElementById('queryInput').value.trim();
+      if (!q) return;
+
+      document.getElementById('status').style.display = 'flex';
+      document.getElementById('statusText').textContent = 'Running query…';
+      document.getElementById('sql-section').style.display = 'none';
+      document.getElementById('dashboard').style.display = 'none';
+      document.getElementById('insights-section').style.display = 'none';
+      document.getElementById('queryBtn').disabled = true;
+      document.getElementById('dashboard').innerHTML = '';
+      chartInstances.forEach(c => c.destroy());
+      chartInstances = [];
+      _chartDataMap = {};
+
+      try {
+        const res = await fetch('/api/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: q }),
+        });
+        const data = await res.json();
+        document.getElementById('status').style.display = 'none';
+
+        if (!res.ok) throw new Error(data.detail || 'Server error');
+
+        // Store the per-chart data map for the renderer
+        _chartDataMap = data.chart_data || {};
+
+        // SQL display (show first query; others are used internally per-chart)
+        if (data.sql) {
+          document.getElementById('sqlCode').textContent = data.sql;
+          document.getElementById('sql-section').style.display = 'block';
+        }
+
+        // Dashboard XML -> charts
+        if (data.xml && data.xml.trim().startsWith('<?xml')) {
+          renderDashboard(data.xml);
+        } else {
+          document.getElementById('dashboard').innerHTML =
+            `<div class="error-card">${data.error || 'No chart data returned.'}</div>`;
+          document.getElementById('dashboard').style.display = 'block';
+        }
+
+        // Insights
+        if (data.insights) {
+          document.getElementById('insightsBody').textContent = data.insights;
+          document.getElementById('insights-section').style.display = 'block';
+        }
+
+      } catch (err) {
+        document.getElementById('status').style.display = 'none';
+        document.getElementById('dashboard').innerHTML =
+          `<div class="error-card">Error: ${err.message}</div>`;
+        document.getElementById('dashboard').style.display = 'block';
+      } finally {
+        document.getElementById('queryBtn').disabled = false;
+      }
+    };
+
+  </script>
+</body>
+
+</html>

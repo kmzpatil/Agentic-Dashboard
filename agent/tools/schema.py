@@ -1,47 +1,80 @@
 """
 Tool: get_frammer_schema
-Retrieves the live database schema (tables + columns) from the SQLite database.
-Always call this before writing SQL to ensure column names are correct.
+Retrieves the live database schema (tables + columns) from the PostgreSQL database.
+Always call this before writing SQL to ensure table and column names are correct.
 """
 
-import sqlite3
+import os
 
-DB_PATH = "frammer_analytics.db"
+import psycopg2
 
 
-def _get_connection() -> sqlite3.Connection:
-    """Open a read-only connection to the Frammer database."""
-    uri = f"file:{DB_PATH}?mode=ro"
-    return sqlite3.connect(uri, uri=True)
+def _get_connection() -> psycopg2.extensions.connection:
+    """Open a connection to the Frammer PostgreSQL database using env variables."""
+    return psycopg2.connect(
+        host=os.environ["POSTGRES_HOST"],
+        port=int(os.environ.get("POSTGRES_PORT", 5432)),
+        dbname=os.environ["POSTGRES_DB"],
+        user=os.environ["POSTGRES_USER"],
+        password=os.environ["POSTGRES_PASSWORD"],
+        sslmode=os.environ.get("POSTGRES_SSLMODE", "prefer"),
+    )
 
 
 def get_frammer_schema() -> str:
     """
-    Inspect the database and return a human-readable schema string.
+    Inspect the PostgreSQL database and return a human-readable schema string.
+
+    Queries information_schema.columns so it works across any PostgreSQL host
+    (Supabase, Neon, Railway, self-hosted, etc.).
 
     Returns:
         A multi-line string listing every table and its columns (with types),
         or an error message if the database cannot be opened.
     """
+    query = """
+        SELECT
+            table_name,
+            column_name,
+            data_type,
+            is_nullable
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name NOT IN ('schema_migrations', 'secrets', 'subscription')
+          AND table_name NOT LIKE 'pg_%'
+        ORDER BY table_name, ordinal_position;
+    """
+
     try:
         conn = _get_connection()
         cursor = conn.cursor()
-
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-        tables = cursor.fetchall()
-
-        schema_info = "Frammer AI Database Schema:\n"
-        for (table_name,) in tables:
-            cursor.execute(f"PRAGMA table_info({table_name});")
-            columns = cursor.fetchall()
-            col_details = [f"{col[1]} ({col[2]})" for col in columns]
-            schema_info += (
-                f"\nTable: {table_name}\n"
-                f"Columns: {', '.join(col_details)}\n"
-            )
-
+        cursor.execute(query)
+        rows = cursor.fetchall()
         conn.close()
+
+        if not rows:
+            return "No tables found in the public schema."
+
+        schema_info = "Frammer AI Database Schema (PostgreSQL):\n"
+        current_table = None
+        col_parts = []
+
+        for table_name, col_name, data_type, nullable in rows:
+            if table_name != current_table:
+                if current_table is not None:
+                    schema_info += f"\nTable: {current_table}\nColumns: {', '.join(col_parts)}\n"
+                current_table = table_name
+                col_parts = []
+            nullable_tag = "" if nullable == "YES" else " NOT NULL"
+            col_parts.append(f"{col_name} ({data_type}{nullable_tag})")
+
+        # Flush the last table
+        if current_table:
+            schema_info += f"\nTable: {current_table}\nColumns: {', '.join(col_parts)}\n"
+
         return schema_info
 
+    except psycopg2.OperationalError as exc:
+        return f"Error: Database connection failed — {exc}"
     except Exception as exc:
         return f"Error retrieving schema: {exc}"
