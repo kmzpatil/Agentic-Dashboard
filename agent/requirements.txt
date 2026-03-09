@@ -6,6 +6,7 @@ langchain-core>=0.2.0
 
 # ─── Database ─────────────────────────────────────────────────────────────────
 psycopg2-binary>=2.9.9      # PostgreSQL adapter (binary wheels = no build deps)
+sqlalchemy>=2.0.0           # SQL toolkit and Object Relational Mapper
 
 # ─── MCP Server ───────────────────────────────────────────────────────────────
 mcp[cli]>=1.0.0             # FastMCP server framework

@@ -1,20 +1,17 @@
 """
 Tool: execute_sql_query
-Executes a read-only SELECT query against the Frammer PostgreSQL database,
+Executes a read-only SELECT query via the mcp_server DatabaseClient (SQLAlchemy),
 extracts the data, and returns a combined JSON payload containing both
 the data records and the chart attributes for the downstream charting agent.
 """
 
 import json
-import os
 import re
+from functools import lru_cache
 from typing import Any, Dict, Optional
 
-import pandas as pd
-import psycopg2
-
-# Mutations that are never allowed
-FORBIDDEN_KEYWORDS = {"DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "CREATE", "TRUNCATE"}
+from mcp_server.config import ServerSettings
+from mcp_server.database import DatabaseClient, QueryValidationError
 
 
 # Known table name typo corrections (LLMs often drop trailing 's' on plurals)
@@ -29,22 +26,20 @@ TABLE_NAME_ALIASES: Dict[str, str] = {
 }
 
 
-def _get_connection() -> psycopg2.extensions.connection:
-    """Open a connection to the Frammer PostgreSQL database using env variables."""
-    return psycopg2.connect(
-        host=os.environ["POSTGRES_HOST"],
-        port=int(os.environ.get("POSTGRES_PORT", 5432)),
-        dbname=os.environ["POSTGRES_DB"],
-        user=os.environ["POSTGRES_USER"],
-        password=os.environ["POSTGRES_PASSWORD"],
-        sslmode=os.environ.get("POSTGRES_SSLMODE", "prefer"),
+@lru_cache(maxsize=1)
+def _get_db() -> DatabaseClient:
+    """Return a shared DatabaseClient instance (created once per process)."""
+    settings = ServerSettings.from_env()
+    return DatabaseClient(
+        database_url=settings.database_url,
+        default_schema=settings.default_schema,
     )
 
 
 def execute_sql_query(query: str, chart_attributes: Optional[Dict[str, Any]] = None) -> str:
     """
-    Execute a SELECT SQL query against PostgreSQL and bundle the results with
-    chart attributes.
+    Execute a SELECT SQL query via the MCP server DatabaseClient and bundle
+    the results with chart attributes.
 
     Args:
         query:            A valid PostgreSQL SELECT statement.
@@ -62,31 +57,23 @@ def execute_sql_query(query: str, chart_attributes: Optional[Dict[str, Any]] = N
     # Strip markdown code fences the LLM sometimes wraps around the SQL
     query = query.strip().strip("```sql").strip("```").strip()
 
-    # Auto-correct known LLM table name typos (e.g. 'channel_metric' → 'channel_metrics')
+    # Auto-correct known LLM table name typos (e.g. 'channel_metric' -> 'channel_metrics')
     for wrong, correct in TABLE_NAME_ALIASES.items():
         query = re.sub(rf"\b{re.escape(wrong)}\b", correct, query, flags=re.IGNORECASE)
 
-    # Guard against write operations using word-boundary regex so we don't
-    # accidentally flag column names that contain a forbidden word as a substring.
-    query_upper = query.upper()
-    for kw in FORBIDDEN_KEYWORDS:
-        if re.search(rf"\b{kw}\b", query_upper):
-            return json.dumps({"error": "Only read-only SELECT queries are allowed."})
-
     try:
-        conn = _get_connection()
-        df = pd.read_sql_query(query, conn)
-        conn.close()
-
+        db = _get_db()
+        # DatabaseClient.run_read_only_query handles read-only validation internally
+        df = db.run_read_only_query(query, limit=5000)
         df = df.fillna(0)
 
         payload = {
             "data": df.to_dict(orient="records"),
             "chart_attributes": chart_attributes,
         }
-        return json.dumps(payload, default=str)  # default=str handles dates/Decimals
+        return json.dumps(payload, default=str)
 
-    except psycopg2.OperationalError as exc:
-        return json.dumps({"error": f"Database connection error: {exc}"})
+    except QueryValidationError as exc:
+        return json.dumps({"error": f"Query validation error: {exc}"})
     except Exception as exc:
         return json.dumps({"error": f"SQL Execution Error: {exc}"})

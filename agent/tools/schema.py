@@ -1,80 +1,57 @@
 """
 Tool: get_frammer_schema
-Retrieves the live database schema (tables + columns) from the PostgreSQL database.
+Retrieves the live database schema (tables + columns) from the PostgreSQL
+database via the mcp_server DatabaseClient.
 Always call this before writing SQL to ensure table and column names are correct.
 """
 
-import os
+from functools import lru_cache
 
-import psycopg2
+from mcp_server.config import ServerSettings
+from mcp_server.database import DatabaseClient
 
 
-def _get_connection() -> psycopg2.extensions.connection:
-    """Open a connection to the Frammer PostgreSQL database using env variables."""
-    return psycopg2.connect(
-        host=os.environ["POSTGRES_HOST"],
-        port=int(os.environ.get("POSTGRES_PORT", 5432)),
-        dbname=os.environ["POSTGRES_DB"],
-        user=os.environ["POSTGRES_USER"],
-        password=os.environ["POSTGRES_PASSWORD"],
-        sslmode=os.environ.get("POSTGRES_SSLMODE", "prefer"),
+@lru_cache(maxsize=1)
+def _get_db() -> DatabaseClient:
+    """Return a shared DatabaseClient instance (created once per process)."""
+    settings = ServerSettings.from_env()
+    return DatabaseClient(
+        database_url=settings.database_url,
+        default_schema=settings.default_schema,
     )
 
 
 def get_frammer_schema() -> str:
     """
-    Inspect the PostgreSQL database and return a human-readable schema string.
-
-    Queries information_schema.columns so it works across any PostgreSQL host
-    (Supabase, Neon, Railway, self-hosted, etc.).
+    Inspect the PostgreSQL database via the MCP server DatabaseClient and
+    return a human-readable schema string.
 
     Returns:
-        A multi-line string listing every table and its columns (with types),
+        A multi-line string listing every public table and its columns (with types),
         or an error message if the database cannot be opened.
     """
-    query = """
-        SELECT
-            table_name,
-            column_name,
-            data_type,
-            is_nullable
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name NOT IN ('schema_migrations', 'secrets', 'subscription')
-          AND table_name NOT LIKE 'pg_%'
-        ORDER BY table_name, ordinal_position;
-    """
-
     try:
-        conn = _get_connection()
-        cursor = conn.cursor()
-        cursor.execute(query)
-        rows = cursor.fetchall()
-        conn.close()
+        db = _get_db()
+        tables = db.list_tables()
 
-        if not rows:
+        if not tables:
             return "No tables found in the public schema."
 
-        schema_info = "Frammer AI Database Schema (PostgreSQL):\n"
-        current_table = None
-        col_parts = []
+        schema_info = "GCData Analytics Database Schema (PostgreSQL / Supabase):\n"
 
-        for table_name, col_name, data_type, nullable in rows:
-            if table_name != current_table:
-                if current_table is not None:
-                    schema_info += f"\nTable: {current_table}\nColumns: {', '.join(col_parts)}\n"
-                current_table = table_name
-                col_parts = []
-            nullable_tag = "" if nullable == "YES" else " NOT NULL"
-            col_parts.append(f"{col_name} ({data_type}{nullable_tag})")
-
-        # Flush the last table
-        if current_table:
-            schema_info += f"\nTable: {current_table}\nColumns: {', '.join(col_parts)}\n"
+        for table_entry in tables:
+            table_name = table_entry["name"]
+            try:
+                details = db.describe_table(table_name)
+                cols = ", ".join(
+                    f"{c['name']} ({c['type']})"
+                    for c in details.get("columns", [])
+                )
+                schema_info += f"\nTable: {table_name}\nColumns: {cols}\n"
+            except Exception:
+                schema_info += f"\nTable: {table_name}\nColumns: (could not be retrieved)\n"
 
         return schema_info
 
-    except psycopg2.OperationalError as exc:
-        return f"Error: Database connection failed — {exc}"
     except Exception as exc:
         return f"Error retrieving schema: {exc}"
