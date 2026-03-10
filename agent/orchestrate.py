@@ -34,6 +34,7 @@ from langgraph.graph import END, StateGraph
 from tools import (
     execute_sql_query,
     generate_plotly_chart,
+    generate_chartjs_json,
     get_frammer_schema,
     retrieve_metric_definitions,
 )
@@ -121,7 +122,7 @@ def _generate_sql_for_spec(sub_question: str, schema: str, context: str, error: 
     return raw.strip().strip("```sql").strip("```").strip()
 
 
-def _generate_chart_attrs(sql: str, sub_question: str, records: List[Dict]) -> Dict:
+def _generate_chart_attrs(sql: str, sub_question: str, records: List[Dict], chart_type_hint: Optional[str] = None) -> Dict:
     """Decide chart type and axes for a single spec using the real column names (synchronous)."""
     sample_rows = records[:3]
     col_names = list(sample_rows[0].keys()) if sample_rows else []
@@ -132,11 +133,14 @@ def _generate_chart_attrs(sql: str, sub_question: str, records: List[Dict]) -> D
         if col_names else ""
     )
 
+    hint_str = f"The orchestrator suggests '{chart_type_hint}' for this chart. Strongly prefer this unless the data format makes it impossible.\n" if chart_type_hint else ""
+
     prompt = PromptTemplate.from_template(
         "You are a data visualisation expert.\n\n"
         "SQL query that produced the data:\n{sql}\n\n"
         "{col_hint}"
         "User question: {question}\n\n"
+        "{hint_str}"
         "Choose the best chart type and identify the right columns.\n"
         "Respond with a single valid JSON object (no markdown, no extra text) "
         "with EXACTLY these keys:\n"
@@ -151,7 +155,7 @@ def _generate_chart_attrs(sql: str, sub_question: str, records: List[Dict]) -> D
         "Return ONLY the JSON object."
     )
     raw = llm_orchestrator.invoke(
-        prompt.format(sql=sql, question=sub_question, col_hint=col_hint)
+        prompt.format(sql=sql, question=sub_question, col_hint=col_hint, hint_str=hint_str)
     ).content.strip().strip("```json").strip("```").strip()
 
     try:
@@ -180,18 +184,19 @@ def _process_single_spec(spec: Dict, schema: str, context: str) -> Dict:
 
         # SQL succeeded
         records = parsed.get("data", [])
-        attrs = _generate_chart_attrs(sql, sub_question, records)
+        attrs = _generate_chart_attrs(sql, sub_question, records, chart_type_hint=spec.get("chart_type_hint"))
 
         # Override type with LLM's initial hint if the formatter left it blank
         if not attrs.get("type") and spec.get("chart_type_hint"):
             attrs["type"] = spec["chart_type_hint"]
 
         chart_xml = generate_plotly_chart(data_records=records, chart_attributes=attrs) if records else ""
+        chart_js  = generate_chartjs_json(data_records=records, chart_attributes=attrs) if records else "{}"
 
-        return {**spec, "sql_query": sql, "records": records, "chart_attrs": attrs, "chart_xml": chart_xml}
+        return {**spec, "sql_query": sql, "records": records, "chart_attrs": attrs, "chart_xml": chart_xml, "chart_js": chart_js}
 
     # All 3 retries exhausted
-    return {**spec, "sql_query": "", "records": [], "chart_attrs": {}, "chart_xml": "", "sql_error": spec_error}
+    return {**spec, "sql_query": "", "records": [], "chart_attrs": {}, "chart_xml": "", "chart_js": "{}", "sql_error": spec_error}
 
 
 # --- LangGraph Pipeline -----------------------------------------------------
@@ -410,6 +415,14 @@ async def run_agent():
 
             print("\nInsights:")
             print(result["insights"])
+
+            # Print SQL and Chart.js Config for each chart
+            for i, s in enumerate(specs, 1):
+                print(f"\n--- Chart {i}: {s.get('sub_question', '')} ---")
+                print("📜 SQL Query:")
+                print(s.get("sql_query", "N/A"))
+                print("\n📊 Chart.js Config (JSON):")
+                print(s.get("chart_js", "{}"))
 
             chart = result.get("chart_json", "")
             if chart and chart.strip().startswith("<?xml"):

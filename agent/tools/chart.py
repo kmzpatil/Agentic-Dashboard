@@ -267,3 +267,119 @@ def generate_plotly_chart(
         return _build_dashboard_xml(df, attrs, chart_title, chart_type, x_col, y_cols)
     except Exception as exc:
         return json.dumps({"error": f"XML generation failed: {exc}"})
+
+
+def generate_chartjs_json(
+    query: Optional[str] = None,
+    *,
+    data_records: Optional[List[Dict[str, Any]]] = None,
+    chart_attributes: Optional[Dict[str, Any]] = None,
+) -> str:
+    """
+    Build and return a Chart.js compatible JSON string for the given data.
+
+    Args:
+        query:            A valid PostgreSQL SELECT statement (fallback mode).
+        data_records:     Pre-fetched rows as a list of dicts (preferred mode).
+        chart_attributes: Dict with optional keys:
+                            - type:   "bar" | "line" | "scatter" | "pie"
+                            - x_axis: column name for the X axis
+                            - y_axis: column name(s) for the Y axis (comma-separated)
+                            - title:  chart title string
+
+    Returns:
+        Chart.js JSON string on success, or an error JSON string on failure.
+    """
+    attrs = chart_attributes or {}
+
+    # 1. Obtain the DataFrame
+    if data_records is not None:
+        df = _df_from_records(data_records)
+    elif query:
+        if any(re.search(rf"\b{kw}\b", query.upper()) for kw in FORBIDDEN_KEYWORDS):
+            return json.dumps({"error": "Only read-only SELECT queries are allowed."})
+        try:
+            conn = _get_connection()
+            df = pd.read_sql_query(query, conn)
+            conn.close()
+        except Exception as exc:
+            return json.dumps({"error": f"DB query failed: {exc}"})
+    else:
+        return json.dumps({"error": "Either query or data_records must be provided."})
+
+    if df.empty:
+        return json.dumps({"error": "Query returned no rows — nothing to plot."})
+
+    df = df.fillna(0)
+
+    # 2. Resolve chart config
+    x_col = attrs.get("x_axis") or df.columns[0]
+    if x_col not in df.columns:
+        x_col = df.columns[0]
+
+    y_cols = _resolve_y_cols(attrs, df, x_col)
+    if not y_cols:
+        return json.dumps({"error": "No numeric column available for the Y axis."})
+
+    chart_type = attrs.get("type", "bar").lower()
+    if chart_type not in ("bar", "line", "pie", "doughnut"):
+        # Map scatter to line for simplest Chart.js support here
+        if chart_type == "scatter":
+            chart_type = "line"
+        else:
+            chart_type = "bar"
+
+    chart_title = attrs.get("title") or f"{y_cols[0].replace('_', ' ').title()} by {x_col.replace('_', ' ').title()}"
+
+    # 3. Construct Chart.js payload (no data, only config)
+    datasets = []
+    colors = ["#e00000", "#ffffff", "#a3a3a3", "#525252", "#991b1b"]
+    labels = []
+
+    # Special logic for Pie/Doughnut with "wide" data (one row, multiple numeric columns)
+    if chart_type in ["pie", "doughnut"] and len(df) == 1 and len(y_cols) > 1:
+        labels = [col.replace("_", " ").title() for col in y_cols]
+        datasets = [{
+            "label": chart_title,
+            "data": [],  # Empty; frontend fetches this
+            "backgroundColor": [colors[i % len(colors)] for i in range(len(y_cols))],
+            "borderWidth": 1
+        }]
+    else:
+        # Standard multi-row or single-column data
+        for i, y_col in enumerate(y_cols):
+            dataset = {
+                "label": y_col.replace("_", " ").title(),
+                "data": [],  # Empty; frontend fetches this
+                "backgroundColor": colors[i % len(colors)],
+                "borderColor": colors[i % len(colors)],
+                "borderWidth": 1
+            }
+            if chart_type == "line":
+                dataset["fill"] = False
+                dataset["tension"] = 0.1
+            datasets.append(dataset)
+
+    payload = {
+        "type": chart_type,
+        "x_axis": x_col,
+        "y_axis": y_cols,
+        "data": {
+            "labels": labels, # May be column names for wide pie charts
+            "datasets": datasets
+        },
+        "options": {
+            "responsive": True,
+            "plugins": {
+                "title": {
+                    "display": True,
+                    "text": chart_title
+                },
+                "legend": {
+                    "display": len(y_cols) > 1 or chart_type in ["pie", "doughnut"]
+                }
+            }
+        }
+    }
+
+    return json.dumps(payload, default=str)

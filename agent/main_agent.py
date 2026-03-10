@@ -32,6 +32,7 @@ from langgraph.graph import END, StateGraph
 from tools import (
     execute_sql_query,
     generate_plotly_chart,
+    generate_chartjs_json,
     get_frammer_schema,
     retrieve_metric_definitions,
 )
@@ -51,6 +52,7 @@ class AgentState(TypedDict):
     chart_attributes:  Dict[str, Any]  # LLM-decided chart config
     data:              str              # JSON string from execute_sql_query
     chart_json:        str              # Serialised Plotly figure
+    chart_js:          str              # Serialised Chart.js config
     insights:          str              # LLM-generated business insights
     error:             str              # Last SQL error (used for self-correction)
     retry_count:       int              # Guards against infinite retry loops
@@ -155,9 +157,10 @@ async def build_and_run_pipeline(question: str) -> AgentState:
             return {"chart_json": "{}"}
 
         result = generate_plotly_chart(data_records=records, chart_attributes=attrs)
+        chart_js = generate_chartjs_json(data_records=records, chart_attributes=attrs)
         # If charting failed, result is an error JSON — store it as-is so the
         # caller can inspect it; insights generation will handle the empty case.
-        return {"chart_json": result}
+        return {"chart_json": result, "chart_js": chart_js}
 
     # Node 6 — LLM derives business insights from the data rows only
     def generate_insights(state: AgentState):
@@ -188,6 +191,7 @@ async def build_and_run_pipeline(question: str) -> AgentState:
                 f"Last error: {state.get('error', 'Unknown error')}"
             ),
             "chart_json": "{}",
+            "chart_js": "{}",
         }
 
     # ── Routing ───────────────────────────────────────────────────────────────
@@ -239,6 +243,7 @@ async def build_and_run_pipeline(question: str) -> AgentState:
             "chart_attributes": {},
             "data":             "{}",
             "chart_json":       "{}",
+            "chart_js":         "{}",
             "insights":         "",
             "error":            "",
             "retry_count":      0,
@@ -272,6 +277,12 @@ async def run_agent():
 
             print("💡 Insights:")
             print(result["insights"])
+
+            print("\n📜 SQL Query:")
+            print(result.get("sql_query", "N/A"))
+
+            print("\n📊 Chart.js Config (JSON):")
+            print(result.get("chart_js", "{}"))
 
             chart = result.get("chart_json", "")
             if chart and chart.strip().startswith("<?xml"):

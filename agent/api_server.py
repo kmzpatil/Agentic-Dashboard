@@ -41,13 +41,16 @@ class DataRequest(BaseModel):
     sql: str
 
 
+class ChartInfo(BaseModel):
+    title: str
+    sql: str
+    config: dict  # Chart.js config-only JSON
+
 class QueryResponse(BaseModel):
     question:   str
-    sql:        str          # First chart's SQL (for display in the UI)
-    xml:        str          # Merged dashboard XML
     insights:   str
     error:      str
-    chart_data: dict         # Map of widget title -> list of data records
+    charts:     list[ChartInfo]
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -71,32 +74,21 @@ async def run_query(req: QueryRequest):
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
 
     result = await build_and_run_pipeline(req.question)
-
     specs = result.get("chart_specs", [])
 
-    # Build a chart_title -> records map.
-    # The key MUST match the XML <row label=...> which chart.py sets to
-    # chart_attributes['title']. We also add sub_question as a fallback key.
-    chart_data: dict = {}
-    first_sql = ""
-    for i, spec in enumerate(specs):
-        chart_title  = spec.get("chart_attrs", {}).get("title", "")
-        sub_question = spec.get("sub_question", f"Chart {i+1}")
-        records      = spec.get("records", [])
-        # Register under both keys so the frontend JS can find it either way
-        if chart_title:
-            chart_data[chart_title] = records
-        chart_data[sub_question] = records
-        if i == 0:
-            first_sql = spec.get("sql_query", "")
+    charts = []
+    for spec in specs:
+        charts.append(ChartInfo(
+            title=spec.get("chart_attrs", {}).get("title", "Untitled Chart"),
+            sql=spec.get("sql_query", ""),
+            config=json.loads(spec.get("chart_js", "{}"))
+        ))
 
     return QueryResponse(
         question=req.question,
-        sql=first_sql,
-        xml=result.get("chart_json", ""),
         insights=result.get("insights", ""),
         error=result.get("error", ""),
-        chart_data=jsonable_encoder(chart_data),
+        charts=charts
     )
 
 
@@ -135,3 +127,7 @@ async def get_data(req: DataRequest):
 
     return {"records": parsed.get("data", [])}
 
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)    
