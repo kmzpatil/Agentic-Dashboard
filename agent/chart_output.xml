@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <dashboard version="1.0" theme="light" cols="12">
   <meta>
-    <title>Published vs Uploaded Data</title>
-    <description>Auto-generated analytics: Published vs Uploaded Data</description>
-    <created>2026-03-08</created>
+    <title>get monthly trend</title>
+    <description>Auto-generated multi-chart analytics dashboard</description>
+    <created>2026-03-10</created>
   </meta>
   <layout>
-    <row id="r1" label="Published vs Uploaded Data">
-      <widget id="w1" type="bar-chart" col="1" span="12" title="Published vs Uploaded Data" data-source="query_result" x-field="total_published" y-fields="total_uploaded" y-labels="Total Uploaded" color-scheme="blue" show-legend="false" x-tick-short="true" />
+    <row id="r1" label="Monthly Upload Trend">
+      <widget id="w1" type="line-chart" col="1" span="12" title="Monthly Upload Trend" data-source="query_result" x-field="month" y-fields="total_uploaded,total_created,total_published" y-labels="Total Uploaded,Total Created,Total Published" color-scheme="multi" show-legend="true" />
     </row>
   </layout>
 </dashboard>

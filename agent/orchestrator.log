@@ -1,0 +1,71 @@
+2026-03-10 22:53:15,451 - mcp_client - INFO - Initializing MCP session with subprocess...
+2026-03-10 22:53:20,407 - mcp_client - INFO - MCP session initialized successfully.
+2026-03-10 22:54:08,936 - orchestrator - INFO - 
+[Node: retrieve_context] Fetching business metric definitions...
+2026-03-10 22:54:08,936 - orchestrator - INFO -   -> Retrieved 217 chars of business context.
+2026-03-10 22:54:08,938 - orchestrator - INFO - [Node: get_schema] Fetching live database schema via MCP server...
+2026-03-10 22:55:39,580 - orchestrator - INFO -   -> Retrieved 2473 chars of schema data.
+2026-03-10 22:55:39,580 - orchestrator - INFO - [Node: decompose_question] Asking LLM to break down question: 'get monthly trend'
+2026-03-10 22:55:40,303 - httpx - INFO - HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-03-10 22:55:40,330 - orchestrator - INFO -   -> Generated 1 chart spec(s): ['What is the monthly trend of total uploaded, created, and published counts?']
+2026-03-10 22:55:40,332 - orchestrator - INFO - 
+[Node: generate_all_charts] Processing 1 chart(s) via MCP server...
+2026-03-10 22:55:40,816 - httpx - INFO - HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-03-10 22:55:40,894 - orchestrator - INFO -   -> [MCP Client] Calling tool: get_monthly_trend({})
+2026-03-10 22:55:42,042 - httpx - INFO - HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-03-10 22:55:42,229 - orchestrator - INFO -   -> All chart tasks completed.
+2026-03-10 22:55:42,229 - orchestrator - INFO - 
+[Node: merge_xml] Merging 1 chart XMLs into single dashboard...
+2026-03-10 22:55:42,236 - orchestrator - INFO -   -> Successfully merged 1 XMLs.
+2026-03-10 22:55:42,237 - orchestrator - INFO - 
+[Node: generate_insights] Synthesising holistic business insights from chart data...
+2026-03-10 22:55:43,268 - httpx - INFO - HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-03-10 22:55:43,275 - orchestrator - INFO -   -> Insights generated successfully.
+2026-03-10 23:01:09,225 - mcp_client - INFO - Closing MCP session...
+2026-03-10 23:01:09,357 - asyncio - ERROR - an error occurred during closing of asynchronous generator <async_generator object stdio_client at 0x00000255711C36C0>
+asyncgen: <async_generator object stdio_client at 0x00000255711C36C0>
+  + Exception Group Traceback (most recent call last):
+  |   File "C:\Users\ashps\anaconda3\envs\frammer\lib\site-packages\anyio\_backends\_asyncio.py", line 783, in __aexit__
+  |     raise BaseExceptionGroup(
+  | exceptiongroup.BaseExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "C:\Users\ashps\anaconda3\envs\frammer\lib\site-packages\mcp\client\stdio\__init__.py", line 189, in stdio_client
+    |     yield read_stream, write_stream
+    | GeneratorExit
+    +------------------------------------
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\ashps\anaconda3\envs\frammer\lib\site-packages\mcp\client\stdio\__init__.py", line 182, in stdio_client
+    async with (
+  File "C:\Users\ashps\anaconda3\envs\frammer\lib\site-packages\anyio\_backends\_asyncio.py", line 789, in __aexit__
+    if self.cancel_scope.__exit__(type(exc), exc, exc.__traceback__):
+  File "C:\Users\ashps\anaconda3\envs\frammer\lib\site-packages\anyio\_backends\_asyncio.py", line 461, in __exit__
+    raise RuntimeError(
+RuntimeError: Attempted to exit cancel scope in a different task than it was entered in
+2026-03-10 23:01:21,208 - mcp_client - INFO - Initializing MCP session with subprocess...
+2026-03-10 23:01:24,985 - mcp_client - INFO - MCP session initialized successfully.
+2026-03-10 23:01:36,535 - orchestrator - INFO - 
+[Node: retrieve_context] Fetching business metric definitions...
+2026-03-10 23:01:36,535 - orchestrator - INFO -   -> Retrieved 217 chars of business context.
+2026-03-10 23:01:36,537 - orchestrator - INFO - [Node: get_schema] Fetching live database schema via MCP server...
+2026-03-10 23:02:56,164 - orchestrator - INFO -   -> Retrieved 2473 chars of schema data.
+2026-03-10 23:02:56,168 - orchestrator - INFO - [Node: decompose_question] Asking LLM to break down question: 'get monthly trend'
+2026-03-10 23:02:56,742 - httpx - INFO - HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-03-10 23:02:56,790 - orchestrator - INFO -   -> Generated 1 chart spec(s): ['What is the monthly trend of total uploaded, created, and published counts?']
+2026-03-10 23:02:56,791 - orchestrator - INFO - 
+[Node: generate_all_charts] Processing 1 chart(s) via MCP server...
+2026-03-10 23:02:57,292 - httpx - INFO - HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-03-10 23:02:57,292 - orchestrator - INFO -   -> [MCP Client] Calling tool: get_monthly_trend({})
+2026-03-10 23:02:58,508 - httpx - INFO - HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-03-10 23:02:58,604 - orchestrator - INFO -    [MCP TOOL] tool:get_monthly_trend  ->  12 rows
+2026-03-10 23:02:58,605 - orchestrator - INFO -   -> All chart tasks completed.
+2026-03-10 23:02:58,606 - orchestrator - INFO - 
+[Node: merge_xml] Merging 1 chart XMLs into single dashboard...
+2026-03-10 23:02:58,607 - orchestrator - INFO -   -> Successfully merged 1 XMLs.
+2026-03-10 23:02:58,607 - orchestrator - INFO - 
+[Node: generate_insights] Synthesising holistic business insights from chart data...
+2026-03-10 23:03:00,025 - httpx - INFO - HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-03-10 23:03:00,059 - orchestrator - INFO -   -> Insights generated successfully.
