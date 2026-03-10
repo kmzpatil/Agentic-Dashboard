@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <dashboard version="1.0" theme="light" cols="12">
   <meta>
-    <title>get monthly trend</title>
+    <title>get monthly trends</title>
     <description>Auto-generated multi-chart analytics dashboard</description>
     <created>2026-03-10</created>
   </meta>
   <layout>
-    <row id="r1" label="Monthly Upload Trend">
-      <widget id="w1" type="line-chart" col="1" span="12" title="Monthly Upload Trend" data-source="query_result" x-field="month" y-fields="total_uploaded,total_created,total_published" y-labels="Total Uploaded,Total Created,Total Published" color-scheme="multi" show-legend="true" />
+    <row id="r1" label="Monthly Upload Trends">
+      <widget id="w1" type="line-chart" col="1" span="12" title="Monthly Upload Trends" data-source="query_result" x-field="month" y-fields="total_uploaded,total_created,total_published" y-labels="Total Uploaded,Total Created,Total Published" color-scheme="multi" show-legend="true" />
     </row>
   </layout>
 </dashboard>

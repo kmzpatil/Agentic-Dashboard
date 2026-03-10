@@ -26,8 +26,8 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from orchestrate import build_and_run_pipeline
-from tools.schema import get_frammer_schema
-from tools.sql_query import execute_sql_query
+from mcp_client import MCPClient
+
 
 app = FastAPI(title="Frammer Analytics API", version="1.0.0")
 
@@ -70,7 +70,8 @@ async def run_query(req: QueryRequest):
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
 
-    result = await build_and_run_pipeline(req.question)
+    async with MCPClient() as client:
+        result = await build_and_run_pipeline(req.question, client=client)
 
     specs = result.get("chart_specs", [])
 
@@ -103,18 +104,20 @@ async def run_query(req: QueryRequest):
 @app.get("/api/tables")
 async def get_schema():
     """Return the live database schema (table + column list) as JSON."""
-    schema_str = get_frammer_schema()
-    tables = {}
-    current_table = None
-    for line in schema_str.splitlines():
-        if line.startswith("Table:"):
-            current_table = line.replace("Table:", "").strip()
-            tables[current_table] = []
-        elif line.startswith("Columns:") and current_table:
-            col_part = line.replace("Columns:", "").strip()
-            tables[current_table] = [
-                c.split("(")[0].strip() for c in col_part.split(",")
-            ]
+    async with MCPClient() as client:
+        tables_json = await client.call_tool("list_tables", {})
+        table_list = json.loads(tables_json)
+        
+        tables = {}
+        for table_entry in table_list:
+            table_name = table_entry["name"]
+            try:
+                details_json = await client.call_tool("describe_table", {"table_name": table_name})
+                details = json.loads(details_json)
+                tables[table_name] = [c["name"] for c in details.get("columns", [])]
+            except Exception:
+                tables[table_name] = []
+                
     return {"tables": tables}
 
 
@@ -127,11 +130,22 @@ async def get_data(req: DataRequest):
     if not req.sql.strip():
         raise HTTPException(status_code=400, detail="SQL cannot be empty.")
 
-    raw = execute_sql_query(req.sql)
-    parsed = json.loads(raw)
+    async with MCPClient() as client:
+        raw = await client.call_tool("execute_sql_query", {"query": req.sql})
+        
+    if raw.startswith("Error"):
+        raise HTTPException(status_code=400, detail=raw)
 
-    if "error" in parsed:
-        raise HTTPException(status_code=400, detail=parsed["error"])
+    try:
+        parsed = json.loads(raw)
+        if "error" in parsed:
+            raise HTTPException(status_code=400, detail=parsed["error"])
+            
+        records = parsed.get("rows", parsed.get("data", []))
+        return {"records": records}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="Failed to parse remote data.")
 
-    return {"records": parsed.get("data", [])}
-
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
