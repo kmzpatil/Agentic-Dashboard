@@ -29,7 +29,20 @@ from orchestrate import build_and_run_pipeline
 from mcp_client import MCPClient
 
 
-app = FastAPI(title="Frammer Analytics API", version="1.0.0")
+from contextlib import asynccontextmanager
+
+# --- Shared MCP Client ---
+shared_mcp_client = MCPClient()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Initialize the shared MCP connection
+    await shared_mcp_client.__aenter__()
+    yield
+    # Shutdown: Cleanly close the connection
+    await shared_mcp_client.__aexit__(None, None, None)
+
+app = FastAPI(title="Frammer Analytics API", version="1.0.0", lifespan=lifespan)
 
 # ── Request / response models ─────────────────────────────────────────────────
 
@@ -68,8 +81,8 @@ async def run_query(req: QueryRequest):
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
 
-    async with MCPClient() as client:
-        result = await build_and_run_pipeline(req.question, client=client)
+    # Use the shared client
+    result = await build_and_run_pipeline(req.question, client=shared_mcp_client)
 
     try:
         # result['chart_json'] is a JSON string containing {question, insights, error, charts}
@@ -93,19 +106,18 @@ async def run_query(req: QueryRequest):
 @app.get("/api/tables")
 async def get_schema():
     """Return the live database schema (table + column list) as JSON."""
-    async with MCPClient() as client:
-        tables_json = await client.call_tool("list_tables", {})
-        table_list = json.loads(tables_json)
-        
-        tables = {}
-        for table_entry in table_list:
-            table_name = table_entry["name"]
-            try:
-                details_json = await client.call_tool("describe_table", {"table_name": table_name})
-                details = json.loads(details_json)
-                tables[table_name] = [c["name"] for c in details.get("columns", [])]
-            except Exception:
-                tables[table_name] = []
+    tables_json = await shared_mcp_client.call_tool("list_tables", {})
+    table_list = json.loads(tables_json)
+    
+    tables = {}
+    for table_entry in table_list:
+        table_name = table_entry["name"]
+        try:
+            details_json = await shared_mcp_client.call_tool("describe_table", {"table_name": table_name})
+            details = json.loads(details_json)
+            tables[table_name] = [c["name"] for c in details.get("columns", [])]
+        except Exception:
+            tables[table_name] = []
                 
     return {"tables": tables}
 
@@ -119,8 +131,7 @@ async def get_data(req: DataRequest):
     if not req.sql.strip():
         raise HTTPException(status_code=400, detail="SQL cannot be empty.")
 
-    async with MCPClient() as client:
-        raw = await client.call_tool("execute_sql_query", {"query": req.sql})
+    raw = await shared_mcp_client.call_tool("execute_sql_query", {"query": req.sql})
         
     if raw.startswith("Error"):
         raise HTTPException(status_code=400, detail=raw)

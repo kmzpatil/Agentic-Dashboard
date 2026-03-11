@@ -357,12 +357,17 @@ async def _process_single_spec(
 
 # --- LangGraph Pipeline -----------------------------------------------------
 
+# --- Global Schema Cache ---
+_SCHEMA_CACHE: str | None = None
+
 async def build_and_run_pipeline(question: str, client: MCPClient) -> AgentState:
     """
     Compile and run the LangGraph pipeline for a single user question.
     Generates one or more charts in parallel, then merges their XMLs.
     All data is fetched through the MCP server via the client.
     """
+    global _SCHEMA_CACHE
+
     # Fetch the tool list from the MCP server once for this pipeline run
     available_tools = await client.list_tools()
     print(f"  -> [MCP Client] {len(available_tools)} tools available from MCP server")
@@ -376,6 +381,11 @@ async def build_and_run_pipeline(question: str, client: MCPClient) -> AgentState
 
     # Node 2 — Fetch live DB schema via MCP tools
     async def get_schema(state: AgentState):
+        global _SCHEMA_CACHE
+        if _SCHEMA_CACHE:
+            logger.info("[Node: get_schema] Using cached database schema.")
+            return {"schema": _SCHEMA_CACHE}
+
         logger.info("[Node: get_schema] Fetching live database schema via MCP server...")
         try:
             tables_json = await client.call_tool("list_tables", {})
@@ -396,6 +406,7 @@ async def build_and_run_pipeline(question: str, client: MCPClient) -> AgentState
                     schema_info += f"\nTable: {table_name}\nColumns: (could not be retrieved)\n"
 
             logger.info(f"  -> Retrieved {len(schema_info)} chars of schema data.")
+            _SCHEMA_CACHE = schema_info
             return {"schema": schema_info}
         except Exception as exc:
             error_msg = f"Error retrieving schema: {exc}"
