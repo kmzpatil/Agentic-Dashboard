@@ -200,8 +200,8 @@ def _generate_sql_for_spec(sub_question: str, schema: str, context: str, error: 
     return raw.strip().strip("```sql").strip("```").strip()
 
 
-def _generate_chart_attrs(sql: str, sub_question: str, records: List[Dict]) -> Dict:
-    """Decide chart type and axes for a single spec using the real column names (synchronous)."""
+async def _generate_chart_attrs(sql: str, sub_question: str, records: List[Dict]) -> Dict:
+    """Decide chart type and axes for a single spec using the real column names (async)."""
     sample_rows = records[:3]
     col_names = list(sample_rows[0].keys()) if sample_rows else []
 
@@ -229,9 +229,11 @@ def _generate_chart_attrs(sql: str, sub_question: str, records: List[Dict]) -> D
         "  title   -- a short, descriptive chart title (max 8 words)\n\n"
         "Return ONLY the JSON object."
     )
-    raw = llm_orchestrator.invoke(
+    # Use ainvoke for true parallelism
+    raw_resp = await llm_orchestrator.ainvoke(
         prompt.format(sql=sql, question=sub_question, col_hint=col_hint)
-    ).content.strip().strip("```json").strip("```").strip()
+    )
+    raw = raw_resp.content.strip().strip("```json").strip("```").strip()
 
     try:
         return json.loads(raw)
@@ -292,7 +294,7 @@ async def _process_single_spec(
         try:
             # Add error feedback if this is a retry
             current_prompt = prompt + (f"\n\nPrevious Error to fix: {spec_error}" if spec_error else "")
-            response = llm_with_sql.invoke([HumanMessage(content=current_prompt)])
+            response = await llm_with_sql.ainvoke([HumanMessage(content=current_prompt)])
             
             if not response.tool_calls:
                 # LLM didn't use the tool, try invoked text if it looks like SQL
@@ -324,7 +326,7 @@ async def _process_single_spec(
                 continue
 
             records = parsed.get("rows", parsed.get("data", []))
-            attrs = _generate_chart_attrs(sql, sub_question, records)
+            attrs = await _generate_chart_attrs(sql, sub_question, records)
             if not attrs.get("type") and spec.get("chart_type_hint"):
                 attrs["type"] = spec["chart_type_hint"]
                 
@@ -391,19 +393,22 @@ async def build_and_run_pipeline(question: str, client: MCPClient) -> AgentState
             tables_json = await client.call_tool("list_tables", {})
             tables = json.loads(tables_json)
 
-            schema_info = "GCData Analytics Database Schema (PostgreSQL / Supabase):\n"
-            for table_entry in tables:
-                table_name = table_entry["name"]
+            schema_info_lines = ["GCData Analytics Database Schema (PostgreSQL / Supabase):\n"]
+            
+            async def get_table_details(table_name):
                 try:
                     details_json = await client.call_tool("describe_table", {"table_name": table_name})
                     details = json.loads(details_json)
-                    cols = ", ".join(
-                        f"{c['name']} ({c['type']})"
-                        for c in details.get("columns", [])
-                    )
-                    schema_info += f"\nTable: {table_name}\nColumns: {cols}\n"
+                    cols = ", ".join(f"{c['name']} ({c['type']})" for c in details.get("columns", []))
+                    return f"\nTable: {table_name}\nColumns: {cols}\n"
                 except Exception:
-                    schema_info += f"\nTable: {table_name}\nColumns: (could not be retrieved)\n"
+                    return f"\nTable: {table_name}\nColumns: (could not be retrieved)\n"
+
+            # Fetch all table details in parallel
+            tasks = [get_table_details(t["name"]) for t in tables]
+            coro_results = await asyncio.gather(*tasks)
+            results: list[str] = [str(r) for r in coro_results]
+            schema_info = "".join(schema_info_lines) + "".join(results)
 
             logger.info(f"  -> Retrieved {len(schema_info)} chars of schema data.")
             _SCHEMA_CACHE = schema_info
@@ -466,19 +471,17 @@ async def build_and_run_pipeline(question: str, client: MCPClient) -> AgentState
         schema  = state.get("schema", "")
         context = state.get("semantic_context", "")
         
-        logger.info(f"\n[Node: generate_all_charts] Processing {len(specs)} chart(s) via MCP server...")
+        logger.info(f"\n[Node: generate_all_charts] Processing {len(specs)} chart(s) in parallel via MCP server...")
 
         if not specs:
             logger.error("  -> ERROR: No specs to process.")
             return {"chart_specs": [], "error": "No chart specs were produced."}
 
-        # Process specs sequentially since they share a single MCP client session
-        completed = []
-        for spec in specs:
-            result = await _process_single_spec(client, spec, schema, context, available_tools)
-            completed.append(result)
+        # Process ALL specs concurrently
+        tasks = [_process_single_spec(client, spec, schema, context, available_tools) for spec in specs]
+        completed = await asyncio.gather(*tasks)
 
-        logger.info("  -> All chart tasks completed.")
+        logger.info("  -> All parallel chart tasks completed.")
         return {"chart_specs": completed}
 
     # Node 5 — Format all chart results into the requested JSON structure

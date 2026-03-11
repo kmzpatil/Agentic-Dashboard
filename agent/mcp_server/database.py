@@ -25,6 +25,9 @@ class DatabaseClient:
     def __init__(self, database_url: str, default_schema: str) -> None:
         self.database_url = database_url
         self.default_schema = default_schema
+        self._table_names: dict[str, list[str]] = {}
+        self._view_names: dict[str, list[str]] = {}
+        self._column_details: dict[str, list[dict[str, Any]]] = {}
 
     @cached_property
     def engine(self) -> Engine:
@@ -41,6 +44,24 @@ class DatabaseClient:
 
     def _inspector(self):
         return inspect(self.engine)
+
+    def _get_table_names(self, schema: str | None) -> list[str]:
+        target = schema or "None"
+        if target not in self._table_names:
+            self._table_names[target] = self._inspector().get_table_names(schema=schema)
+        return self._table_names[target]
+
+    def _get_view_names(self, schema: str | None) -> list[str]:
+        target = schema or "None"
+        if target not in self._view_names:
+            self._view_names[target] = self._inspector().get_view_names(schema=schema)
+        return self._view_names[target]
+
+    def _get_columns(self, table_name: str, schema: str | None) -> list[dict[str, Any]]:
+        key = f"{schema or 'None'}.{table_name}"
+        if key not in self._column_details:
+            self._column_details[key] = self._inspector().get_columns(table_name, schema=schema)
+        return self._column_details[key]
 
     def _resolve_schema(self, schema: str | None) -> str | None:
         if schema:
@@ -74,9 +95,8 @@ class DatabaseClient:
 
     def get_database_overview(self, schema: str | None = None) -> dict[str, Any]:
         target_schema = self._resolve_schema(schema)
-        inspector = self._inspector()
-        table_names = inspector.get_table_names(schema=target_schema)
-        view_names = inspector.get_view_names(schema=target_schema)
+        table_names = self._get_table_names(schema=target_schema)
+        view_names = self._get_view_names(schema=target_schema)
 
         return {
             "dialect": self.dialect_name,
@@ -88,9 +108,7 @@ class DatabaseClient:
                 {
                     "name": table_name,
                     "schema": target_schema,
-                    "column_count": len(
-                        inspector.get_columns(table_name, schema=target_schema)
-                    ),
+                    "column_count": len(self._get_columns(table_name, schema=target_schema)),
                 }
                 for table_name in table_names
             ],
@@ -102,30 +120,27 @@ class DatabaseClient:
 
     def list_tables(self, schema: str | None = None) -> list[dict[str, Any]]:
         target_schema = self._resolve_schema(schema)
-        inspector = self._inspector()
+        table_names = self._get_table_names(schema=target_schema)
+        view_names = self._get_view_names(schema=target_schema)
         resources: list[dict[str, Any]] = []
 
-        for table_name in inspector.get_table_names(schema=target_schema):
+        for table_name in table_names:
             resources.append(
                 {
                     "name": table_name,
                     "schema": target_schema,
                     "kind": "table",
-                    "column_count": len(
-                        inspector.get_columns(table_name, schema=target_schema)
-                    ),
+                    "column_count": len(self._get_columns(table_name, schema=target_schema)),
                 }
             )
 
-        for view_name in inspector.get_view_names(schema=target_schema):
+        for view_name in view_names:
             resources.append(
                 {
                     "name": view_name,
                     "schema": target_schema,
                     "kind": "view",
-                    "column_count": len(
-                        inspector.get_columns(view_name, schema=target_schema)
-                    ),
+                    "column_count": len(self._get_columns(view_name, schema=target_schema)),
                 }
             )
 
@@ -133,15 +148,15 @@ class DatabaseClient:
 
     def describe_table(self, table_name: str, schema: str | None = None) -> dict[str, Any]:
         target_schema = self._resolve_schema(schema)
-        inspector = self._inspector()
-        available_tables = set(inspector.get_table_names(schema=target_schema))
-        available_views = set(inspector.get_view_names(schema=target_schema))
+        available_tables = self._get_table_names(schema=target_schema)
+        available_views = self._get_view_names(schema=target_schema)
 
         if table_name not in available_tables and table_name not in available_views:
             raise ValueError(
                 f"Table or view '{table_name}' was not found in schema '{target_schema}'."
             )
 
+        inspector = self._inspector()
         return {
             "name": table_name,
             "schema": target_schema,
@@ -155,7 +170,7 @@ class DatabaseClient:
                     if column.get("default") is not None
                     else None,
                 }
-                for column in inspector.get_columns(table_name, schema=target_schema)
+                for column in self._get_columns(table_name, schema=target_schema)
             ],
             "primary_key": inspector.get_pk_constraint(
                 table_name, schema=target_schema

@@ -16,7 +16,7 @@ class DatabaseToolModule:
 
     def register(self, mcp: FastMCP) -> None:
         @mcp.tool()
-        def get_database_overview(schema: str | None = None) -> str:
+        async def get_database_overview(schema: str | None = None) -> str:
             """Return a compact overview of the connected database, schema, tables, and views."""
             try:
                 overview = self.db.get_database_overview(schema=schema)
@@ -25,7 +25,7 @@ class DatabaseToolModule:
             return json.dumps(overview, indent=2, default=str)
 
         @mcp.tool()
-        def list_tables(schema: str | None = None) -> str:
+        async def list_tables(schema: str | None = None) -> str:
             """List tables and views available to the agent in the configured database schema."""
             try:
                 tables = self.db.list_tables(schema=schema)
@@ -34,7 +34,7 @@ class DatabaseToolModule:
             return json.dumps(tables, indent=2, default=str)
 
         @mcp.tool()
-        def describe_table(table_name: str, schema: str | None = None) -> str:
+        async def describe_table(table_name: str, schema: str | None = None) -> str:
             """Describe a table or view, including columns, primary keys, and foreign keys."""
             try:
                 table_details = self.db.describe_table(table_name, schema=schema)
@@ -43,7 +43,7 @@ class DatabaseToolModule:
             return json.dumps(table_details, indent=2, default=str)
 
         @mcp.tool()
-        def preview_table(
+        async def preview_table(
             table_name: str,
             schema: str | None = None,
             limit: int | None = None,
@@ -72,7 +72,7 @@ class DatabaseToolModule:
             return json.dumps(payload, indent=2, default=str)
 
         @mcp.tool()
-        def execute_sql_query(query: str, limit: int | None = None) -> str:
+        async def execute_sql_query(query: str, limit: int | None = None) -> str:
             """Execute a read-only SQL query and return JSON rows capped by the requested limit."""
             safe_limit = self.db.normalise_limit(
                 limit,

@@ -15,6 +15,7 @@ Usage:
 """
 
 import json
+import asyncio
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -110,14 +111,22 @@ async def get_schema():
     table_list = json.loads(tables_json)
     
     tables = {}
-    for table_entry in table_list:
-        table_name = table_entry["name"]
+    
+    async def fetch_table_columns(table_name):
         try:
             details_json = await shared_mcp_client.call_tool("describe_table", {"table_name": table_name})
             details = json.loads(details_json)
-            tables[table_name] = [c["name"] for c in details.get("columns", [])]
+            return table_name, [c["name"] for c in details.get("columns", [])]
         except Exception:
-            tables[table_name] = []
+            return table_name, []
+
+    # Fetch all table columns in parallel
+    tasks = [fetch_table_columns(t["name"]) for t in table_list]
+    results = await asyncio.gather(*tasks)
+    
+    for item in results:
+        t_name, cols = item
+        tables[t_name] = cols
                 
     return {"tables": tables}
 
