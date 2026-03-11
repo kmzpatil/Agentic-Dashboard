@@ -267,3 +267,90 @@ def generate_plotly_chart(
         return _build_dashboard_xml(df, attrs, chart_title, chart_type, x_col, y_cols)
     except Exception as exc:
         return json.dumps({"error": f"XML generation failed: {exc}"})
+
+
+def generate_chart_config(
+    data_records: List[Dict[str, Any]],
+    chart_attributes: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Build and return a Chart.js-compatible JSON configuration object.
+    
+    Args:
+        data_records:     List of data rows as dicts.
+        chart_attributes: Dict with keys: type, x_axis, y_axis, title.
+        
+    Returns:
+        A dict matching common Chart.js JSON structures.
+    """
+    df = _df_from_records(data_records)
+    if df.empty:
+        return {"error": "No data to plot"}
+
+    df = df.fillna(0)
+    attrs = chart_attributes or {}
+
+    # Resolve columns
+    x_col = attrs.get("x_axis") or df.columns[0]
+    if x_col not in df.columns:
+        x_col = df.columns[0]
+    
+    y_cols = _resolve_y_cols(attrs, df, x_col)
+    if not y_cols:
+        return {"error": "No numeric columns for Y axis"}
+
+    chart_type = attrs.get("type", "bar").lower()
+    # Normalize chart types for Chart.js
+    if "bar" in chart_type:
+        chart_type = "bar"
+    elif "pie" in chart_type or "donut" in chart_type:
+        chart_type = "pie" # Chart.js uses 'pie' or 'doughnut'
+    elif "line" in chart_type:
+        chart_type = "line"
+    else:
+        chart_type = "bar"
+
+    title = attrs.get("title") or "Chart"
+
+    # Build Chart.js structure
+    labels = [str(val) for val in df[x_col].tolist()]
+    datasets = []
+    
+    # Simple color palette matching the frontend PALETTES
+    colors = [
+        '#58a6ff', '#bc8cff', '#39d353', '#f78166', '#ffc400', '#f85149'
+    ]
+
+    for i, y_col in enumerate(y_cols):
+        dataset = {
+            "label": y_col.replace("_", " ").title(),
+            "data": df[y_col].tolist(),
+            "backgroundColor": colors[i % len(colors)],
+            "borderColor": colors[i % len(colors)],
+            "borderWidth": 1
+        }
+        datasets.append(dataset)
+
+    config = {
+        "type": chart_type,
+        "x_axis": x_col,
+        "y_axis": y_cols,
+        "data": {
+            "labels": labels,
+            "datasets": datasets
+        },
+        "options": {
+            "responsive": True,
+            "plugins": {
+                "title": {
+                    "display": True,
+                    "text": title
+                },
+                "legend": {
+                    "display": len(datasets) > 1
+                }
+            }
+        }
+    }
+    
+    return config

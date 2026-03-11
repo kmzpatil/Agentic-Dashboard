@@ -52,7 +52,7 @@ from langgraph.graph import END, StateGraph
 
 # Local tools that don't need the MCP server
 from tools.metric_definitions import retrieve_metric_definitions
-from tools.chart import generate_plotly_chart
+from tools.chart import generate_plotly_chart, generate_chart_config
 
 # MCP client for communicating with mcp_server via stdio
 import sys
@@ -85,7 +85,7 @@ class AgentState(TypedDict, total=False):
     semantic_context:  str           
     schema:            str           
     chart_specs:       List[ChartSpec]    
-    chart_json:        str           
+    chart_json:        str           # This will now contain the JSON structure
     insights:          str           
     error:             str           
 
@@ -175,16 +175,24 @@ def _normalise_tool_result(raw: str) -> list:
 def _generate_sql_for_spec(sub_question: str, schema: str, context: str, error: str = "") -> str:
     """Generate a PostgreSQL SELECT query for a single chart spec (synchronous)."""
     prompt = PromptTemplate.from_template(
+        "You are a PostgreSQL expert.\n\n"
         "Database Schema:\n{schema}\n\n"
         "Business Metric Definitions: {context}\n\n"
-        "Previous Error (fix this if present): {error}\n\n"
+        "Previous Error (if any): {error}\n\n"
         "Question: {question}\n\n"
         "Write a valid PostgreSQL SELECT query to answer the question.\n"
         "CRITICAL RULES:\n"
         "1. ONLY use EXACT table and column names from the Database Schema above.\n"
-        "2. DO NOT guess table names. Do not drop plurals "
-        "(e.g. use 'channel_metrics', NOT 'channel_metric').\n"
-        "3. Return ONLY the raw SQL query string — no markdown fences, no formatting, no explanation."
+        "2. DO NOT guess table names. Never drop plurals (e.g. use 'channel_metrics', NOT 'channel_metric').\n"
+        "3. If multiple tables are needed, JOIN them correctly.\n"
+        "4. Return ONLY the raw SQL query string — no markdown fences, no formatting, no explanation.\n\n"
+        "Example 1:\n"
+        "Question: How many total views in channel_metrics?\n"
+        "SQL: SELECT SUM(facebook + instagram + linkedin + reels + shorts + x + youtube + threads) FROM channel_metrics\n\n"
+        "Example 2:\n"
+        "Question: Top 5 channels by youtube views?\n"
+        "SQL: SELECT channels, youtube FROM channel_metrics ORDER BY youtube DESC LIMIT 5\n\n"
+        "Your SQL Query:"
     )
     raw = llm_orchestrator.invoke(
         prompt.format(schema=schema, context=context, error=error, question=sub_question)
@@ -243,45 +251,9 @@ async def _fetch_data_via_mcp(
     Executes the chosen tool via the MCP client and returns (records, tool_ref).
     Falls back to raw SQL if no tool call is made or the tool returns nothing.
     """
-    # Build LangChain-compatible tool schemas for bind_tools dynamically
-    from langchain_core.tools import StructuredTool
-
-    # Filter to domain tools only (not generic DB tools) for LLM selection
-    domain_tool_schemas = [t for t in available_tools if t["name"] in MCP_DOMAIN_TOOLS]
-    # Also include execute_sql_query as a last-resort option
-    sql_tool_schema = [t for t in available_tools if t["name"] == "execute_sql_query"]
-    tool_schemas = domain_tool_schemas + sql_tool_schema
-
-    tool_names = [t["name"] for t in tool_schemas]
-
-    prompt = (
-        f"Database schema:\n{schema}\n\n"
-        f"Business context:\n{context}\n\n"
-        f"Question: {sub_question}\n\n"
-        "You MUST call ONE of the available tools to fetch data for this question.\n"
-        f"Available tools: {', '.join(tool_names)}\n\n"
-        "RULES:\n"
-        "1. ALWAYS prefer domain tools (e.g. get_top_channels_by_platform, get_monthly_trend).\n"
-        "2. Only use execute_sql_query as an absolute last resort if NO other tool works."
-    )
-
-    # Bind MCP tool schemas to the LLM for tool calling
-    llm_with_tools = llm_orchestrator.bind_tools(tool_schemas)
-    response = llm_with_tools.invoke([HumanMessage(content=prompt)])
-
-    if response.tool_calls:
-        call = response.tool_calls[0]
-        tool_name = call["name"]
-        tool_args = call.get("args", {})
-
-        if tool_name in tool_names:
-            logger.info(f"  -> [MCP Client] Calling tool: {tool_name}({tool_args})")
-            raw = await client.call_tool(tool_name, tool_args)
-            records = _normalise_tool_result(raw)
-            if records:
-                return records, f"tool:{tool_name}"
-
     # Fallback: generate and execute raw SQL
+    # NOTE: We disabled domain tools to ensure we always get a transparent SQL query
+    # which the user specifically requested to see in the 'sql' field.
     return None, None
 
 
@@ -293,55 +265,94 @@ async def _process_single_spec(
     available_tools: list[dict],
 ) -> Dict:
     """
-    Run the MCP-tool-first pipeline for a single chart spec:
-      1. Try the most appropriate MCP tool via LLM tool-calling.
-      2. Fall back to SQL generation + execution via MCP (with up to 3 retries).
-      3. Generate chart attributes and chart XML from the result data.
-    Returns the spec dict enriched with records, chart_attrs, and chart_xml.
+    Generate and execute raw SQL for a single chart spec.
     """
     sub_question = spec.get("sub_question", "")
-
-    # ── Step 1: Try MCP tool calling ──────────────────────────────────────────
-    records, ref = await _fetch_data_via_mcp(client, sub_question, schema, context, available_tools)
-
-    if records:
-        attrs = _generate_chart_attrs(ref, sub_question, records)
-        if not attrs.get("type") and spec.get("chart_type_hint"):
-            attrs["type"] = spec["chart_type_hint"]
-        chart_xml = generate_plotly_chart(data_records=records, chart_attributes=attrs) if records else ""
-        logger.info("   [MCP TOOL] %s  ->  %d rows", ref, len(records))
-        return {**spec, "sql_query": ref, "records": records, "chart_attrs": attrs, "chart_xml": chart_xml}
-
-    # ── Step 2: SQL fallback via MCP execute_sql_query tool ───────────────────
+    
+    # We use bind_tools to force the LLM to think in terms of a tool call
+    # which usually results in much better SQL/parameter accuracy.
+    sql_tool_schema = [t for t in available_tools if t["name"] == "execute_sql_query"]
+    llm_with_sql = llm_orchestrator.bind_tools(sql_tool_schema)
+    
+    prompt = (
+        f"Database schema:\n{schema}\n\n"
+        f"Business context:\n{context}\n\n"
+        f"Question: {sub_question}\n\n"
+        "You MUST generate a PostgreSQL query to answer this question.\n"
+        "RULES:\n"
+        "1. ONLY use EXACT table and column names from the Database Schema above.\n"
+        "2. DO NOT guess table names. Never drop plurals (e.g. use 'channel_metrics', NOT 'channel_metric').\n"
+        "3. Use execute_sql_query to run your query."
+    )
+    
     spec_error = ""
+    last_sql = ""
+    
     for _attempt in range(3):
-        sql = _generate_sql_for_spec(sub_question, schema, context, error=spec_error)
-        logger.info("  -> [MCP Client] SQL fallback attempt %d: %s...", _attempt + 1, sql[:80])
-        raw_result = await client.call_tool("execute_sql_query", {"query": sql})
+        try:
+            # Add error feedback if this is a retry
+            current_prompt = prompt + (f"\n\nPrevious Error to fix: {spec_error}" if spec_error else "")
+            response = llm_with_sql.invoke([HumanMessage(content=current_prompt)])
+            
+            if not response.tool_calls:
+                # LLM didn't use the tool, try invoked text if it looks like SQL
+                sql = response.content.strip().strip("```sql").strip("```").strip()
+                if "SELECT" not in sql.upper():
+                    spec_error = "LLM failed to generate a SELECT query."
+                    continue
+            else:
+                call = response.tool_calls[0]
+                sql = call.get("args", {}).get("query", "")
+            
+            if not sql:
+                spec_error = "Empty SQL generated."
+                continue
+                
+            last_sql = sql
+            logger.info("  -> [MCP Client] SQL attempt %d: %s...", _attempt + 1, sql[:80])
+            raw_result = await client.call_tool("execute_sql_query", {"query": sql})
 
-        # MCP server's execute_sql_query returns JSON with "rows" key on success
-        # or a string starting with "Error:" on failure
-        if raw_result.startswith("Error"):
-            spec_error = raw_result
+            if raw_result.startswith("Error"):
+                spec_error = raw_result
+                logger.error(f"   [MCP SQL ERROR] {spec_error}")
+                continue
+
+            parsed = json.loads(raw_result)
+            if "error" in parsed:
+                spec_error = parsed["error"]
+                logger.error(f"   [MCP SQL ERROR] {spec_error}")
+                continue
+
+            records = parsed.get("rows", parsed.get("data", []))
+            attrs = _generate_chart_attrs(sql, sub_question, records)
+            if not attrs.get("type") and spec.get("chart_type_hint"):
+                attrs["type"] = spec["chart_type_hint"]
+                
+            chart_config = generate_chart_config(data_records=records, chart_attributes=attrs) if records else {}
+            
+            logger.info("   [MCP SQL OK]  ->  %d rows", len(records))
+            return {
+                **spec, 
+                "sql_query": sql, 
+                "records": records, 
+                "chart_attrs": attrs, 
+                "chart_config": chart_config
+            }
+        except Exception as e:
+            spec_error = str(e)
+            logger.error(f"   [MCP SQL SYSTEM ERROR] {spec_error}")
             continue
-
-        parsed = json.loads(raw_result)
-
-        if "error" in parsed:
-            spec_error = parsed["error"]
-            continue
-
-        records = parsed.get("rows", parsed.get("data", []))
-        attrs = _generate_chart_attrs(sql, sub_question, records)
-        if not attrs.get("type") and spec.get("chart_type_hint"):
-            attrs["type"] = spec["chart_type_hint"]
-        chart_xml = generate_plotly_chart(data_records=records, chart_attributes=attrs) if records else ""
-        logger.info("   [MCP SQL FALLBACK]  ->  %d rows", len(records))
-        return {**spec, "sql_query": sql, "records": records, "chart_attrs": attrs, "chart_xml": chart_xml}
 
     # All retries exhausted
-    logger.warning("   [MCP SQL FALLBACK] FAILED after 3 retries")
-    return {**spec, "sql_query": "", "records": [], "chart_attrs": {}, "chart_xml": "", "sql_error": spec_error}
+    logger.warning("   [MCP SQL] FAILED after 3 retries")
+    return {
+        **spec, 
+        "sql_query": last_sql, 
+        "records": [], 
+        "chart_attrs": {}, 
+        "chart_config": {}, 
+        "sql_error": spec_error
+    }
 
 
 # --- LangGraph Pipeline -----------------------------------------------------
@@ -459,20 +470,42 @@ async def build_and_run_pipeline(question: str, client: MCPClient) -> AgentState
         logger.info("  -> All chart tasks completed.")
         return {"chart_specs": completed}
 
-    # Node 5 — Merge all XML outputs into one consistent dashboard
-    def merge_xml(state: AgentState):
+    # Node 5 — Format all chart results into the requested JSON structure
+    def format_json_output(state: AgentState):
         specs = state.get("chart_specs", [])
-        logger.info(f"\n[Node: merge_xml] Merging {len(specs)} chart XMLs into single dashboard...")
-        xml_strings = [s.get("chart_xml", "") for s in specs]
-        valid_xmls  = [x for x in xml_strings if x and x.strip().startswith("<?xml")]
+        logger.info(f"\n[Node: format_json_output] Formatting {len(specs)} chart(s) into JSON...")
+        
+        charts_output = []
+        for spec in specs:
+            config = spec.get("chart_config", {}).copy()
+            
+            # Strip actual data from the config as requested
+            if "data" in config:
+                config["data"] = config["data"].copy()
+                config["data"]["labels"] = []
+                if "datasets" in config["data"]:
+                    new_datasets = []
+                    for ds in config["data"]["datasets"]:
+                        ds_copy = ds.copy()
+                        ds_copy["data"] = []
+                        new_datasets.append(ds_copy)
+                    config["data"]["datasets"] = new_datasets
 
-        if not valid_xmls:
-            logger.error("  -> ERROR: No valid XML charts generated.")
-            return {"chart_json": "{}"}
-
-        merged = _merge_dashboard_xmls(valid_xmls, title=state.get("question", "Dashboard"))
-        logger.info(f"  -> Successfully merged {len(valid_xmls)} XMLs.")
-        return {"chart_json": merged}
+            charts_output.append({
+                "title": spec.get("chart_attrs", {}).get("title", "Chart") or spec.get("sub_question"),
+                "sql": spec.get("sql_query", ""),
+                "config": config,
+                "error": spec.get("sql_error", "")
+            })
+        
+        output_data = {
+            "question": state.get("question", ""),
+            "insights": state.get("insights", ""),
+            "error": state.get("error", ""),
+            "charts": charts_output
+        }
+        
+        return {"chart_json": json.dumps(output_data, indent=2)}
 
     # Node 6 — Generate holistic insights across ALL chart data (uses Analyst LLM)
     def generate_insights(state: AgentState):
@@ -531,7 +564,7 @@ async def build_and_run_pipeline(question: str, client: MCPClient) -> AgentState
     workflow.add_node("get_schema",          get_schema)
     workflow.add_node("decompose_question",  decompose_question)
     workflow.add_node("generate_all_charts", generate_all_charts)
-    workflow.add_node("merge_xml",           merge_xml)
+    workflow.add_node("format_json_output",  format_json_output)
     workflow.add_node("generate_insights",   generate_insights)
     workflow.add_node("handle_error",        handle_error)
 
@@ -543,9 +576,9 @@ async def build_and_run_pipeline(question: str, client: MCPClient) -> AgentState
         route_after_decompose,
         {"generate_all_charts": "generate_all_charts", "handle_error": "handle_error"},
     )
-    workflow.add_edge("generate_all_charts", "merge_xml")
-    workflow.add_edge("merge_xml",           "generate_insights")
-    workflow.add_edge("generate_insights",   END)
+    workflow.add_edge("generate_all_charts", "generate_insights")
+    workflow.add_edge("generate_insights",   "format_json_output")
+    workflow.add_edge("format_json_output",  END)
     workflow.add_edge("handle_error",        END)
 
     app = workflow.compile()
@@ -607,19 +640,20 @@ async def run_agent():
                 print("\nInsights:")
                 print(result["insights"])
 
-                chart = result.get("chart_json", "")
-                if chart and chart.strip().startswith("<?xml"):
+                chart_json_str = result.get("chart_json", "")
+                if chart_json_str and not chart_json_str.strip().startswith("<?xml"):
+                    print("\nFinal Output (JSON):")
+                    print(chart_json_str)
+                    
+                    # Also save to file for inspection
+                    with open("agent_output.json", "w", encoding="utf-8") as f:
+                        f.write(chart_json_str)
+                    print(f"\nOutput saved to agent_output.json")
+                elif chart_json_str.strip().startswith("<?xml"):
                     chart_path = "chart_output.xml"
                     with open(chart_path, "w", encoding="utf-8") as f:
-                        f.write(chart)
+                        f.write(chart_json_str)
                     print(f"\nDashboard XML saved to {chart_path}")
-                elif chart and chart not in ("{}", ""):
-                    try:
-                        chart_obj = json.loads(chart)
-                        if "error" in chart_obj:
-                            print(f"\nChart warning: {chart_obj['error']}")
-                    except json.JSONDecodeError:
-                        pass
 
             except Exception as exc:
                 print(f"\nAgent error: {exc}")

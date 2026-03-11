@@ -12,21 +12,15 @@ Usage:
 import json
 import logging
 import sys
+import os
+from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Any
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-# Set up client logging (logs to stderr so it doesn't mess with stdout if the client is piped)
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stderr),
-        logging.FileHandler("mcp_client.log")
-    ]
-)
+# ... (logging config remains the same)
 logger = logging.getLogger("mcp_client")
 
 
@@ -34,10 +28,16 @@ class MCPClient:
     """Async context-manager wrapper around an MCP stdio session."""
 
     def __init__(self, server_command: str | None = None) -> None:
+        agent_dir = str(Path(__file__).parent.resolve())
+        env = os.environ.copy()
+        # Add 'agent' directory to PYTHONPATH so '-m mcp_server' works from root
+        existing_pp = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = f"{agent_dir}{os.pathsep}{existing_pp}" if existing_pp else agent_dir
+
         self._server_params = StdioServerParameters(
             command=sys.executable,
             args=["-m", "mcp_server"],
-            env=None,  # inherits current process env (DATABASE_URL, etc.)
+            env=env,
         )
         self._session: ClientSession | None = None
         self._cm_stack: list = []

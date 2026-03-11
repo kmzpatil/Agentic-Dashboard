@@ -43,11 +43,9 @@ class DataRequest(BaseModel):
 
 class QueryResponse(BaseModel):
     question:   str
-    sql:        str          # First chart's SQL (for display in the UI)
-    xml:        str          # Merged dashboard XML
     insights:   str
     error:      str
-    chart_data: dict         # Map of widget title -> list of data records
+    charts:     list         # List of structured chart objects (title, sql, config)
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -64,8 +62,8 @@ async def serve_dashboard():
 @app.post("/api/query", response_model=QueryResponse)
 async def run_query(req: QueryRequest):
     """
-    Run the full NLQ -> SQL -> XML pipeline for a given question.
-    Returns the merged XML, per-chart data records, LLM insights, and SQLs.
+    Run the full NLQ -> SQL -> JSON pipeline for a given question.
+    Returns the structured JSON with insights and charts.
     """
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
@@ -73,32 +71,23 @@ async def run_query(req: QueryRequest):
     async with MCPClient() as client:
         result = await build_and_run_pipeline(req.question, client=client)
 
-    specs = result.get("chart_specs", [])
-
-    # Build a chart_title -> records map.
-    # The key MUST match the XML <row label=...> which chart.py sets to
-    # chart_attributes['title']. We also add sub_question as a fallback key.
-    chart_data: dict = {}
-    first_sql = ""
-    for i, spec in enumerate(specs):
-        chart_title  = spec.get("chart_attrs", {}).get("title", "")
-        sub_question = spec.get("sub_question", f"Chart {i+1}")
-        records      = spec.get("records", [])
-        # Register under both keys so the frontend JS can find it either way
-        if chart_title:
-            chart_data[chart_title] = records
-        chart_data[sub_question] = records
-        if i == 0:
-            first_sql = spec.get("sql_query", "")
-
-    return QueryResponse(
-        question=req.question,
-        sql=first_sql,
-        xml=result.get("chart_json", ""),
-        insights=result.get("insights", ""),
-        error=result.get("error", ""),
-        chart_data=jsonable_encoder(chart_data),
-    )
+    try:
+        # result['chart_json'] is a JSON string containing {question, insights, error, charts}
+        output = json.loads(result.get("chart_json", "{}"))
+        
+        return QueryResponse(
+            question=output.get("question", req.question),
+            insights=output.get("insights", ""),
+            error=output.get("error", ""),
+            charts=output.get("charts", []),
+        )
+    except json.JSONDecodeError:
+        return QueryResponse(
+            question=req.question,
+            insights=result.get("insights", ""),
+            error="Failed to parse agent output.",
+            charts=[]
+        )
 
 
 @app.get("/api/tables")
