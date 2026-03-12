@@ -1,49 +1,48 @@
 """
 api_server.py
 ─────────────
-FastAPI server that exposes the Frammer analytics agent as a web API and
+FastAPI server that exposes the GCData analytics agent as a web API and
 serves an HTML dashboard that visualises live query results.
+
+Uses direct DatabaseClient access — no MCP subprocess needed.
 
 Endpoints:
   GET  /                → serve the dashboard HTML
-  POST /api/query       → run the NLQ → SQL → XML pipeline; return results
+  POST /api/query       → run the NLQ → SQL → JSON pipeline; return results
   GET  /api/tables      → return live schema (table + column list)
+  POST /api/data        → execute raw SQL query, return records
 
 Usage:
   pip install -r requirements.txt
-  uvicorn api_server:app --reload --port 8000
+  python api_server.py
 """
 
 import json
-import asyncio
 from pathlib import Path
 
 from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI, HTTPException
-from fastapi.encoders import jsonable_encoder
 from fastapi.responses import HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from orchestrate import build_and_run_pipeline
-from mcp_client import MCPClient
+from db import get_db, db_list_tables, db_describe_table, db_execute_query
 
 
-from contextlib import asynccontextmanager
+app = FastAPI(title="GCData Analytics API", version="2.0.0")
 
-# --- Shared MCP Client ---
-shared_mcp_client = MCPClient()
+# CORS — allow frontend dev server
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup: Initialize the shared MCP connection
-    await shared_mcp_client.__aenter__()
-    yield
-    # Shutdown: Cleanly close the connection
-    await shared_mcp_client.__aexit__(None, None, None)
-
-app = FastAPI(title="Frammer Analytics API", version="1.0.0", lifespan=lifespan)
 
 # ── Request / response models ─────────────────────────────────────────────────
 
@@ -82,13 +81,12 @@ async def run_query(req: QueryRequest):
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
 
-    # Use the shared client
-    result = await build_and_run_pipeline(req.question, client=shared_mcp_client)
+    db = get_db()
+    result = await build_and_run_pipeline(req.question, db=db)
 
     try:
-        # result['chart_json'] is a JSON string containing {question, insights, error, charts}
         output = json.loads(result.get("chart_json", "{}"))
-        
+
         return QueryResponse(
             question=output.get("question", req.question),
             insights=output.get("insights", ""),
@@ -100,34 +98,24 @@ async def run_query(req: QueryRequest):
             question=req.question,
             insights=result.get("insights", ""),
             error="Failed to parse agent output.",
-            charts=[]
+            charts=[],
         )
 
 
 @app.get("/api/tables")
 async def get_schema():
     """Return the live database schema (table + column list) as JSON."""
-    tables_json = await shared_mcp_client.call_tool("list_tables", {})
-    table_list = json.loads(tables_json)
-    
-    tables = {}
-    
-    async def fetch_table_columns(table_name):
-        try:
-            details_json = await shared_mcp_client.call_tool("describe_table", {"table_name": table_name})
-            details = json.loads(details_json)
-            return table_name, [c["name"] for c in details.get("columns", [])]
-        except Exception:
-            return table_name, []
+    table_list = db_list_tables()
 
-    # Fetch all table columns in parallel
-    tasks = [fetch_table_columns(t["name"]) for t in table_list]
-    results = await asyncio.gather(*tasks)
-    
-    for item in results:
-        t_name, cols = item
-        tables[t_name] = cols
-                
+    tables = {}
+    for t in table_list:
+        t_name = t["name"]
+        try:
+            details = db_describe_table(t_name)
+            tables[t_name] = [c["name"] for c in details.get("columns", [])]
+        except Exception:
+            tables[t_name] = []
+
     return {"tables": tables}
 
 
@@ -140,20 +128,13 @@ async def get_data(req: DataRequest):
     if not req.sql.strip():
         raise HTTPException(status_code=400, detail="SQL cannot be empty.")
 
-    raw = await shared_mcp_client.call_tool("execute_sql_query", {"query": req.sql})
-        
-    if raw.startswith("Error"):
-        raise HTTPException(status_code=400, detail=raw)
+    result = db_execute_query(req.sql)
 
-    try:
-        parsed = json.loads(raw)
-        if "error" in parsed:
-            raise HTTPException(status_code=400, detail=parsed["error"])
-            
-        records = parsed.get("rows", parsed.get("data", []))
-        return {"records": records}
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail="Failed to parse remote data.")
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+    return {"records": result.get("rows", [])}
+
 
 if __name__ == "__main__":
     import uvicorn

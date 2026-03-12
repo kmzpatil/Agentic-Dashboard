@@ -1,10 +1,9 @@
 """
 Tool: retrieve_metric_definitions
-Simulates a semantic/vector search layer over business metric definitions.
-Used to look up exact formulas and definitions before generating SQL.
+Retrieves business metric definitions by matching user queries against
+known table/domain terms using word-overlap scoring.
 """
 
-# Dictionary extracted directly from GC_DATA_SCHEMA.sql
 METRIC_DICTIONARY: dict[str, str] = {
     "channel_metrics": "Table `channel_metrics` contains metrics across columns: channels, facebook, instagram, linkedin, reels, shorts, x, youtube, threads, facebook_duration, instagram_duration, linkedin_duration, reels_duration, shorts_duration, x_duration, youtube_duration, threads_duration",
     "input_type_metrics": "Table `input_type_metrics` contains metrics across columns: input_type, uploaded_count, created_count, published_count, uploaded_duration, created_duration, published_duration",
@@ -14,27 +13,48 @@ METRIC_DICTIONARY: dict[str, str] = {
     "video_list_data": "Table `video_list_data` contains metrics across columns: headline, source, published, team_name, type, uploaded_by, video_id, published_platform, published_url",
 }
 
+# Expanded keyword aliases to improve matching
+_KEYWORD_ALIASES: dict[str, list[str]] = {
+    "channel_metrics": ["channel", "channels", "platform", "facebook", "instagram", "youtube", "linkedin", "reels", "shorts", "threads", "social", "media", "posts"],
+    "input_type_metrics": ["input", "type", "upload", "create", "publish"],
+    "language_statistics": ["language", "languages", "hindi", "english", "marathi", "telugu"],
+    "monthly_counts_duration": ["month", "monthly", "trend", "time", "duration", "count", "total", "uploaded", "created", "published"],
+    "output_type_statistics": ["output", "type", "format"],
+    "video_list_data": ["video", "videos", "team", "headline", "source", "uploaded_by", "platform", "url"],
+}
+
 
 def retrieve_metric_definitions(search_term: str) -> str:
     """
-    Return matching business metric definitions for the given search term.
+    Return matching business metric definitions using word-overlap scoring.
 
     Args:
-        search_term: A natural-language keyword or phrase (e.g. 'conversion rate').
+        search_term: A natural-language keyword or phrase.
 
     Returns:
         A pipe-separated string of matched definitions, or a fallback message.
     """
-    results = [
-        desc
-        for term, desc in METRIC_DICTIONARY.items()
-        if term in search_term.lower()
-    ]
-    if results:
-        return " | ".join(results)
+    query_words = set(search_term.lower().replace("_", " ").split())
 
-    # Fallback: if no specific term matches, return a summary of all available domains
-    # so the LLM knows what tables it can query.
+    scores: list[tuple[float, str]] = []
+    for table_key, description in METRIC_DICTIONARY.items():
+        # Score by overlap with both the table key and alias keywords
+        key_words = set(table_key.replace("_", " ").split())
+        alias_words = set(_KEYWORD_ALIASES.get(table_key, []))
+        all_match_words = key_words | alias_words
+
+        overlap = query_words & all_match_words
+        if overlap:
+            score = len(overlap) / max(len(query_words), 1)
+            scores.append((score, description))
+
+    if scores:
+        # Return all matches above 0.1 threshold, best first
+        scores.sort(key=lambda x: x[0], reverse=True)
+        matched = [desc for score, desc in scores if score >= 0.1]
+        if matched:
+            return " | ".join(matched)
+
     return (
         "No specific metric matched exactly. Available domains are: "
         "channel_metrics, input_type_metrics, language_statistics, "

@@ -1,22 +1,18 @@
 """
 orchestrate.py
 --------------
-Multi-chart analytics agent with parallel SQL execution and XML dashboard merging.
-Connects to the MCP server via stdio using the MCPClient.
+Multi-chart analytics agent with parallel SQL execution and JSON dashboard output.
+Uses direct DatabaseClient access (no MCP subprocess).
 
 Pipeline:
     retrieve_context -> get_schema -> decompose_question
                                              |
                                      generate_all_charts   <- each chart spec runs in parallel
-                                     (MCP tool call + chart per spec, with SQL fallback & retry)
+                                     (SQL + chart per spec, with retry & backoff)
                                              |
-                                         merge_xml --> generate_insights --> END
+                                      generate_insights --> format_json_output --> END
                                              |
                                        handle_error --> END
-
-    decompose_question splits the user question into 1-4 focused chart specs.
-    generate_all_charts processes ALL specs concurrently using asyncio.gather.
-    merge_xml combines all individual dashboard XMLs into one consistent <dashboard>.
 """
 
 import asyncio
@@ -24,9 +20,8 @@ import json
 import logging
 import sys
 import os
-from datetime import date
+import time
 from typing import Any, Dict, List, Optional, TypedDict
-import xml.etree.ElementTree as ET
 
 # Configure orchestrator logging (writes to console & file)
 logging.basicConfig(
@@ -50,13 +45,13 @@ from langchain_core.messages import HumanMessage
 from langchain_groq import ChatGroq
 from langgraph.graph import END, StateGraph
 
-# Local tools that don't need the MCP server
+# Local tools
 from tools.metric_definitions import retrieve_metric_definitions
-from tools.chart import generate_plotly_chart, generate_chart_config
+from tools.chart import generate_chart_config
 
-# MCP client for communicating with mcp_server via stdio
-import sys
-from mcp_client import MCPClient
+# Direct DB access (no MCP subprocess needed)
+from db import get_db, db_execute_query
+from mcp_server.database import DatabaseClient
 
 # --- Environment & LLMs -----------------------------------------------------
 
@@ -90,84 +85,7 @@ class AgentState(TypedDict, total=False):
     error:             str           
 
 
-# --- XML Merge Helper -------------------------------------------------------
-
-def _merge_dashboard_xmls(xml_strings: List[str], title: str = "Dashboard") -> str:
-    """
-    Merge multiple single-chart dashboard XML strings into one <dashboard>
-    that contains all <row> elements under a single <layout>.
-    Row IDs are renumbered sequentially so they are globally unique.
-    """
-    root = ET.Element("dashboard", {"version": "1.0", "theme": "light", "cols": "12"})
-
-    meta = ET.SubElement(root, "meta")
-    ET.SubElement(meta, "title").text = title
-    ET.SubElement(meta, "description").text = "Auto-generated multi-chart analytics dashboard"
-    ET.SubElement(meta, "created").text = date.today().isoformat()
-
-    layout = ET.SubElement(root, "layout")
-    row_counter = 1
-
-    for xml_str in xml_strings:
-        if not xml_str or not xml_str.strip().startswith("<?xml"):
-            continue
-        try:
-            # Strip the XML declaration so ET.fromstring can parse the element
-            clean = xml_str.split("?>", 1)[-1].strip()
-            chart_root = ET.fromstring(clean)
-            chart_layout = chart_root.find("layout")
-            if chart_layout is not None:
-                for row in list(chart_layout):
-                    row.set("id", f"r{row_counter}")
-                    row_counter += 1
-                    layout.append(row)
-        except ET.ParseError:
-            continue  # Skip malformed XML chunks silently
-
-    ET.indent(root, space="  ")
-    return '<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(root, encoding="unicode")
-
-
-# --- MCP Tool Helpers -------------------------------------------------------
-
-# Tool names as registered on the MCP server (from GCDataToolModule + DatabaseToolModule)
-MCP_DOMAIN_TOOLS = {
-    "get_channel_metrics",
-    "get_top_channels_by_platform",
-    "get_monthly_trend",
-    "get_language_breakdown",
-    "get_input_type_breakdown",
-    "get_output_type_breakdown",
-    "search_videos",
-    "get_video_stats_by_team",
-    "get_video_stats_by_platform",
-}
-
-MCP_DB_TOOLS = {
-    "list_tables",
-    "describe_table",
-    "execute_sql_query",
-    "get_database_overview",
-    "preview_table",
-}
-
-
-def _normalise_tool_result(raw: str) -> list:
-    """Parse whatever JSON a tool returns into a flat list of row dicts."""
-    try:
-        obj = json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
-        return []
-    if isinstance(obj, list):
-        return obj
-    if isinstance(obj, dict):
-        # try common wrapper keys
-        for key in ("rows", "top_channels", "data", "items"):
-            if key in obj and isinstance(obj[key], list):
-                return obj[key]
-        # single-dict result → wrap in list
-        return [obj]
-    return []
+# --- Helpers ----------------------------------------------------------------
 
 
 # --- Per-Spec Processing Helpers --------------------------------------------
@@ -241,41 +159,36 @@ async def _generate_chart_attrs(sql: str, sub_question: str, records: List[Dict]
         return {}
 
 
-async def _fetch_data_via_mcp(
-    client: MCPClient,
-    sub_question: str,
-    schema: str,
-    context: str,
-    available_tools: list[dict],
-) -> tuple[list | None, str | None]:
-    """
-    Ask the LLM (with all MCP tool schemas) to pick the best tool for the question.
-    Executes the chosen tool via the MCP client and returns (records, tool_ref).
-    Falls back to raw SQL if no tool call is made or the tool returns nothing.
-    """
-    # Fallback: generate and execute raw SQL
-    # NOTE: We disabled domain tools to ensure we always get a transparent SQL query
-    # which the user specifically requested to see in the 'sql' field.
-    return None, None
+
 
 
 async def _process_single_spec(
-    client: MCPClient,
+    db: DatabaseClient,
     spec: Dict,
     schema: str,
     context: str,
-    available_tools: list[dict],
 ) -> Dict:
     """
-    Generate and execute raw SQL for a single chart spec.
+    Generate and execute raw SQL for a single chart spec using direct DB access.
+    Retries up to 3 times with exponential backoff.
     """
     sub_question = spec.get("sub_question", "")
-    
-    # We use bind_tools to force the LLM to think in terms of a tool call
-    # which usually results in much better SQL/parameter accuracy.
-    sql_tool_schema = [t for t in available_tools if t["name"] == "execute_sql_query"]
+
+    # Define a fake tool schema so the LLM thinks in tool-call mode
+    sql_tool_schema = [{
+        "type": "function",
+        "function": {
+            "name": "execute_sql_query",
+            "description": "Execute a read-only PostgreSQL SELECT query.",
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string", "description": "SQL SELECT query"}},
+                "required": ["query"],
+            },
+        },
+    }]
     llm_with_sql = llm_orchestrator.bind_tools(sql_tool_schema)
-    
+
     prompt = (
         f"Database schema:\n{schema}\n\n"
         f"Business context:\n{context}\n\n"
@@ -286,93 +199,94 @@ async def _process_single_spec(
         "2. DO NOT guess table names. Never drop plurals (e.g. use 'channel_metrics', NOT 'channel_metric').\n"
         "3. Use execute_sql_query to run your query."
     )
-    
+
     spec_error = ""
     last_sql = ""
-    
+
     for _attempt in range(3):
         try:
             # Add error feedback if this is a retry
             current_prompt = prompt + (f"\n\nPrevious Error to fix: {spec_error}" if spec_error else "")
             response = await llm_with_sql.ainvoke([HumanMessage(content=current_prompt)])
-            
+
             if not response.tool_calls:
-                # LLM didn't use the tool, try invoked text if it looks like SQL
                 sql = response.content.strip().strip("```sql").strip("```").strip()
                 if "SELECT" not in sql.upper():
                     spec_error = "LLM failed to generate a SELECT query."
+                    if _attempt < 2:
+                        await asyncio.sleep(2 ** _attempt)
                     continue
             else:
                 call = response.tool_calls[0]
                 sql = call.get("args", {}).get("query", "")
-            
+
             if not sql:
                 spec_error = "Empty SQL generated."
+                if _attempt < 2:
+                    await asyncio.sleep(2 ** _attempt)
                 continue
-                
+
             last_sql = sql
-            logger.info("  -> [MCP Client] SQL attempt %d: %s...", _attempt + 1, sql[:80])
-            raw_result = await client.call_tool("execute_sql_query", {"query": sql})
+            logger.info("  -> [DB] SQL attempt %d: %s...", _attempt + 1, sql[:80])
 
-            if raw_result.startswith("Error"):
-                spec_error = raw_result
-                logger.error(f"   [MCP SQL ERROR] {spec_error}")
+            # Execute directly via DatabaseClient (no subprocess)
+            result = db_execute_query(sql)
+
+            if "error" in result:
+                spec_error = result["error"]
+                logger.error(f"   [SQL ERROR] {spec_error}")
+                if _attempt < 2:
+                    await asyncio.sleep(2 ** _attempt)
                 continue
 
-            parsed = json.loads(raw_result)
-            if "error" in parsed:
-                spec_error = parsed["error"]
-                logger.error(f"   [MCP SQL ERROR] {spec_error}")
-                continue
-
-            records = parsed.get("rows", parsed.get("data", []))
+            records = result.get("rows", [])
             attrs = await _generate_chart_attrs(sql, sub_question, records)
             if not attrs.get("type") and spec.get("chart_type_hint"):
                 attrs["type"] = spec["chart_type_hint"]
-                
+
             chart_config = generate_chart_config(data_records=records, chart_attributes=attrs) if records else {}
-            
-            logger.info("   [MCP SQL OK]  ->  %d rows", len(records))
+
+            logger.info("   [SQL OK]  ->  %d rows", len(records))
             return {
-                **spec, 
-                "sql_query": sql, 
-                "records": records, 
-                "chart_attrs": attrs, 
-                "chart_config": chart_config
+                **spec,
+                "sql_query": sql,
+                "records": records,
+                "chart_attrs": attrs,
+                "chart_config": chart_config,
             }
         except Exception as e:
             spec_error = str(e)
-            logger.error(f"   [MCP SQL SYSTEM ERROR] {spec_error}")
+            logger.error(f"   [SQL SYSTEM ERROR] {spec_error}")
+            if _attempt < 2:
+                await asyncio.sleep(2 ** _attempt)
             continue
 
-    # All retries exhausted
-    logger.warning("   [MCP SQL] FAILED after 3 retries")
+    logger.warning("   [SQL] FAILED after 3 retries")
     return {
-        **spec, 
-        "sql_query": last_sql, 
-        "records": [], 
-        "chart_attrs": {}, 
-        "chart_config": {}, 
-        "sql_error": spec_error
+        **spec,
+        "sql_query": last_sql,
+        "records": [],
+        "chart_attrs": {},
+        "chart_config": {},
+        "sql_error": spec_error,
     }
 
 
 # --- LangGraph Pipeline -----------------------------------------------------
 
 # --- Global Schema Cache ---
-_SCHEMA_CACHE: str | None = None
+_SCHEMA_CACHE: tuple[str, float] | None = None  # (schema_text, timestamp)
+_SCHEMA_TTL = 300  # 5-minute TTL
 
-async def build_and_run_pipeline(question: str, client: MCPClient) -> AgentState:
+async def build_and_run_pipeline(question: str, db: DatabaseClient | None = None) -> AgentState:
     """
     Compile and run the LangGraph pipeline for a single user question.
-    Generates one or more charts in parallel, then merges their XMLs.
-    All data is fetched through the MCP server via the client.
+    Uses direct DatabaseClient access — no MCP subprocess needed.
     """
     global _SCHEMA_CACHE
 
-    # Fetch the tool list from the MCP server once for this pipeline run
-    available_tools = await client.list_tools()
-    print(f"  -> [MCP Client] {len(available_tools)} tools available from MCP server")
+    if db is None:
+        db = get_db()
 
     # Node 1 — Retrieve semantic/business context (in-memory, no MCP needed)
     def retrieve_context(state: AgentState):
@@ -381,37 +295,30 @@ async def build_and_run_pipeline(question: str, client: MCPClient) -> AgentState
         logger.info(f"  -> Retrieved {len(result)} chars of business context.")
         return {"semantic_context": result}
 
-    # Node 2 — Fetch live DB schema via MCP tools
-    async def get_schema(state: AgentState):
+    # Node 2 — Fetch live DB schema directly (no MCP subprocess)
+    def get_schema(state: AgentState):
         global _SCHEMA_CACHE
-        if _SCHEMA_CACHE:
+        now = time.time()
+        if _SCHEMA_CACHE and (now - _SCHEMA_CACHE[1]) < _SCHEMA_TTL:
             logger.info("[Node: get_schema] Using cached database schema.")
-            return {"schema": _SCHEMA_CACHE}
+            return {"schema": _SCHEMA_CACHE[0]}
 
-        logger.info("[Node: get_schema] Fetching live database schema via MCP server...")
+        logger.info("[Node: get_schema] Fetching live database schema...")
         try:
-            tables_json = await client.call_tool("list_tables", {})
-            tables = json.loads(tables_json)
+            tables = db.list_tables()
+            schema_info = "GCData Analytics Database Schema (PostgreSQL / Supabase):\n"
 
-            schema_info_lines = ["GCData Analytics Database Schema (PostgreSQL / Supabase):\n"]
-            
-            async def get_table_details(table_name):
+            for t in tables:
+                table_name = t["name"]
                 try:
-                    details_json = await client.call_tool("describe_table", {"table_name": table_name})
-                    details = json.loads(details_json)
+                    details = db.describe_table(table_name)
                     cols = ", ".join(f"{c['name']} ({c['type']})" for c in details.get("columns", []))
-                    return f"\nTable: {table_name}\nColumns: {cols}\n"
+                    schema_info += f"\nTable: {table_name}\nColumns: {cols}\n"
                 except Exception:
-                    return f"\nTable: {table_name}\nColumns: (could not be retrieved)\n"
-
-            # Fetch all table details in parallel
-            tasks = [get_table_details(t["name"]) for t in tables]
-            coro_results = await asyncio.gather(*tasks)
-            results: list[str] = [str(r) for r in coro_results]
-            schema_info = "".join(schema_info_lines) + "".join(results)
+                    schema_info += f"\nTable: {table_name}\nColumns: (could not be retrieved)\n"
 
             logger.info(f"  -> Retrieved {len(schema_info)} chars of schema data.")
-            _SCHEMA_CACHE = schema_info
+            _SCHEMA_CACHE = (schema_info, now)
             return {"schema": schema_info}
         except Exception as exc:
             error_msg = f"Error retrieving schema: {exc}"
@@ -465,20 +372,20 @@ async def build_and_run_pipeline(question: str, client: MCPClient) -> AgentState
         logger.info(f"  -> Generated {len(specs)} chart spec(s): {[s.get('sub_question', '') for s in specs]}")
         return {"chart_specs": specs}
 
-    # Node 4 — Process all chart specs concurrently via MCP
+    # Node 4 — Process all chart specs concurrently via direct DB
     async def generate_all_charts(state: AgentState):
         specs  = state.get("chart_specs", [])
         schema  = state.get("schema", "")
         context = state.get("semantic_context", "")
-        
-        logger.info(f"\n[Node: generate_all_charts] Processing {len(specs)} chart(s) in parallel via MCP server...")
+
+        logger.info(f"\n[Node: generate_all_charts] Processing {len(specs)} chart(s) in parallel...")
 
         if not specs:
             logger.error("  -> ERROR: No specs to process.")
             return {"chart_specs": [], "error": "No chart specs were produced."}
 
         # Process ALL specs concurrently
-        tasks = [_process_single_spec(client, spec, schema, context, available_tools) for spec in specs]
+        tasks = [_process_single_spec(db, spec, schema, context) for spec in specs]
         completed = await asyncio.gather(*tasks)
 
         logger.info("  -> All parallel chart tasks completed.")
@@ -613,66 +520,59 @@ async def build_and_run_pipeline(question: str, client: MCPClient) -> AgentState
 # --- Interactive Loop -------------------------------------------------------
 
 async def run_agent():
-    print("--- Orchestrated Multi-Chart Analytics Agent (MCP Client) ---------------")
-    print("Connecting to MCP server via stdio...\n")
+    print("--- Orchestrated Multi-Chart Analytics Agent (Direct DB) ----------------")
+    print("Connecting to database...\n")
 
-    async with MCPClient() as client:
-        tools = await client.list_tools()
-        print(f"✓ Connected! {len(tools)} tools available:")
-        for t in tools:
-            print(f"  • {t['name']}")
-        print("\nType 'quit' to exit.\n")
+    db = get_db()
+    tables = db.list_tables()
+    print(f"✓ Connected! {len(tables)} tables available:")
+    for t in tables:
+        print(f"  • {t['name']}")
+    print("\nType 'quit' to exit.\n")
 
-        loop = asyncio.get_event_loop()
+    loop = asyncio.get_event_loop()
 
-        while True:
-            user_query = (
-                await loop.run_in_executor(None, input, "Ask about the Frammer data: ")
-            ).strip()
+    while True:
+        user_query = (
+            await loop.run_in_executor(None, input, "Ask about the GCData: ")
+        ).strip()
 
-            if user_query.lower() == "quit":
-                print("Goodbye!")
-                break
+        if user_query.lower() == "quit":
+            print("Goodbye!")
+            break
 
-            if not user_query:
-                continue
+        if not user_query:
+            continue
 
-            print("\n Processing (Multi-Chart via MCP)...\n")
-            try:
-                result = await build_and_run_pipeline(user_query, client)
+        print("\n Processing...\n")
+        try:
+            result = await build_and_run_pipeline(user_query, db)
 
-                # Show chart generation summary
-                specs = result.get("chart_specs", [])
-                print(f"Charts generated: {len(specs)}")
-                for i, s in enumerate(specs, 1):
-                    ok = s.get("chart_xml", "").startswith("<?xml")
-                    status = "OK" if ok else "FAILED"
-                    print(f"  [{status}] Chart {i}: {s.get('sub_question', '')}")
-                    if not ok and s.get("sql_error"):
-                        print(f"           Error: {s['sql_error']}")
+            specs = result.get("chart_specs", [])
+            print(f"Charts generated: {len(specs)}")
+            for i, s in enumerate(specs, 1):
+                has_data = bool(s.get("records"))
+                status = "OK" if has_data else "FAILED"
+                print(f"  [{status}] Chart {i}: {s.get('sub_question', '')}")
+                if not has_data and s.get("sql_error"):
+                    print(f"           Error: {s['sql_error']}")
 
-                print("\nInsights:")
-                print(result["insights"])
+            print("\nInsights:")
+            print(result["insights"])
 
-                chart_json_str = result.get("chart_json", "")
-                if chart_json_str and not chart_json_str.strip().startswith("<?xml"):
-                    print("\nFinal Output (JSON):")
-                    print(chart_json_str)
-                    
-                    # Also save to file for inspection
-                    with open("agent_output.json", "w", encoding="utf-8") as f:
-                        f.write(chart_json_str)
-                    print(f"\nOutput saved to agent_output.json")
-                elif chart_json_str.strip().startswith("<?xml"):
-                    chart_path = "chart_output.xml"
-                    with open(chart_path, "w", encoding="utf-8") as f:
-                        f.write(chart_json_str)
-                    print(f"\nDashboard XML saved to {chart_path}")
+            chart_json_str = result.get("chart_json", "")
+            if chart_json_str:
+                print("\nFinal Output (JSON):")
+                print(chart_json_str)
 
-            except Exception as exc:
-                print(f"\nAgent error: {exc}")
+                with open("agent_output.json", "w", encoding="utf-8") as f:
+                    f.write(chart_json_str)
+                print(f"\nOutput saved to agent_output.json")
 
-            print()
+        except Exception as exc:
+            print(f"\nAgent error: {exc}")
+
+        print()
 
 
 if __name__ == "__main__":

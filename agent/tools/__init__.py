@@ -5,9 +5,9 @@ DB-facing tools are now accessed via the MCP server through mcp_client.
 """
 
 from tools.metric_definitions import retrieve_metric_definitions
-from tools.chart import generate_plotly_chart
+from tools.chart import generate_chart_config
 
 __all__ = [
     "retrieve_metric_definitions",
-    "generate_plotly_chart",
+    "generate_chart_config",
 ]

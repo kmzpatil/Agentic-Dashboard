@@ -68,7 +68,7 @@ class ChannelMetrics(Base):
 
 # Table 3: Monthly Counts
 class MonthlyCount(Base):
-    __tablename__ = "monthly_counts" # Adjust if your exact table name is different
+    __tablename__ = "monthly_counts_duration"
     
     month = Column(String, primary_key=True, index=True)
     total_uploaded = Column(Integer)
@@ -80,43 +80,42 @@ class MonthlyCount(Base):
 
 # Table 4: Input Type Data
 class InputTypeData(Base):
-    __tablename__ = "input_type_data"
+    __tablename__ = "input_type_metrics"
     
     input_type = Column(String, primary_key=True, index=True)
     uploaded_count = Column(Integer)
     created_count = Column(Integer)
     published_count = Column(Integer)
-    uploaded_duration = Column(String)
-    created_duration = Column(String)
-    published_duration = Column(String)
+    uploaded_duration = Column(Float)
+    created_duration = Column(Float)
+    published_duration = Column(Float)
 
 # Table 5: Language Data
 class LanguageData(Base):
-    __tablename__ = "language_data"
+    __tablename__ = "language_statistics"
     
     language = Column(String, primary_key=True, index=True)
     uploaded_count = Column(Integer)
     created_count = Column(Integer)
     published_count = Column(Integer)
-    uploaded_duration = Column(String)
-    created_duration = Column(String)
-    published_duration = Column(String)
+    uploaded_duration = Column(Float)
+    created_duration = Column(Float)
+    published_duration = Column(Float)
 
 # Table 6: Output Type Data
 class OutputTypeData(Base):
-    __tablename__ = "output_type_data"
+    __tablename__ = "output_type_statistics"
     
     output_type = Column(String, primary_key=True, index=True)
 
     uploaded_count = Column(Integer)
     created_count = Column(Integer)
     published_count = Column(Integer)
-    uploaded_duration = Column(String)
-    created_duration = Column(String)
-    published_duration = Column(String)
+    uploaded_duration = Column(Float)
+    created_duration = Column(Float)
+    published_duration = Column(Float)
 
-# Create all tables on initialization so we can test SQLite without separate migrations
-Base.metadata.create_all(bind=engine)
+# NOTE: Removed Base.metadata.create_all() — tables should already exist in production.
 
 # ---------------------------------
 # 3. Pydantic Schemas (API Validation)
@@ -164,13 +163,12 @@ class MonthlyCountResponse(BaseModel):
     class Config: from_attributes = True
 
 class MetricResponse(BaseModel):
-    # This single schema works for Input, Output, and Language since they share column structures
     uploaded_count: int | None
     created_count: int | None
     published_count: int | None
-    uploaded_duration: str | None
-    created_duration: str | None
-    published_duration: str | None
+    uploaded_duration: float | None
+    created_duration: float | None
+    published_duration: float | None
     class Config: from_attributes = True
 
 # Extended Schemas to include their specific Primary Keys
@@ -189,21 +187,19 @@ class OutputTypeResponse(MetricResponse):
 app = FastAPI()
 
 @app.get("/")
-def read_root(db: Session = Depends(get_db)): #write the full function instead of hardcoding. Test every single database directly. 
+def read_root(db: Session = Depends(get_db)):
     try:
-        # Test counting rows in all 6 tables dynamically
-        tables = [
-            "video_list_data",
-            "channel_metrics",
-            "monthly_counts",
-            "input_type_data",
-            "language_data",
-            "output_type_data"
+        models = [
+            ("video_list_data", VideoData),
+            ("channel_metrics", ChannelMetrics),
+            ("monthly_counts_duration", MonthlyCount),
+            ("input_type_metrics", InputTypeData),
+            ("language_statistics", LanguageData),
+            ("output_type_statistics", OutputTypeData),
         ]
         counts = {}
-        for table in tables:
-            result = db.execute(text(f"SELECT COUNT(*) FROM {table}"))
-            counts[table] = result.scalar()
+        for name, model in models:
+            counts[name] = db.query(model).count()
         
         return {
             "message": "API with 6 tables is successfully connected!",
