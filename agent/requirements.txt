@@ -5,11 +5,12 @@ langchain-groq>=0.1.0
 langchain-core>=0.2.0
 
 # ─── Database ─────────────────────────────────────────────────────────────────
-psycopg2-binary>=2.9.9      # PostgreSQL adapter (binary wheels = no build deps)
-sqlalchemy>=2.0.0           # SQL toolkit and Object Relational Mapper
+duckdb>=1.0.0                # In-process analytical database
+duckdb-engine>=0.13.0        # SQLAlchemy dialect for DuckDB
+sqlalchemy>=2.0.0            # SQL toolkit and Object Relational Mapper
 
 # ─── MCP Server ───────────────────────────────────────────────────────────────
-mcp[cli]>=1.0.0             # FastMCP server framework
+mcp[cli]>=1.0.0              # FastMCP server framework
 
 # ─── Web Server ───────────────────────────────────────────────────────────────
 fastapi>=0.110.0

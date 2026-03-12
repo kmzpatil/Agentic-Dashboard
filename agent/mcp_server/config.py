@@ -37,22 +37,17 @@ class ServerSettings:
 
     @classmethod
     def from_env(cls) -> "ServerSettings":
-        # Build DATABASE_URL from components if not provided directly
+        # Build DATABASE_URL for DuckDB
         db_url = os.getenv("DATABASE_URL")
         if not db_url:
-            user = os.getenv("POSTGRES_USER", "postgres")
-            pw = os.getenv("POSTGRES_PASSWORD", "postgres")
-            host = os.getenv("POSTGRES_HOST", "localhost")
-            port = os.getenv("POSTGRES_PORT", "5432")
-            db = os.getenv("POSTGRES_DB", "postgres")
-            ssl = os.getenv("POSTGRES_SSLMODE", "prefer")
-            db_url = f"postgresql+psycopg2://{user}:{pw}@{host}:{port}/{db}?sslmode={ssl}"
+            duckdb_path = os.getenv("DUCKDB_PATH", str(ROOT_DIR / "gcdata.duckdb"))
+            db_url = f"duckdb:///{duckdb_path}"
 
         return cls(
             server_name=os.getenv("MCP_SERVER_NAME", "Frammer Analytics MCP Server"),
             database_url=db_url,
-            default_schema=os.getenv("DATABASE_SCHEMA", "public"),
-            transport=os.getenv("MCP_TRANSPORT", "stdio"), # default to stdio
+            default_schema=os.getenv("DATABASE_SCHEMA", "main"),
+            transport=os.getenv("MCP_TRANSPORT", "stdio"),
             default_query_limit=_int_env("MCP_DEFAULT_QUERY_LIMIT", 200),
             max_query_limit=_int_env("MCP_MAX_QUERY_LIMIT", 1000),
             default_preview_limit=_int_env("MCP_DEFAULT_PREVIEW_LIMIT", 25),
