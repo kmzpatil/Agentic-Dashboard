@@ -5,10 +5,10 @@ Shared DatabaseClient singleton for direct in-process database access.
 Eliminates the need to spawn an MCP subprocess for same-process API calls.
 
 Usage:
-    from db import get_db, db_list_tables, db_describe_table, db_execute_query
+    from db import get_db, db_list_tables, db_describe_table, db_execute_query, db_execute_query_async
 """
 
-import json
+import asyncio
 from functools import lru_cache
 from typing import Any
 
@@ -40,7 +40,7 @@ def db_describe_table(table_name: str) -> dict[str, Any]:
 
 def db_execute_query(sql: str, limit: int = 5000) -> dict[str, Any]:
     """
-    Execute a read-only SQL query.
+    Execute a read-only SQL query (Synchronous).
     Returns {"rows": [...], "row_count": N} on success.
     Returns {"error": "..."} on failure.
     """
@@ -52,3 +52,12 @@ def db_execute_query(sql: str, limit: int = 5000) -> dict[str, Any]:
         return {"error": f"Query validation error: {exc}"}
     except Exception as exc:
         return {"error": f"SQL execution error: {exc}"}
+
+
+async def db_execute_query_async(sql: str, limit: int = 5000) -> dict[str, Any]:
+    """
+    Execute a read-only SQL query asynchronously.
+    Offloads the synchronous psycopg2 execution to a worker thread to prevent 
+    blocking the main async event loop during concurrent chart generation.
+    """
+    return await asyncio.to_thread(db_execute_query, sql, limit=limit)
