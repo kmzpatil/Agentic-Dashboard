@@ -1,0 +1,549 @@
+{
+  "records": [
+    {
+      "table_name": "raw_videos",
+      "column_name": "Uploaded_Duration",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "channel_metrics",
+      "column_name": "facebook",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "channel_metrics",
+      "column_name": "instagram",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "channel_metrics",
+      "column_name": "linkedin",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "channel_metrics",
+      "column_name": "reels",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "channel_metrics",
+      "column_name": "shorts",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "channel_metrics",
+      "column_name": "x",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "channel_metrics",
+      "column_name": "youtube",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "channel_metrics",
+      "column_name": "threads",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "channel_metrics",
+      "column_name": "facebook_duration",
+      "data_type": "numeric"
+    },
+    {
+      "table_name": "channel_metrics",
+      "column_name": "instagram_duration",
+      "data_type": "numeric"
+    },
+    {
+      "table_name": "channel_metrics",
+      "column_name": "linkedin_duration",
+      "data_type": "numeric"
+    },
+    {
+      "table_name": "channel_metrics",
+      "column_name": "reels_duration",
+      "data_type": "numeric"
+    },
+    {
+      "table_name": "channel_metrics",
+      "column_name": "shorts_duration",
+      "data_type": "numeric"
+    },
+    {
+      "table_name": "channel_metrics",
+      "column_name": "x_duration",
+      "data_type": "numeric"
+    },
+    {
+      "table_name": "channel_metrics",
+      "column_name": "youtube_duration",
+      "data_type": "numeric"
+    },
+    {
+      "table_name": "channel_metrics",
+      "column_name": "threads_duration",
+      "data_type": "numeric"
+    },
+    {
+      "table_name": "monthly_counts_duration",
+      "column_name": "total_uploaded",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "monthly_counts_duration",
+      "column_name": "total_created",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "monthly_counts_duration",
+      "column_name": "total_published",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "monthly_counts_duration",
+      "column_name": "total_uploaded_duration",
+      "data_type": "numeric"
+    },
+    {
+      "table_name": "monthly_counts_duration",
+      "column_name": "total_created_duration",
+      "data_type": "numeric"
+    },
+    {
+      "table_name": "monthly_counts_duration",
+      "column_name": "total_published_duration",
+      "data_type": "numeric"
+    },
+    {
+      "table_name": "output_type_statistics",
+      "column_name": "uploaded_count",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "output_type_statistics",
+      "column_name": "created_count",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "output_type_statistics",
+      "column_name": "published_count",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "output_type_statistics",
+      "column_name": "uploaded_duration",
+      "data_type": "interval"
+    },
+    {
+      "table_name": "output_type_statistics",
+      "column_name": "created_duration",
+      "data_type": "interval"
+    },
+    {
+      "table_name": "output_type_statistics",
+      "column_name": "published_duration",
+      "data_type": "interval"
+    },
+    {
+      "table_name": "video_list_data",
+      "column_name": "published",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "video_list_data",
+      "column_name": "video_id",
+      "data_type": "bigint"
+    },
+    {
+      "table_name": "synthetic_created_asset",
+      "column_name": "asset_id",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "synthetic_created_asset",
+      "column_name": "video_id",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "synthetic_created_asset",
+      "column_name": "create_date",
+      "data_type": "date"
+    },
+    {
+      "table_name": "synthetic_created_asset",
+      "column_name": "created_duration",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "synthetic_post_distribution",
+      "column_name": "post_id",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "synthetic_published_post",
+      "column_name": "post_id",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "synthetic_published_post",
+      "column_name": "asset_id",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "synthetic_published_post",
+      "column_name": "publish_date",
+      "data_type": "date"
+    },
+    {
+      "table_name": "synthetic_published_post",
+      "column_name": "published_duration",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "synthetic_raw_video",
+      "column_name": "video_id",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "synthetic_raw_video",
+      "column_name": "user_id",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "synthetic_raw_video",
+      "column_name": "upload_date",
+      "data_type": "date"
+    },
+    {
+      "table_name": "synthetic_raw_video",
+      "column_name": "uploaded_duration",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "synthetic_raw_video_channel",
+      "column_name": "video_id",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "synthetic_user",
+      "column_name": "user_id",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "created_assets",
+      "column_name": "Asset_ID",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "created_assets",
+      "column_name": "Video_ID",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "created_assets",
+      "column_name": "Created_Duration",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "post_distribution",
+      "column_name": "Post_ID",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "published_posts",
+      "column_name": "Post_ID",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "published_posts",
+      "column_name": "Asset_ID",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "published_posts",
+      "column_name": "Published_Duration",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "raw_video_channel",
+      "column_name": "Video_ID",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "users",
+      "column_name": "User_ID",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "raw_videos",
+      "column_name": "Video_ID",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "raw_videos",
+      "column_name": "User_ID",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "input_type_metrics",
+      "column_name": "uploaded_count",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "input_type_metrics",
+      "column_name": "created_count",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "input_type_metrics",
+      "column_name": "published_count",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "input_type_metrics",
+      "column_name": "uploaded_duration",
+      "data_type": "interval"
+    },
+    {
+      "table_name": "input_type_metrics",
+      "column_name": "created_duration",
+      "data_type": "interval"
+    },
+    {
+      "table_name": "input_type_metrics",
+      "column_name": "published_duration",
+      "data_type": "interval"
+    },
+    {
+      "table_name": "language_statistics",
+      "column_name": "uploaded_count",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "language_statistics",
+      "column_name": "created_count",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "language_statistics",
+      "column_name": "published_count",
+      "data_type": "integer"
+    },
+    {
+      "table_name": "language_statistics",
+      "column_name": "uploaded_duration",
+      "data_type": "interval"
+    },
+    {
+      "table_name": "language_statistics",
+      "column_name": "created_duration",
+      "data_type": "interval"
+    },
+    {
+      "table_name": "language_statistics",
+      "column_name": "published_duration",
+      "data_type": "interval"
+    },
+    {
+      "table_name": "input_type_metrics",
+      "column_name": "input_type",
+      "data_type": "character varying"
+    },
+    {
+      "table_name": "channels",
+      "column_name": "Client_Name",
+      "data_type": "text"
+    },
+    {
+      "table_name": "clients",
+      "column_name": "Client_Name",
+      "data_type": "text"
+    },
+    {
+      "table_name": "raw_videos",
+      "column_name": "Client_Name",
+      "data_type": "text"
+    },
+    {
+      "table_name": "synthetic_post_distribution",
+      "column_name": "published_platform",
+      "data_type": "character varying"
+    },
+    {
+      "table_name": "synthetic_post_distribution",
+      "column_name": "published_url",
+      "data_type": "text"
+    },
+    {
+      "table_name": "post_distribution",
+      "column_name": "Channel_Name",
+      "data_type": "text"
+    },
+    {
+      "table_name": "language_statistics",
+      "column_name": "language",
+      "data_type": "character varying"
+    },
+    {
+      "table_name": "post_distribution",
+      "column_name": "Published_Platform",
+      "data_type": "text"
+    },
+    {
+      "table_name": "post_distribution",
+      "column_name": "Published_URL",
+      "data_type": "text"
+    },
+    {
+      "table_name": "raw_videos",
+      "column_name": "Headline",
+      "data_type": "text"
+    },
+    {
+      "table_name": "raw_videos",
+      "column_name": "Source_URL",
+      "data_type": "text"
+    },
+    {
+      "table_name": "synthetic_raw_video",
+      "column_name": "headline",
+      "data_type": "character varying"
+    },
+    {
+      "table_name": "synthetic_raw_video",
+      "column_name": "source_url",
+      "data_type": "text"
+    },
+    {
+      "table_name": "monthly_counts_duration",
+      "column_name": "month",
+      "data_type": "character varying"
+    },
+    {
+      "table_name": "published_posts",
+      "column_name": "Publish_Date",
+      "data_type": "text"
+    },
+    {
+      "table_name": "channel_metrics",
+      "column_name": "channels",
+      "data_type": "character varying"
+    },
+    {
+      "table_name": "synthetic_raw_video",
+      "column_name": "input_type",
+      "data_type": "character varying"
+    },
+    {
+      "table_name": "synthetic_raw_video",
+      "column_name": "language",
+      "data_type": "character varying"
+    },
+    {
+      "table_name": "raw_videos",
+      "column_name": "Upload_Date",
+      "data_type": "text"
+    },
+    {
+      "table_name": "raw_video_channel",
+      "column_name": "Channel_Name",
+      "data_type": "text"
+    },
+    {
+      "table_name": "output_type_statistics",
+      "column_name": "output_type",
+      "data_type": "character varying"
+    },
+    {
+      "table_name": "synthetic_raw_video_channel",
+      "column_name": "channel_name",
+      "data_type": "character varying"
+    },
+    {
+      "table_name": "raw_videos",
+      "column_name": "Input_Type",
+      "data_type": "text"
+    },
+    {
+      "table_name": "synthetic_user",
+      "column_name": "username",
+      "data_type": "character varying"
+    },
+    {
+      "table_name": "synthetic_user",
+      "column_name": "team_name",
+      "data_type": "character varying"
+    },
+    {
+      "table_name": "users",
+      "column_name": "User_Name",
+      "data_type": "text"
+    },
+    {
+      "table_name": "users",
+      "column_name": "Team_Name",
+      "data_type": "text"
+    },
+    {
+      "table_name": "video_list_data",
+      "column_name": "headline",
+      "data_type": "text"
+    },
+    {
+      "table_name": "video_list_data",
+      "column_name": "source",
+      "data_type": "text"
+    },
+    {
+      "table_name": "created_assets",
+      "column_name": "Output_Type",
+      "data_type": "text"
+    },
+    {
+      "table_name": "video_list_data",
+      "column_name": "team_name",
+      "data_type": "character varying"
+    },
+    {
+      "table_name": "video_list_data",
+      "column_name": "type",
+      "data_type": "character varying"
+    },
+    {
+      "table_name": "video_list_data",
+      "column_name": "uploaded_by",
+      "data_type": "character varying"
+    },
+    {
+      "table_name": "created_assets",
+      "column_name": "Create_Date",
+      "data_type": "text"
+    },
+    {
+      "table_name": "video_list_data",
+      "column_name": "published_platform",
+      "data_type": "character varying"
+    },
+    {
+      "table_name": "video_list_data",
+      "column_name": "published_url",
+      "data_type": "text"
+    },
+    {
+      "table_name": "raw_videos",
+      "column_name": "Language",
+      "data_type": "text"
+    },
+    {
+      "table_name": "channels",
+      "column_name": "Channel_Name",
+      "data_type": "text"
+    },
+    {
+      "table_name": "synthetic_created_asset",
+      "column_name": "output_type",
+      "data_type": "character varying"
+    }
+  ]
+}

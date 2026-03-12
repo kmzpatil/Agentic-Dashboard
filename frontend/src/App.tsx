@@ -3,6 +3,7 @@ import {
   Chart as ChartJS, 
   CategoryScale, 
   LinearScale, 
+  RadialLinearScale,
   BarElement, 
   Title, 
   Tooltip, 
@@ -12,13 +13,23 @@ import {
   LineElement, 
   Filler 
 } from 'chart.js';
-import { Bar, Doughnut } from 'react-chartjs-2';
+import { 
+  Bar, 
+  Doughnut, 
+  Line, 
+  Pie, 
+  Bubble, 
+  Scatter, 
+  Radar, 
+  PolarArea 
+} from 'react-chartjs-2';
 import { Plus, Edit2, X, AlertCircle } from 'lucide-react';
 
 // Register Chart.js components
 ChartJS.register(
   CategoryScale,
   LinearScale,
+  RadialLinearScale,
   BarElement,
   ArcElement,
   PointElement,
@@ -34,7 +45,9 @@ interface Widget {
   id: string;
   title: string;
   sql: string;
-  type: 'bar' | 'pie' | 'line' | 'doughnut' | 'kpi';
+  type: 'bar' | 'pie' | 'line' | 'doughnut' | 'polarArea' | 'radar' | 'bubble' | 'scatter' | 'kpi' | 'area';
+  x_axis?: string;
+  y_axis?: string;
   data: any[];
   insights?: string;
   loading: boolean;
@@ -79,51 +92,110 @@ const WidgetChart = ({ widget }: { widget: Widget }) => {
   if (!widget.data || widget.data.length === 0) return <div className="flex items-center justify-center h-full text-zinc-700 font-medium">Empty Dataset</div>;
 
   const keys = Object.keys(widget.data[0]);
-  const labelKey = keys[0];
-  const valueKey = keys[keys.length - 1]; // Use last key for value
+  
+  // Logic for identifying X and Y columns
+  let xKey = widget.x_axis || keys[0];
+  let yKeys = widget.y_axis ? widget.y_axis.split(',').map(s => s.trim()) : [keys[keys.length - 1]];
 
-  const chartData = {
-    labels: widget.data.map(d => d[labelKey]),
-    datasets: [{
+  // Special case: Single row with multiple numeric columns -> Transpose
+  const isSingleRowAggregate = widget.data.length === 1 && keys.filter(k => typeof widget.data[0][k] === 'number').length > 1;
+
+  let labels: string[] = [];
+  let datasets: any[] = [];
+
+  const baseColors = [
+    'rgba(59, 130, 246, 0.8)',
+    'rgba(147, 51, 234, 0.8)',
+    'rgba(236, 72, 153, 0.8)',
+    'rgba(20, 184, 166, 0.8)',
+    'rgba(245, 158, 11, 0.8)',
+    'rgba(100, 116, 139, 0.8)',
+  ];
+
+  if (isSingleRowAggregate && !widget.x_axis) {
+    // Columns become labels, their values become one dataset
+    const numericKeys = keys.filter(k => typeof widget.data[0][k] === 'number');
+    labels = numericKeys.map(k => k.replace(/_/g, ' '));
+    datasets = [{
       label: widget.title,
-      data: widget.data.map(d => d[valueKey]),
-      backgroundColor: widget.type === 'bar' ? 'rgba(59, 130, 246, 0.8)' : [
-        'rgba(59, 130, 246, 0.7)',
-        'rgba(147, 51, 234, 0.7)',
-        'rgba(236, 72, 153, 0.7)',
-        'rgba(20, 184, 166, 0.7)',
-        'rgba(245, 158, 11, 0.7)',
-        'rgba(100, 116, 139, 0.7)',
-      ],
+      data: numericKeys.map(k => widget.data[0][k]),
+      backgroundColor: widget.type === 'bar' ? baseColors[0] : baseColors,
       borderColor: 'rgba(255, 255, 255, 0.1)',
       borderWidth: 2,
       borderRadius: 6,
-      hoverBackgroundColor: 'rgba(255, 255, 255, 0.9)',
-      hoverBorderColor: 'white',
-    }]
+    }];
+  } else {
+    // Standard row-based data
+    labels = widget.data.map(d => String(d[xKey]));
+    datasets = yKeys.map((yKey, idx) => ({
+      label: yKey.replace(/_/g, ' '),
+      data: widget.data.map(d => d[yKey]),
+      backgroundColor: widget.type === 'bar' || widget.type === 'line' || widget.type === 'area' 
+        ? baseColors[idx % baseColors.length] 
+        : baseColors,
+      borderColor: widget.type === 'line' || widget.type === 'area' 
+        ? baseColors[idx % baseColors.length].replace('0.8', '1') 
+        : 'rgba(255, 255, 255, 0.1)',
+      borderWidth: 2,
+      borderRadius: 6,
+      fill: widget.type === 'area',
+      tension: 0.4,
+      pointRadius: widget.type === 'line' || widget.type === 'area' ? 4 : 0,
+    }));
+  }
+
+  const chartData = {
+    labels,
+    datasets
   };
 
   const options = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: { display: false },
+      legend: { 
+        display: datasets.length > 1 || widget.type === 'doughnut' || widget.type === 'pie',
+        position: 'top' as const,
+        labels: { color: '#a1a1aa', font: { size: 10, weight: 'bold' as const } }
+      },
       tooltip: {
         backgroundColor: '#000',
         titleFont: { size: 12, weight: 'bold' as const },
         bodyFont: { size: 11 },
         padding: 12,
         cornerRadius: 12,
-        displayColors: false,
       }
     },
-    scales: widget.type === 'bar' ? {
+    scales: (widget.type === 'bar' || widget.type === 'line' || widget.type === 'area') ? {
       x: { grid: { display: false }, ticks: { color: '#52525b', font: { size: 9, weight: 'bold' as const } } },
       y: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#52525b', font: { size: 9 } } }
     } : { x: { display: false }, y: { display: false } }
   };
 
-  return widget.type === 'doughnut' ? <Doughnut data={chartData} options={options} /> : <Bar data={chartData} options={options} />;
+  const renderChart = () => {
+    switch (widget.type) {
+      case 'line':
+      case 'area':
+        return <Line data={chartData} options={options} />;
+      case 'pie':
+        return <Pie data={chartData} options={options} />;
+      case 'doughnut':
+        return <Doughnut data={chartData} options={options} />;
+      case 'polarArea':
+        return <PolarArea data={chartData} options={options} />;
+      case 'radar':
+        return <Radar data={chartData} options={options} />;
+      case 'bubble':
+        return <Bubble data={chartData} options={options} />;
+      case 'scatter':
+        return <Scatter data={chartData} options={options} />;
+      case 'bar':
+      default:
+        return <Bar data={chartData} options={options} />;
+    }
+  };
+
+  return renderChart();
 };
 
 const WidgetComponent = ({ widget, onEdit, onClick }: { widget: Widget, onEdit: (e: React.MouseEvent) => void, onClick: () => void }) => (
@@ -149,28 +221,58 @@ const WidgetComponent = ({ widget, onEdit, onClick }: { widget: Widget, onEdit: 
 const Overlay = ({ widget, onClose }: { widget: Widget | null, onClose: () => void }) => {
   if (!widget) return null;
 
-  // Use the same data mapping logic as WidgetChart for consistency
-  const keys = widget.data && widget.data.length > 0 ? Object.keys(widget.data[0]) : [];
-  const labelKey = keys[0];
-  const valueKey = keys[keys.length - 1];
+  if (!widget.data || widget.data.length === 0) return null;
 
-  const chartData = {
-    labels: widget.data.map(d => d[labelKey]),
-    datasets: [{
+  const keys = Object.keys(widget.data[0]);
+  let xKey = widget.x_axis || keys[0];
+  let yKeys = widget.y_axis ? widget.y_axis.split(',').map(s => s.trim()) : [keys[keys.length - 1]];
+
+  const isSingleRowAggregate = widget.data.length === 1 && keys.filter(k => typeof widget.data[0][k] === 'number').length > 1;
+
+  let labels: string[] = [];
+  let datasets: any[] = [];
+
+  const baseColors = [
+    'rgba(59, 130, 246, 0.8)',
+    'rgba(147, 51, 234, 0.8)',
+    'rgba(236, 72, 153, 0.8)',
+    'rgba(20, 184, 166, 0.8)',
+    'rgba(245, 158, 11, 0.8)',
+    'rgba(100, 116, 139, 0.8)',
+  ];
+
+  if (isSingleRowAggregate && !widget.x_axis) {
+    const numericKeys = keys.filter(k => typeof widget.data[0][k] === 'number');
+    labels = numericKeys.map(k => k.replace(/_/g, ' '));
+    datasets = [{
       label: widget.title,
-      data: widget.data.map(d => d[valueKey]),
-      backgroundColor: widget.type === 'bar' ? 'rgba(59, 130, 246, 0.8)' : [
-        'rgba(59, 130, 246, 0.7)',
-        'rgba(147, 51, 234, 0.7)',
-        'rgba(236, 72, 153, 0.7)',
-        'rgba(20, 184, 166, 0.7)',
-        'rgba(245, 158, 11, 0.7)',
-        'rgba(100, 116, 139, 0.7)',
-      ],
+      data: numericKeys.map(k => widget.data[0][k]),
+      backgroundColor: widget.type === 'bar' ? baseColors[0] : baseColors,
       borderColor: 'rgba(255, 255, 255, 0.1)',
       borderWidth: 2,
       borderRadius: 12,
-    }]
+    }];
+  } else {
+    labels = widget.data.map(d => String(d[xKey]));
+    datasets = yKeys.map((yKey, idx) => ({
+      label: yKey.replace(/_/g, ' '),
+      data: widget.data.map(d => d[yKey]),
+      backgroundColor: (widget.type === 'bar' || widget.type === 'line' || widget.type === 'area') 
+        ? baseColors[idx % baseColors.length] 
+        : baseColors,
+      borderColor: (widget.type === 'line' || widget.type === 'area') 
+        ? baseColors[idx % baseColors.length].replace('0.8', '1') 
+        : 'rgba(255, 255, 255, 0.1)',
+      borderWidth: 2,
+      borderRadius: 12,
+      fill: widget.type === 'area',
+      tension: 0.4,
+    }));
+  }
+
+  const chartData = {
+    labels,
+    datasets
   };
 
   const options = {
@@ -178,7 +280,7 @@ const Overlay = ({ widget, onClose }: { widget: Widget | null, onClose: () => vo
     maintainAspectRatio: false,
     plugins: {
       legend: { 
-        display: widget.type === 'doughnut',
+        display: datasets.length > 1 || widget.type === 'doughnut' || widget.type === 'pie',
         position: 'right' as const,
         labels: { color: '#a1a1aa', font: { size: 12, weight: 'bold' as const }, padding: 20 }
       },
@@ -188,10 +290,33 @@ const Overlay = ({ widget, onClose }: { widget: Widget | null, onClose: () => vo
         cornerRadius: 16,
       }
     },
-    scales: widget.type === 'bar' ? {
+    scales: (widget.type === 'bar' || widget.type === 'line' || widget.type === 'area') ? {
       x: { grid: { display: false }, ticks: { color: '#71717a', font: { size: 12 } } },
       y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#71717a', font: { size: 12 } } }
     } : { x: { display: false }, y: { display: false } }
+  };
+
+  const renderChart = () => {
+    switch (widget.type) {
+      case 'line':
+      case 'area':
+        return <Line data={chartData} options={options} />;
+      case 'pie':
+        return <Pie data={chartData} options={options} />;
+      case 'doughnut':
+        return <Doughnut data={chartData} options={options} />;
+      case 'polarArea':
+        return <PolarArea data={chartData} options={options} />;
+      case 'radar':
+        return <Radar data={chartData} options={options} />;
+      case 'bubble':
+        return <Bubble data={chartData} options={options} />;
+      case 'scatter':
+        return <Scatter data={chartData} options={options} />;
+      case 'bar':
+      default:
+        return <Bar data={chartData} options={options} />;
+    }
   };
 
   return (
@@ -211,11 +336,7 @@ const Overlay = ({ widget, onClose }: { widget: Widget | null, onClose: () => vo
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
           <div className="lg:col-span-2 h-[500px] lg:h-[600px] bg-zinc-900/50 rounded-[40px] p-12 border border-zinc-800/50 shadow-2xl relative group">
-             {widget.type === 'doughnut' ? (
-               <Doughnut data={chartData} options={options} />
-             ) : (
-               <Bar data={chartData} options={options} />
-             )}
+             {renderChart()}
           </div>
 
           <div className="space-y-12">
@@ -367,6 +488,8 @@ SELECT platform, 100.0 * cnt / NULLIF(total, 0) AS distribution FROM platform_co
           title: generatedChart.title,
           sql: generatedChart.sql,
           type: generatedChart.config?.type === 'line' ? 'line' : (generatedChart.config?.type === 'doughnut' ? 'doughnut' : 'bar'),
+          x_axis: generatedChart.config?.x_axis,
+          y_axis: generatedChart.config?.y_axis,
           data: dataResult.records || [],
           insights: result.insights,
           loading: false,
@@ -384,6 +507,10 @@ SELECT platform, 100.0 * cnt / NULLIF(total, 0) AS distribution FROM platform_co
       } : w));
     }
   };
+
+  useEffect(() => {
+    (window as any).askAgent = handleAddWidget;
+  }, []);
 
   return (
     <div className="min-h-screen bg-black text-white selection:bg-blue-500/30">

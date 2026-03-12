@@ -106,7 +106,28 @@ async def run_query(req: QueryRequest):
 
 @app.get("/api/tables")
 async def get_schema():
-    """Return the live database schema (table + column list) as JSON."""
+    """Return the database schema (table + column list) as JSON."""
+    schema_path = Path(__file__).parent / "data_schema.json"
+    
+    if schema_path.exists():
+        try:
+            with open(schema_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            
+            records = data.get("records", [])
+            tables = {}
+            for record in records:
+                t = record.get("table_name")
+                c = record.get("column_name")
+                if t and c:
+                    if t not in tables:
+                        tables[t] = []
+                    tables[t].append(c)
+            return {"tables": tables, "source": "data_schema.json"}
+        except Exception:
+            pass # Fallback to live
+
+    # Live fallback
     tables_json = await shared_mcp_client.call_tool("list_tables", {})
     table_list = json.loads(tables_json)
     
@@ -128,7 +149,7 @@ async def get_schema():
         t_name, cols = item
         tables[t_name] = cols
                 
-    return {"tables": tables}
+    return {"tables": tables, "source": "live"}
 
 
 @app.post("/api/data")

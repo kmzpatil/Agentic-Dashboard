@@ -183,15 +183,15 @@ def _generate_sql_for_spec(sub_question: str, schema: str, context: str, error: 
         "Write a valid PostgreSQL SELECT query to answer the question.\n"
         "CRITICAL RULES:\n"
         "1. ONLY use EXACT table and column names from the Database Schema above.\n"
-        "2. DO NOT guess table names. Never drop plurals (e.g. use 'channel_metrics', NOT 'channel_metric').\n"
-        "3. If multiple tables are needed, JOIN them correctly.\n"
-        "4. Return ONLY the raw SQL query string — no markdown fences, no formatting, no explanation.\n\n"
+        "2. MANDATORY: You MUST wrap EVERY table name and EVERY column name in double quotes (e.g., SELECT \"Video_ID\" FROM \"raw_videos\").\n"
+        "3. PostgreSQL is case-sensitive for these names. If you omit double quotes, the query WILL FAIL.\n"
+        "4. Return ONLY the raw SQL query string — no markdown, no explanation.\n\n"
         "Example 1:\n"
-        "Question: How many total views in channel_metrics?\n"
-        "SQL: SELECT SUM(facebook + instagram + linkedin + reels + shorts + x + youtube + threads) FROM channel_metrics\n\n"
+        "Question: Total views in channel_metrics?\n"
+        "SQL: SELECT SUM(\"facebook\" + \"instagram\") FROM \"channel_metrics\"\n\n"
         "Example 2:\n"
-        "Question: Top 5 channels by youtube views?\n"
-        "SQL: SELECT channels, youtube FROM channel_metrics ORDER BY youtube DESC LIMIT 5\n\n"
+        "Question: Videos by date?\n"
+        "SQL: SELECT \"Upload_Date\", COUNT(\"Video_ID\") FROM \"raw_videos\" GROUP BY \"Upload_Date\" ORDER BY \"Upload_Date\"\n\n"
         "Your SQL Query:"
     )
     raw = llm_orchestrator.invoke(
@@ -219,10 +219,15 @@ async def _generate_chart_attrs(sql: str, sub_question: str, records: List[Dict]
         "Choose the best chart type and identify the right columns.\n"
         "Respond with a single valid JSON object (no markdown, no extra text) "
         "with EXACTLY these keys:\n"
-        "  type    -- one of: bar, line, pie\n"
+        "  type    -- one of: bar, line, pie, area, doughnut, polarArea, radar, bubble, scatter\n"
         "            Use 'line' for time-series or trend data (x-axis is a date/month/period).\n"
+        "            Use 'area' for filled line charts (similar to line but with color under the curve).\n"
         "            Use 'pie' when showing proportions or share of a total (few categories).\n"
-        "            Use 'bar' for comparisons across categories (default).\n"
+        "            Use 'doughnut' for a ring-shaped pie chart.\n"
+        "            Use 'bar' for categories (default).\n"
+        "            Use 'polarArea' for data showing proportions where segments have different radii.\n"
+        "            Use 'radar' for multivariate data on a 2D chart of three or more variables.\n"
+        "            Use 'bubble' or 'scatter' for XY data points.\n"
         "  x_axis  -- EXACT column name for the X axis (must be one of the available columns)\n"
         "  y_axis  -- EXACT column name(s) for the Y axis, comma-separated if multiple\n"
         "             (must be numeric columns from the available columns)\n"
@@ -283,7 +288,7 @@ async def _process_single_spec(
         "You MUST generate a PostgreSQL query to answer this question.\n"
         "RULES:\n"
         "1. ONLY use EXACT table and column names from the Database Schema above.\n"
-        "2. DO NOT guess table names. Never drop plurals (e.g. use 'channel_metrics', NOT 'channel_metric').\n"
+        "2. MANDATORY: You MUST wrap EVERY table name and EVERY column name in double quotes (e.g., SELECT \"Video_ID\" FROM \"raw_videos\").\n"
         "3. Use execute_sql_query to run your query."
     )
     
@@ -388,12 +393,50 @@ async def build_and_run_pipeline(question: str, client: MCPClient) -> AgentState
             logger.info("[Node: get_schema] Using cached database schema.")
             return {"schema": _SCHEMA_CACHE}
 
+        # Priority 1: Load from local data_schema.json (user's "correct metric definition")
+        schema_path = os.path.join(os.path.dirname(__file__), "data_schema.json")
+        if os.path.exists(schema_path):
+            logger.info(f"[Node: get_schema] Loading schema from {schema_path}...")
+            try:
+                with open(schema_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                
+                records = data.get("records", [])
+                tables: Dict[str, List[str]] = {}
+                for record in records:
+                    t = record.get("table_name")
+                    c = record.get("column_name")
+                    d = record.get("data_type")
+                    if t and c:
+                        if t not in tables:
+                            tables[t] = []
+                        tables[t].append(f"{c} ({d})")
+                
+                schema_info_lines = ["GCData Analytics Database Schema (with required double-quoting):\n"]
+                for t_name, cols in tables.items():
+                    # Format as: Table: "table_name"
+                    schema_info_lines.append(f"\nTable: \"{t_name}\"\n")
+                    # Format columns as: "Column_Name" (type)
+                    formatted_cols = []
+                    for col_str in cols:
+                        name, rest = col_str.split(" ", 1)
+                        formatted_cols.append(f"\"{name}\" {rest}")
+                    schema_info_lines.append(f"Columns: {', '.join(formatted_cols)}\n")
+                
+                schema_info = "".join(schema_info_lines)
+                logger.info(f"  -> Loaded {len(schema_info)} chars of schema data from JSON.")
+                _SCHEMA_CACHE = schema_info
+                return {"schema": schema_info}
+            except Exception as e:
+                logger.warning(f"  -> Failed to load data_schema.json: {e}. Falling back to live schema.")
+
+        # Priority 2: Fetch live DB schema via MCP tools
         logger.info("[Node: get_schema] Fetching live database schema via MCP server...")
         try:
             tables_json = await client.call_tool("list_tables", {})
             tables = json.loads(tables_json)
 
-            schema_info_lines = ["GCData Analytics Database Schema (PostgreSQL / Supabase):\n"]
+            schema_info_lines = ["GCData Analytics Database Schema (Live from MCP):\n"]
             
             async def get_table_details(table_name):
                 try:
@@ -436,7 +479,7 @@ async def build_and_run_pipeline(question: str, client: MCPClient) -> AgentState
             "- Do NOT generate overlapping or redundant charts.\n\n"
             "Respond with a JSON array of objects. Each object must have exactly:\n"
             "  sub_question    -- the specific data question for this chart (full sentence)\n"
-            "  chart_type_hint -- one of: bar, line, pie\n\n"
+            "  chart_type_hint -- one of: bar, line, pie, area, doughnut, polarArea, radar, bubble, scatter\n"
             "Return ONLY the JSON array, no markdown, no extra text.\n\n"
             'Example (single chart): [{{"sub_question": "Total sessions by channel?", "chart_type_hint": "bar"}}]\n'
             'Example (two charts only when both EXPLICITLY requested): '
@@ -508,7 +551,11 @@ async def build_and_run_pipeline(question: str, client: MCPClient) -> AgentState
             charts_output.append({
                 "title": spec.get("chart_attrs", {}).get("title", "Chart") or spec.get("sub_question"),
                 "sql": spec.get("sql_query", ""),
-                "config": config,
+                "config": {
+                    **config,
+                    "x_axis": spec.get("chart_attrs", {}).get("x_axis"),
+                    "y_axis": spec.get("chart_attrs", {}).get("y_axis"),
+                },
                 "error": spec.get("sql_error", "")
             })
         
