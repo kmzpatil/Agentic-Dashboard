@@ -1,8 +1,0 @@
-python-dotenv
-langchain-core
-langchain-huggingface
-langchain-google-genai
-langgraph
-huggingface-hub
-fastapi
-uvicorn[standard]

@@ -1,17 +1,20 @@
 """
 api_server.py
 ─────────────
-FastAPI server that exposes the Frammer analytics agent as a web API and
+FastAPI server that exposes the GCData analytics agent as a web API and
 serves an HTML dashboard that visualises live query results.
+
+Uses direct DatabaseClient access — no MCP subprocess needed.
 
 Endpoints:
   GET  /                → serve the dashboard HTML
-  POST /api/query       → run the NLQ → SQL → XML pipeline; return results
+  POST /api/query       → run the NLQ → SQL → JSON pipeline; return results
   GET  /api/tables      → return live schema (table + column list)
+  POST /api/data        → execute raw SQL query, return records
 
 Usage:
   pip install -r requirements.txt
-  uvicorn api_server:app --reload --port 8000
+  python api_server.py
 """
 
 import json
@@ -21,15 +24,25 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI, HTTPException
-from fastapi.encoders import jsonable_encoder
 from fastapi.responses import HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from orchestrate import build_and_run_pipeline
-from tools.schema import get_frammer_schema
-from tools.sql_query import execute_sql_query
+from db import get_db, db_list_tables, db_describe_table, db_execute_query
 
-app = FastAPI(title="Frammer Analytics API", version="1.0.0")
+
+app = FastAPI(title="GCData Analytics API", version="2.0.0")
+
+# CORS — allow frontend dev server
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 # ── Request / response models ─────────────────────────────────────────────────
 
@@ -43,11 +56,9 @@ class DataRequest(BaseModel):
 
 class QueryResponse(BaseModel):
     question:   str
-    sql:        str          # First chart's SQL (for display in the UI)
-    xml:        str          # Merged dashboard XML
     insights:   str
     error:      str
-    chart_data: dict         # Map of widget title -> list of data records
+    charts:     list         # List of structured chart objects (title, sql, config)
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -64,57 +75,47 @@ async def serve_dashboard():
 @app.post("/api/query", response_model=QueryResponse)
 async def run_query(req: QueryRequest):
     """
-    Run the full NLQ -> SQL -> XML pipeline for a given question.
-    Returns the merged XML, per-chart data records, LLM insights, and SQLs.
+    Run the full NLQ -> SQL -> JSON pipeline for a given question.
+    Returns the structured JSON with insights and charts.
     """
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
 
-    result = await build_and_run_pipeline(req.question)
+    db = get_db()
+    result = await build_and_run_pipeline(req.question, db=db)
 
-    specs = result.get("chart_specs", [])
+    try:
+        output = json.loads(result.get("chart_json", "{}"))
 
-    # Build a chart_title -> records map.
-    # The key MUST match the XML <row label=...> which chart.py sets to
-    # chart_attributes['title']. We also add sub_question as a fallback key.
-    chart_data: dict = {}
-    first_sql = ""
-    for i, spec in enumerate(specs):
-        chart_title  = spec.get("chart_attrs", {}).get("title", "")
-        sub_question = spec.get("sub_question", f"Chart {i+1}")
-        records      = spec.get("records", [])
-        # Register under both keys so the frontend JS can find it either way
-        if chart_title:
-            chart_data[chart_title] = records
-        chart_data[sub_question] = records
-        if i == 0:
-            first_sql = spec.get("sql_query", "")
-
-    return QueryResponse(
-        question=req.question,
-        sql=first_sql,
-        xml=result.get("chart_json", ""),
-        insights=result.get("insights", ""),
-        error=result.get("error", ""),
-        chart_data=jsonable_encoder(chart_data),
-    )
+        return QueryResponse(
+            question=output.get("question", req.question),
+            insights=output.get("insights", ""),
+            error=output.get("error", ""),
+            charts=output.get("charts", []),
+        )
+    except json.JSONDecodeError:
+        return QueryResponse(
+            question=req.question,
+            insights=result.get("insights", ""),
+            error="Failed to parse agent output.",
+            charts=[],
+        )
 
 
 @app.get("/api/tables")
 async def get_schema():
     """Return the live database schema (table + column list) as JSON."""
-    schema_str = get_frammer_schema()
+    table_list = db_list_tables()
+
     tables = {}
-    current_table = None
-    for line in schema_str.splitlines():
-        if line.startswith("Table:"):
-            current_table = line.replace("Table:", "").strip()
-            tables[current_table] = []
-        elif line.startswith("Columns:") and current_table:
-            col_part = line.replace("Columns:", "").strip()
-            tables[current_table] = [
-                c.split("(")[0].strip() for c in col_part.split(",")
-            ]
+    for t in table_list:
+        t_name = t["name"]
+        try:
+            details = db_describe_table(t_name)
+            tables[t_name] = [c["name"] for c in details.get("columns", [])]
+        except Exception:
+            tables[t_name] = []
+
     return {"tables": tables}
 
 
@@ -127,11 +128,14 @@ async def get_data(req: DataRequest):
     if not req.sql.strip():
         raise HTTPException(status_code=400, detail="SQL cannot be empty.")
 
-    raw = execute_sql_query(req.sql)
-    parsed = json.loads(raw)
+    result = db_execute_query(req.sql)
 
-    if "error" in parsed:
-        raise HTTPException(status_code=400, detail=parsed["error"])
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
 
-    return {"records": parsed.get("data", [])}
+    return {"records": result.get("rows", [])}
 
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

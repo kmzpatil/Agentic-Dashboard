@@ -709,6 +709,166 @@
       };
     }
 
+    // ── Fetch data for a SQL query via /api/data ────────────────────────────────
+    async function fetchDataForSQL(sql) {
+      const res = await fetch('/api/data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sql }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Failed to fetch chart data');
+      }
+      const body = await res.json();
+      return body.records || [];
+    }
+
+    // ── Render charts from the JSON response ─────────────────────────────────────
+    async function renderChartsFromJSON(apiResponse) {
+      const dash = document.getElementById('dashboard');
+      dash.innerHTML = '';
+
+      const charts = apiResponse.charts || [];
+      if (!charts.length) {
+        dash.innerHTML = '<div class="error-card">No charts returned.</div>';
+        dash.style.display = 'block';
+        return;
+      }
+
+      // Show the SQL from the first chart
+      const firstSQL = charts[0]?.sql;
+      if (firstSQL) {
+        document.getElementById('sqlCode').textContent = firstSQL;
+        document.getElementById('sql-section').style.display = 'block';
+      }
+
+      for (const chart of charts) {
+        // Skip charts that had errors during generation
+        if (chart.error && !chart.sql) {
+          const errDiv = document.createElement('div');
+          errDiv.className = 'error-card';
+          errDiv.textContent = chart.error;
+          dash.appendChild(errDiv);
+          continue;
+        }
+
+        // Fetch live data using the chart's SQL
+        let records = [];
+        try {
+          if (chart.sql) {
+            document.getElementById('statusText').textContent =
+              `Fetching data for: ${chart.title || 'chart'}…`;
+            records = await fetchDataForSQL(chart.sql);
+          }
+        } catch (e) {
+          const errDiv = document.createElement('div');
+          errDiv.className = 'error-card';
+          errDiv.textContent = `Data fetch error for "${chart.title}": ${e.message}`;
+          dash.appendChild(errDiv);
+          continue;
+        }
+
+        if (!records.length) {
+          const errDiv = document.createElement('div');
+          errDiv.className = 'error-card';
+          errDiv.textContent = `No data returned for "${chart.title}"`;
+          dash.appendChild(errDiv);
+          continue;
+        }
+
+        // Build the Chart.js config by hydrating with fetched records
+        const config = chart.config || {};
+        const xAxis = config.x_axis || Object.keys(records[0])[0];
+        const yAxes = config.y_axis || [];
+        const yFields = Array.isArray(yAxes)
+          ? yAxes
+          : String(yAxes).split(',').map(s => s.trim()).filter(Boolean);
+
+        // If no y fields specified, pick all numeric columns except x
+        if (!yFields.length) {
+          for (const key of Object.keys(records[0])) {
+            if (key !== xAxis && typeof records[0][key] === 'number') {
+              yFields.push(key);
+            }
+          }
+        }
+
+        const labels = records.map(r => String(r[xAxis] ?? ''));
+        const colors = [
+          'rgba(88,166,255,0.85)', 'rgba(188,140,255,0.85)',
+          'rgba(57,211,83,0.85)', 'rgba(247,129,102,0.85)',
+          'rgba(255,196,0,0.85)', 'rgba(248,81,73,0.85)',
+        ];
+
+        let chartType = (config.type || 'bar').toLowerCase();
+        if (chartType === 'pie' || chartType === 'doughnut') chartType = 'doughnut';
+
+        const datasets = yFields.map((field, i) => ({
+          label: field.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+          data: records.map(r => Number(r[field] ?? 0)),
+          backgroundColor: chartType === 'doughnut' ? colors : colors[i % colors.length],
+          borderColor: chartType === 'doughnut'
+            ? '#161b22'
+            : colors[i % colors.length].replace('0.85', '1'),
+          borderWidth: chartType === 'doughnut' ? 3 : 2,
+          borderRadius: chartType === 'bar' ? 6 : undefined,
+          borderSkipped: chartType === 'bar' ? false : undefined,
+          tension: chartType === 'line' ? 0.4 : undefined,
+          fill: chartType === 'line' ? true : undefined,
+          pointRadius: chartType === 'line' ? 4 : undefined,
+          pointHoverRadius: chartType === 'line' ? 6 : undefined,
+        }));
+
+        const chartjsConfig = {
+          type: chartType,
+          data: { labels, datasets },
+          options: chartType === 'doughnut'
+            ? {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                  legend: { position: 'right', labels: { color: '#8b949e', font: { size: 12 } } },
+                  title: { display: false },
+                },
+              }
+            : chartOptions(chart.title || ''),
+        };
+
+        // Create the card, title, canvas, and render
+        const rowLabel = document.createElement('div');
+        rowLabel.className = 'row-label';
+        rowLabel.textContent = chart.title || 'Chart';
+        dash.appendChild(rowLabel);
+
+        const rowDiv = document.createElement('div');
+        rowDiv.className = 'widget-row';
+
+        const card = document.createElement('div');
+        card.className = 'chart-card';
+        card.style.flex = '1';
+        card.style.minWidth = '280px';
+
+        const titleEl = document.createElement('div');
+        titleEl.className = 'chart-title';
+        titleEl.textContent = chart.title || '';
+        card.appendChild(titleEl);
+
+        const container = document.createElement('div');
+        container.className = 'chart-container';
+        const canvas = document.createElement('canvas');
+        container.appendChild(canvas);
+        card.appendChild(container);
+        rowDiv.appendChild(card);
+        dash.appendChild(rowDiv);
+
+        const instance = new Chart(canvas, chartjsConfig);
+        chartInstances.push(instance);
+      }
+
+      dash.style.display = 'block';
+    }
+
     // ── Main submit function ─────────────────────────────────────────────────────
     window.submitQuery = async function () {
       const q = document.getElementById('queryInput').value.trim();
@@ -732,23 +892,26 @@
           body: JSON.stringify({ question: q }),
         });
         const data = await res.json();
-        document.getElementById('status').style.display = 'none';
 
         if (!res.ok) throw new Error(data.detail || 'Server error');
 
-        // Store the per-chart data map for the renderer
-        _chartDataMap = data.chart_data || {};
-
-        // SQL display (show first query; others are used internally per-chart)
-        if (data.sql) {
-          document.getElementById('sqlCode').textContent = data.sql;
-          document.getElementById('sql-section').style.display = 'block';
+        // ── JSON charts path (preferred) ──────────────────────────
+        if (data.charts && data.charts.length > 0) {
+          document.getElementById('statusText').textContent = 'Rendering charts…';
+          await renderChartsFromJSON(data);
+          document.getElementById('status').style.display = 'none';
         }
-
-        // Dashboard XML -> charts
-        if (data.xml && data.xml.trim().startsWith('<?xml')) {
+        // ── Legacy XML path (fallback) ────────────────────────────
+        else if (data.xml && data.xml.trim().startsWith('<?xml')) {
+          document.getElementById('status').style.display = 'none';
+          _chartDataMap = data.chart_data || {};
+          if (data.sql) {
+            document.getElementById('sqlCode').textContent = data.sql;
+            document.getElementById('sql-section').style.display = 'block';
+          }
           renderDashboard(data.xml);
         } else {
+          document.getElementById('status').style.display = 'none';
           document.getElementById('dashboard').innerHTML =
             `<div class="error-card">${data.error || 'No chart data returned.'}</div>`;
           document.getElementById('dashboard').style.display = 'block';
