@@ -11,6 +11,8 @@ dist/
 docs/
 
 # Local data/import and one-off scripts
+*.txt
+*.dump
 *.sql
 *.py
 *:Zone.Identifier
