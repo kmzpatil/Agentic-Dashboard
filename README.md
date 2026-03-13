@@ -1,96 +1,143 @@
-# Frammer AI Dashboard (Frontend + API)
+# Frammer AI Dashboard
 
-This repository contains:
-- A React + Vite + Tailwind dashboard UI
-- A Node/Express API server
-- PostgreSQL-backed analytics endpoints for Overview, Usage & Trends, Funnel, and Explorer
+React + Vite frontend with a Node/Express API and PostgreSQL analytics backend.
 
-## 1) Prerequisites
+## Current Status (March 2026)
+- Frontend is modularized into feature modules: Overview, Usage & Trends, Funnel, Explorer.
+- API is modularized by route domain under `backend/routes`.
+- SQL/query logic is centralized under `backend/queries` (no large inline SQL blocks in route handlers).
+- Config and DB wiring are separated into `backend/config` and `backend/db`.
+- Basic runtime smoke checks are passing (`/api/health`, `/api/explorer/tables`).
+
+## Tech Stack
+- Frontend: React 19, Vite 5, Tailwind CSS
+- Charts: Chart.js, react-chartjs-2, chartjs-chart-sankey
+- Backend: Express 5, pg
+- Database: PostgreSQL (`frammer_database`)
+
+## Prerequisites
 - Node.js 18+
 - npm 9+
-- PostgreSQL running locally
+- PostgreSQL (local or remote)
 
-## 2) Environment Setup
-Create your local env file from the example:
+## Setup
+1. Create env file:
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` values as needed:
-- `PORT`: API server port
-- `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`, `PGPASSWORD`: DB connection
-- `VITE_API_BASE_URL`: frontend URL to backend API
+2. Update `.env` values:
+- `PORT` (or `API_PORT`): API port (default `4000`)
+- `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`, `PGPASSWORD`: PostgreSQL connection
+- `VITE_API_BASE_URL`: frontend-to-API base URL
 
-## 3) Install Dependencies
+3. Install dependencies:
+
 ```bash
 npm install
 ```
 
-## 4) Database Notes
-This app expects the `frammer_database` schema loaded in PostgreSQL.
+## Run
+Run frontend + API together:
 
-Quick connectivity check:
-```bash
-psql -h /run/postgresql -p 5433 -U manish -d frammer_database -c "SELECT 1;"
-```
-
-If your PostgreSQL uses different host/port/user, update `.env` accordingly.
-
-## 5) Run the App
-Run API + frontend together:
 ```bash
 npm run dev:full
 ```
 
-Or separately:
+Run separately:
 
-API:
 ```bash
 npm run api
-```
-
-Frontend:
-```bash
 npm run dev
 ```
 
-Frontend default URL:
-- `http://localhost:5173`
+Default URLs:
+- Frontend: `http://localhost:5173`
+- API: `http://localhost:4000`
 
-API default URL:
-- `http://localhost:4000`
-
-## 6) Build for Production
+## Build
 ```bash
 npm run build
-```
-
-Preview production build:
-```bash
 npm run preview
 ```
 
-## 7) Project Structure
-- `app.jsx`: Main dashboard UI (Overview, Usage & Trends, Funnel, Explorer)
-- `server.js`: Express API + analytics SQL endpoints
-- `src/`: Frontend entry + global styles
-- `tailwind.config.js`, `postcss.config.js`, `vite.config.js`: build/style tooling
+## API Surface
+- `GET /api/health`
+- `GET /api/overview`
+- `GET /api/usage-trends`
+- `GET /api/funnel`
+- `GET /api/funnel/video/:videoId`
+- `GET /api/explorer/dimensions`
+- `GET /api/explorer/multidim`
+- `GET /api/explorer/tables`
+- `GET /api/explorer/table/:tableName`
+- `GET /api/explorer/chart`
 
-## 8) Environment Variables Reference
-- `PORT`: API port
+## Directory Structure
+```text
+.
+├── app.js
+├── app.jsx
+├── server.js
+├── backend
+│   ├── app.js
+│   ├── config
+│   │   └── env.js
+│   ├── db
+│   │   └── pool.js
+│   ├── queries
+│   │   ├── analyticsShared.js
+│   │   ├── explorerQueries.js
+│   │   ├── funnelQueries.js
+│   │   └── overviewQueries.js
+│   ├── routes
+│   │   ├── api.js
+│   │   ├── explorer.js
+│   │   ├── funnel.js
+│   │   ├── health.js
+│   │   ├── overview.js
+│   │   └── usageTrends.js
+│   └── utils
+└── src
+    ├── main.jsx
+    ├── index.css
+    ├── AppShell.jsx
+    ├── hooks
+    │   └── useApi.js
+    ├── components
+    │   ├── common
+    │   │   └── KpiCard.jsx
+    │   └── layout
+    │       ├── FilterDock.jsx
+    │       └── PipelineRail.jsx
+    ├── features
+    │   ├── overview
+    │   │   └── OverviewModule.jsx
+    │   ├── usage
+    │   │   └── UsageTrendsModule.jsx
+    │   ├── funnel
+    │   │   └── FunnelModule.jsx
+    │   ├── explorer
+    │   │   └── ExplorerModule.jsx
+    │   └── shared
+    │       └── ComingSoonModule.jsx
+    └── lib
+        ├── chartSetup.js
+        ├── constants.js
+        └── formatters.js
+```
+
+## Environment Variables
+- `PORT`: API port fallback
+- `API_PORT`: optional API port alias
 - `PGHOST`: PostgreSQL host or socket path
 - `PGPORT`: PostgreSQL port
 - `PGUSER`: PostgreSQL username
 - `PGDATABASE`: PostgreSQL database name
-- `PGPASSWORD`: PostgreSQL password (optional when peer/local auth is enabled)
-- `VITE_API_BASE_URL`: Base URL used by frontend to call API
+- `PGPASSWORD`: PostgreSQL password
+- `VITE_API_BASE_URL`: frontend API base URL
 
-## 9) Git Hygiene
-Local secrets are ignored by git:
-- `.env`
-- `.env.local`
-
-Commit the template only:
-- `.env.example`
+## Notes
+- Keep `.env` local; commit `.env.example` only.
 
