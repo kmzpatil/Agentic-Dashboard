@@ -27,8 +27,16 @@ def _resolve_y_cols(attrs: Dict, df: pd.DataFrame, x_col: str) -> List[str]:
     valid = [c for c in candidates if c in df.columns]
 
     if not valid:
-        numeric = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c]) and c != x_col]
-        valid = [numeric[0]] if numeric else []
+        # If no valid Y column is specified, look for numeric ones.
+        # Even if x_col is numeric, if it's the only numeric col, we might want to plot it.
+        numeric = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+        
+        # Priority: numeric columns that aren't the x_col
+        others = [c for c in numeric if c != x_col]
+        if others:
+            valid = [others[0]]
+        elif numeric:
+            valid = [numeric[0]]
 
     return valid
 
@@ -63,6 +71,13 @@ def generate_chart_config(
     if not y_cols:
         return {"error": "No numeric columns for Y axis"}
 
+    # Special case: if x_col and y_col are the same (e.g. SELECT total_views FROM...), 
+    # and there's only one row, the labels should be "Total" or similar instead of the value itself.
+    if x_col == y_cols[0] and len(df) == 1:
+        labels = ["Total"]
+    else:
+        labels = [str(val) for val in df[x_col].tolist()]
+
     chart_type = attrs.get("type", "bar").lower()
     # Normalize chart types for Chart.js
     if "bar" in chart_type:
@@ -77,7 +92,7 @@ def generate_chart_config(
     title = attrs.get("title") or "Chart"
 
     # Build Chart.js structure
-    labels = [str(val) for val in df[x_col].tolist()]
+    # (labels are already defined above)
     datasets = []
 
     # Color palette matching the frontend PALETTES

@@ -21,6 +21,7 @@ import logging
 import sys
 import os
 import time
+import re
 from typing import Any, Dict, List, Optional, TypedDict
 
 # Configure orchestrator logging (writes to console & file)
@@ -58,10 +59,10 @@ from mcp_server.database import DatabaseClient
 load_dotenv()
 
 # Strict model: SQL generation, JSON decisions, chart attr selection
-llm_orchestrator = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
+llm_orchestrator = ChatGroq(model="qwen/qwen3-32b", temperature=0)
 
 # Creative model: business insights synthesis
-llm_analyst = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.4)
+llm_analyst = ChatGroq(model="qwen/qwen3-32b", temperature=0.2)
 
 
 # --- Agent State ------------------------------------------------------------
@@ -87,35 +88,12 @@ class AgentState(TypedDict, total=False):
 
 # --- Helpers ----------------------------------------------------------------
 
+def strip_thoughts(text: str) -> str:
+    """Remove <think>...</think> blocks from LLM output."""
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+
 
 # --- Per-Spec Processing Helpers --------------------------------------------
-
-def _generate_sql_for_spec(sub_question: str, schema: str, context: str, error: str = "") -> str:
-    """Generate a PostgreSQL SELECT query for a single chart spec (synchronous)."""
-    prompt = PromptTemplate.from_template(
-        "You are a PostgreSQL expert.\n\n"
-        "Database Schema:\n{schema}\n\n"
-        "Business Metric Definitions: {context}\n\n"
-        "Previous Error (if any): {error}\n\n"
-        "Question: {question}\n\n"
-        "Write a valid PostgreSQL SELECT query to answer the question.\n"
-        "CRITICAL RULES:\n"
-        "1. ONLY use EXACT table and column names from the Database Schema above.\n"
-        "2. DO NOT guess table names. Never drop plurals (e.g. use 'channel_metrics', NOT 'channel_metric').\n"
-        "3. If multiple tables are needed, JOIN them correctly.\n"
-        "4. Return ONLY the raw SQL query string — no markdown fences, no formatting, no explanation.\n\n"
-        "Example 1:\n"
-        "Question: How many total views in channel_metrics?\n"
-        "SQL: SELECT SUM(facebook + instagram + linkedin + reels + shorts + x + youtube + threads) FROM channel_metrics\n\n"
-        "Example 2:\n"
-        "Question: Top 5 channels by youtube views?\n"
-        "SQL: SELECT channels, youtube FROM channel_metrics ORDER BY youtube DESC LIMIT 5\n\n"
-        "Your SQL Query:"
-    )
-    raw = llm_orchestrator.invoke(
-        prompt.format(schema=schema, context=context, error=error, question=sub_question)
-    ).content
-    return raw.strip().strip("```sql").strip("```").strip()
 
 
 async def _generate_chart_attrs(sql: str, sub_question: str, records: List[Dict]) -> Dict:
@@ -137,10 +115,12 @@ async def _generate_chart_attrs(sql: str, sub_question: str, records: List[Dict]
         "Choose the best chart type and identify the right columns.\n"
         "Respond with a single valid JSON object (no markdown, no extra text) "
         "with EXACTLY these keys:\n"
-        "  type    -- one of: bar, line, pie\n"
-        "            Use 'line' for time-series or trend data (x-axis is a date/month/period).\n"
-        "            Use 'pie' when showing proportions or share of a total (few categories).\n"
-        "            Use 'bar' for comparisons across categories (default).\n"
+        "  type    -- one of: bar, line, pie, doughnut, polarArea, radar, bubble, scatter\n"
+        "            - Use 'line' for time-series or trend data (x-axis is a date/month/period).\n"
+        "            - Use 'pie' or 'doughnut' for proportions or share of a total (few categories).\n"
+        "            - Use 'radar' or 'polarArea' for multi-dimensional comparisons.\n"
+        "            - Use 'bubble' or 'scatter' for correlation analysis between two numeric variables.\n"
+        "            - Use 'bar' for general comparisons across categories (default).\n"
         "  x_axis  -- EXACT column name for the X axis (must be one of the available columns)\n"
         "  y_axis  -- EXACT column name(s) for the Y axis, comma-separated if multiple\n"
         "             (must be numeric columns from the available columns)\n"
@@ -151,7 +131,7 @@ async def _generate_chart_attrs(sql: str, sub_question: str, records: List[Dict]
     raw_resp = await llm_orchestrator.ainvoke(
         prompt.format(sql=sql, question=sub_question, col_hint=col_hint)
     )
-    raw = raw_resp.content.strip().strip("```json").strip("```").strip()
+    raw = strip_thoughts(raw_resp.content).strip().strip("```json").strip("```").strip()
 
     try:
         return json.loads(raw)
@@ -179,7 +159,7 @@ async def _process_single_spec(
         "type": "function",
         "function": {
             "name": "execute_sql_query",
-            "description": "Execute a read-only PostgreSQL SELECT query.",
+            "description": "Execute a read-only DuckDB SELECT query.",
             "parameters": {
                 "type": "object",
                 "properties": {"query": {"type": "string", "description": "SQL SELECT query"}},
@@ -193,11 +173,14 @@ async def _process_single_spec(
         f"Database schema:\n{schema}\n\n"
         f"Business context:\n{context}\n\n"
         f"Question: {sub_question}\n\n"
-        "You MUST generate a PostgreSQL query to answer this question.\n"
+        "You MUST generate a DuckDB query to answer this question.\n"
         "RULES:\n"
         "1. ONLY use EXACT table and column names from the Database Schema above.\n"
         "2. DO NOT guess table names. Never drop plurals (e.g. use 'channel_metrics', NOT 'channel_metric').\n"
-        "3. Use execute_sql_query to run your query."
+        "3. DUCKDB DATE HANDLING: Date columns (upload_date, create_date, publish_date) are VARCHAR. "
+        "   You MUST use `strftime(TRY_CAST(col AS DATE), '%Y-%m')` for monthly trends. "
+        "   NEVER use strftime on the raw column without TRY_CAST.\n"
+        "4. Use execute_sql_query to run your query."
     )
 
     spec_error = ""
@@ -205,12 +188,19 @@ async def _process_single_spec(
 
     for _attempt in range(3):
         try:
-            # Add error feedback if this is a retry
-            current_prompt = prompt + (f"\n\nPrevious Error to fix: {spec_error}" if spec_error else "")
+            # Add explicit error feedback and correction directive if this is a retry
+            if spec_error:
+                current_prompt = prompt + (
+                    f"\n\nCRITICAL: The previous DuckDB query failed with this error:\n{spec_error}\n\n"
+                    "Please analyze the error and the schema again, then provide a corrected DuckDB SELECT query."
+                )
+            else:
+                current_prompt = prompt
+            
             response = await llm_with_sql.ainvoke([HumanMessage(content=current_prompt)])
 
             if not response.tool_calls:
-                sql = response.content.strip().strip("```sql").strip("```").strip()
+                sql = strip_thoughts(response.content).strip().strip("```sql").strip("```").strip()
                 if "SELECT" not in sql.upper():
                     spec_error = "LLM failed to generate a SELECT query."
                     if _attempt < 2:
@@ -306,7 +296,7 @@ async def build_and_run_pipeline(question: str, db: DatabaseClient | None = None
         logger.info("[Node: get_schema] Fetching live database schema...")
         try:
             tables = db.list_tables()
-            schema_info = "GCData Analytics Database Schema (PostgreSQL / Supabase):\n"
+            schema_info = "GCData Analytics Database Schema (DuckDB):\n"
 
             for t in tables:
                 table_name = t["name"]
@@ -337,13 +327,16 @@ async def build_and_run_pipeline(question: str, db: DatabaseClient | None = None
             "IMPORTANT RULES:\n"
             "- DEFAULT to 1 chart. Only return more than 1 if the question EXPLICITLY asks for "
             "  multiple unrelated views (e.g. 'show me X AND ALSO Y by Z').\n"
+            "- PREFER TRENDS/GRAPHS: If the question allows it, always try to decompose it into "
+            "  a trend (over time) or a comparison across categories rather than just a single sum/value.\n"
+            "  Example: For 'show total views', a 'views trend over months' is preferred.\n"
             "- Questions like 'show me X vs Y' or 'compare A and B' are STILL 1 chart "
             "  (multi-series on the same chart).\n"
             "- Never return more than 3 charts.\n"
             "- Do NOT generate overlapping or redundant charts.\n\n"
             "Respond with a JSON array of objects. Each object must have exactly:\n"
             "  sub_question    -- the specific data question for this chart (full sentence)\n"
-            "  chart_type_hint -- one of: bar, line, pie\n\n"
+            "  chart_type_hint -- one of: bar, line, pie, doughnut, polarArea, radar, bubble, scatter\n\n"
             "Return ONLY the JSON array, no markdown, no extra text.\n\n"
             'Example (single chart): [{{"sub_question": "Total sessions by channel?", "chart_type_hint": "bar"}}]\n'
             'Example (two charts only when both EXPLICITLY requested): '
@@ -356,7 +349,8 @@ async def build_and_run_pipeline(question: str, db: DatabaseClient | None = None
                 context=state.get("semantic_context", ""),
                 question=state["question"],
             )
-        ).content.strip().strip("```json").strip("```").strip()
+        ).content
+        raw = strip_thoughts(raw).strip().strip("```json").strip("```").strip()
 
         try:
             specs = json.loads(raw)
@@ -447,22 +441,42 @@ async def build_and_run_pipeline(question: str, db: DatabaseClient | None = None
         data_str = json.dumps(all_data, indent=2, default=str)
 
         prompt = PromptTemplate.from_template(
-            "You are a business analyst for a media analytics platform.\n"
+            "You are a senior business analyst for a media analytics platform.\n"
             "The user's overall question was: {question}\n\n"
             "Data retrieved across {n} chart(s):\n{data}\n\n"
-            "Provide 3-5 concise, actionable bullet-point insights that directly answer the user's "
-            "question. Synthesise across all charts where relevant. "
-            "Focus on key trends, comparisons, or anomalies. "
-            "Use business language only — no code, no SQL."
+            "Provide 3-5 concise, actionable business insights that directly answer the user's question.\n"
+            "STRICT FORMATTING RULES (FAILURE TO FOLLOW WILL RESULT IN ERRORS):\n"
+            "1. NEVER use double asterisks (**). NEVER use markdown bolding.\n"
+            "2. NEVER use generic dashes (-) or bullets at the start of lines.\n"
+            "3. Use a sophisticated, native analyst tone (e.g., 'A notable variance was observed...' instead of 'There is a dip...').\n"
+            "4. Use plain text only. Use simple numbering (1. , 2. , etc.) if you need to separate points.\n"
+            "5. Return ONLY the plain text insights, no extra commentary."
         )
-        insights = llm_analyst.invoke(
+        insights_resp = llm_analyst.invoke(
             prompt.format(
                 question=state.get("question", ""),
                 n=len(all_data),
                 data=data_str,
             )
         ).content
-        logger.info("  -> Insights generated successfully.")
+        
+        # Post-processing safety net: strip markdown artifacts
+        insights = strip_thoughts(insights_resp)
+        # Remove bolding (**)
+        insights = insights.replace("**", "").replace("__", "")
+        # Remove leading bullets/dashes/numbers with regex for robustness
+        # This regex removes: 1. , - , * , etc at the start of any line
+        lines = insights.splitlines()
+        cleaned_lines = []
+        for line in lines:
+            # Strip leading characters like -, *, numbers followed by .
+            l = re.sub(r'^[\s\-\*\•\d+\.]+\s*', '', line).strip()
+            if l:
+                cleaned_lines.append(l)
+        
+        insights = "\n".join(cleaned_lines)
+        
+        logger.info("  -> Insights generated successfully (regex cleaned).")
         return {"insights": insights}
 
     # Node 7 — Surface pipeline-level errors gracefully

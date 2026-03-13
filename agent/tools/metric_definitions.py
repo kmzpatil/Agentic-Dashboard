@@ -5,12 +5,15 @@ known table/domain terms using word-overlap scoring.
 """
 
 METRIC_DICTIONARY: dict[str, str] = {
-    "channel_metrics": "Table `channel_metrics` contains metrics across columns: channels, facebook, instagram, linkedin, reels, shorts, x, youtube, threads, facebook_duration, instagram_duration, linkedin_duration, reels_duration, shorts_duration, x_duration, youtube_duration, threads_duration",
-    "input_type_metrics": "Table `input_type_metrics` contains metrics across columns: input_type, uploaded_count, created_count, published_count, uploaded_duration, created_duration, published_duration",
-    "language_statistics": "Table `language_statistics` contains metrics across columns: language, uploaded_count, created_count, published_count, uploaded_duration, created_duration, published_duration",
-    "monthly_counts_duration": "Table `monthly_counts_duration` contains metrics across columns: month, total_uploaded, total_created, total_published, total_uploaded_duration, total_created_duration, total_published_duration",
-    "output_type_statistics": "Table `output_type_statistics` contains metrics across columns: output_type, uploaded_count, created_count, published_count, uploaded_duration, created_duration, published_duration",
-    "video_list_data": "Table `video_list_data` contains metrics across columns: headline, source, published, team_name, type, uploaded_by, video_id, published_platform, published_url",
+    "channel_metrics": "Table `channel_metrics`. Columns: channel_name, facebook, instagram, linkedin, reels, shorts, x, youtube, threads. Sample: {'channel_name': 'c4_channel_3', 'facebook': 42}",
+    "input_type_metrics": "Table `input_type_metrics`. Columns: input_type, count, total_duration. Sample: {'input_type': 'special reports', 'count': 1501}",
+    "monthly_counts_duration": "Table `monthly_counts_duration`. Columns: month, total_uploaded, total_created, total_published, total_uploaded_duration, total_created_duration, total_published_duration. Sample: {'month': '2025-12', 'total_uploaded': 854}",
+    "output_type_statistics": "Table `output_type_statistics`. Columns: output_type, count, total_duration. Sample: {'output_type': 'key moments', 'count': 10720}",
+    "raw_videos": "Core table `raw_videos`. Columns: video_id, user_id, headline, source_url, upload_date, input_type, language, uploaded_duration. NOTE: `upload_date` is VARCHAR. Use `strftime(TRY_CAST(upload_date AS DATE), '%Y-%m')` for monthly trends.",
+    "created_assets": "Table `created_assets`. Columns: asset_id, video_id, output_type, create_date, created_duration. NOTE: `create_date` is VARCHAR. Use `strftime(TRY_CAST(create_date AS DATE), '%Y-%m')` for monthly trends.",
+    "published_posts": "Table `published_posts`. Columns: post_id, asset_id, publish_date, published_duration. NOTE: `publish_date` is VARCHAR. Use `strftime(TRY_CAST(publish_date AS DATE), '%Y-%m')` for monthly trends.",
+    "post_distribution": "Table `post_distribution`. Columns: post_id, channel_name, published_platform, published_url. Sample: {'published_platform': 'reels', 'channel_name': 'c2_channel_10'}",
+    "SQL_RULES": "CRITICAL: DuckDB date columns are stored as VARCHAR. You MUST use `TRY_CAST(col AS DATE)` before passing to `strftime`. Example: `strftime(TRY_CAST(publish_date AS DATE), '%Y-%m')`."
 }
 
 # Expanded keyword aliases to improve matching

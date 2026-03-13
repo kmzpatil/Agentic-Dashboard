@@ -48,19 +48,44 @@ class DatabaseClient:
     def _get_table_names(self, schema: str | None) -> list[str]:
         target = schema or "None"
         if target not in self._table_names:
-            self._table_names[target] = self._inspector().get_table_names(schema=schema)
+            if self.dialect_name == "duckdb":
+                with self.engine.connect() as conn:
+                    res = conn.execute(text("SHOW TABLES")).fetchall()
+                    self._table_names[target] = [row[0] for row in res]
+            else:
+                self._table_names[target] = self._inspector().get_table_names(schema=schema)
         return self._table_names[target]
 
     def _get_view_names(self, schema: str | None) -> list[str]:
         target = schema or "None"
         if target not in self._view_names:
-            self._view_names[target] = self._inspector().get_view_names(schema=schema)
+            if self.dialect_name == "duckdb":
+                # For simplicity, we'll treat all as tables in SHOW TABLES
+                # DuckDB doesn't separate them as clearly in a simple SHOW TABLES
+                self._view_names[target] = []
+            else:
+                self._view_names[target] = self._inspector().get_view_names(schema=schema)
         return self._view_names[target]
 
     def _get_columns(self, table_name: str, schema: str | None) -> list[dict[str, Any]]:
         key = f"{schema or 'None'}.{table_name}"
         if key not in self._column_details:
-            self._column_details[key] = self._inspector().get_columns(table_name, schema=schema)
+            if self.dialect_name == "duckdb":
+                with self.engine.connect() as conn:
+                    # DuckDB's PRAGMA table_info returns (cid, name, type, notnull, dflt_value, pk)
+                    res = conn.execute(text(f"PRAGMA table_info('{table_name}')")).fetchall()
+                    self._column_details[key] = [
+                        {
+                            "name": row[1],
+                            "type": row[2],
+                            "nullable": not row[3],
+                            "default": row[4],
+                            "primary_key": row[5]
+                        }
+                        for row in res
+                    ]
+            else:
+                self._column_details[key] = self._inspector().get_columns(table_name, schema=schema)
         return self._column_details[key]
 
     def _resolve_schema(self, schema: str | None) -> str | None:
@@ -68,6 +93,8 @@ class DatabaseClient:
             return schema
         if self.dialect_name == "postgresql":
             return self.default_schema
+        if self.dialect_name == "duckdb":
+            return None
         return None
 
     def resolve_schema(self, schema: str | None) -> str | None:
@@ -155,6 +182,25 @@ class DatabaseClient:
             raise ValueError(
                 f"Table or view '{table_name}' was not found in schema '{target_schema}'."
             )
+
+        if self.dialect_name == "duckdb":
+            cols = self._get_columns(table_name, schema=target_schema)
+            return {
+                "name": table_name,
+                "schema": target_schema,
+                "kind": "table", # default to table for duckdb
+                "columns": [
+                    {
+                        "name": c["name"],
+                        "type": str(c["type"]),
+                        "nullable": c["nullable"],
+                        "default": str(c["default"]) if c["default"] is not None else None,
+                    }
+                    for c in cols
+                ],
+                "primary_key": [c["name"] for c in cols if c.get("primary_key")],
+                "foreign_keys": [], # DuckDB doesn't easily expose FKs via simple PRAGMA
+            }
 
         inspector = self._inspector()
         return {
