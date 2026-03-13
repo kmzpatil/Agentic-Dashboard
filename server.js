@@ -1,15 +1,26 @@
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
 
 const app = express();
-const port = Number(process.env.PORT || 4000);
+const port = Number(process.env.PORT || process.env.API_PORT || 4000);
+
+const dbHost = process.env.PGHOST;
+const dbPort = process.env.PGPORT;
+const dbUser = process.env.PGUSER;
+const dbDatabase = process.env.PGDATABASE;
+
+if (!dbHost || !dbPort || !dbUser || !dbDatabase) {
+  throw new Error('Missing required database environment variables: PGHOST, PGPORT, PGUSER, PGDATABASE');
+}
 
 const pool = new Pool({
-  host: process.env.PGHOST || '/var/run/postgresql',
-  port: Number(process.env.PGPORT || 5433),
-  user: process.env.PGUSER || 'manish',
-  database: process.env.PGDATABASE || 'frammer_database',
+  host: dbHost,
+  port: Number(dbPort),
+  user: dbUser,
+  database: dbDatabase,
   password: process.env.PGPASSWORD || undefined,
 });
 
