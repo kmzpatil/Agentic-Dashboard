@@ -1,0 +1,18 @@
+# Dependencies and env
+node_modules/
+.venv/
+
+# Build output
+dist/
+
+# Local docs and research assets
+docs/
+
+# Local data/import and one-off scripts
+*.sql
+*.py
+*:Zone.Identifier
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
