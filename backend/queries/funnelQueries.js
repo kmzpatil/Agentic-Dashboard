@@ -5,36 +5,53 @@ const BREAKDOWN_EXPR_MAP = {
   output_type: 'ca."Output_Type"',
 };
 
-const VIDEO_HEADER_QUERY = `
-  SELECT rv."Video_ID" AS video_id,
-         rv."Headline" AS headline,
-         rv."Input_Type" AS input_type,
-         rv."Language" AS language,
-         rv."Upload_Date" AS upload_date,
-         rv."Uploaded_Duration" AS uploaded_duration,
-         ARRAY_REMOVE(ARRAY_AGG(DISTINCT rvc."Channel_Name"), NULL) AS channels
-  FROM raw_videos rv
-  LEFT JOIN raw_video_channel rvc ON rvc."Video_ID" = rv."Video_ID"
-  WHERE rv."Video_ID" = $1
-  GROUP BY rv."Video_ID", rv."Headline", rv."Input_Type", rv."Language", rv."Upload_Date", rv."Uploaded_Duration";
-`;
+function getVideoHeaderQuery(filter) {
+  const predicates = ['rv."Video_ID" = $1'];
+  if (filter.predicates.length) {
+    predicates.push(...filter.predicates);
+  }
 
-const VIDEO_ASSETS_QUERY = `
-  SELECT ca."Asset_ID" AS asset_id,
-         ca."Output_Type" AS output_type,
-         ca."Create_Date" AS create_date,
-         ca."Created_Duration" AS created_duration,
-         pp."Post_ID" AS post_id,
-         pp."Publish_Date" AS publish_date,
-         pp."Published_Duration" AS published_duration,
-         ARRAY_REMOVE(ARRAY_AGG(DISTINCT pd."Published_Platform"), NULL) AS platforms
-  FROM created_assets ca
-  LEFT JOIN published_posts pp ON pp."Asset_ID" = ca."Asset_ID"
-  LEFT JOIN post_distribution pd ON pd."Post_ID" = pp."Post_ID"
-  WHERE ca."Video_ID" = $1
-  GROUP BY ca."Asset_ID", ca."Output_Type", ca."Create_Date", ca."Created_Duration", pp."Post_ID", pp."Publish_Date", pp."Published_Duration"
-  ORDER BY ca."Asset_ID";
-`;
+  return `
+    SELECT rv."Video_ID" AS video_id,
+           rv."Headline" AS headline,
+           rv."Input_Type" AS input_type,
+           rv."Language" AS language,
+           rv."Upload_Date" AS upload_date,
+           rv."Uploaded_Duration" AS uploaded_duration,
+           ARRAY_REMOVE(ARRAY_AGG(DISTINCT rvc."Channel_Name"), NULL) AS channels
+    FROM raw_videos rv
+    LEFT JOIN raw_video_channel rvc ON rvc."Video_ID" = rv."Video_ID"
+    ${filter.join}
+    WHERE ${predicates.join(' AND ')}
+    GROUP BY rv."Video_ID", rv."Headline", rv."Input_Type", rv."Language", rv."Upload_Date", rv."Uploaded_Duration";
+  `;
+}
+
+function getVideoAssetsQuery(filter) {
+  const predicates = ['ca."Video_ID" = $1'];
+  if (filter.predicates.length) {
+    predicates.push(...filter.predicates);
+  }
+
+  return `
+    SELECT ca."Asset_ID" AS asset_id,
+           ca."Output_Type" AS output_type,
+           ca."Create_Date" AS create_date,
+           ca."Created_Duration" AS created_duration,
+           pp."Post_ID" AS post_id,
+           pp."Publish_Date" AS publish_date,
+           pp."Published_Duration" AS published_duration,
+           ARRAY_REMOVE(ARRAY_AGG(DISTINCT pd."Published_Platform"), NULL) AS platforms
+    FROM created_assets ca
+    JOIN raw_videos rv ON rv."Video_ID" = ca."Video_ID"
+    LEFT JOIN published_posts pp ON pp."Asset_ID" = ca."Asset_ID"
+    LEFT JOIN post_distribution pd ON pd."Post_ID" = pp."Post_ID"
+    ${filter.join}
+    WHERE ${predicates.join(' AND ')}
+    GROUP BY ca."Asset_ID", ca."Output_Type", ca."Create_Date", ca."Created_Duration", pp."Post_ID", pp."Publish_Date", pp."Published_Duration"
+    ORDER BY ca."Asset_ID";
+  `;
+}
 
 function getStageCountsQuery(filter) {
   return `
@@ -202,8 +219,8 @@ function getMixQuery(filter) {
 
 module.exports = {
   BREAKDOWN_EXPR_MAP,
-  VIDEO_HEADER_QUERY,
-  VIDEO_ASSETS_QUERY,
+  getVideoHeaderQuery,
+  getVideoAssetsQuery,
   getStageCountsQuery,
   getBreakdownQuery,
   getCompositionQuery,

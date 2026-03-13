@@ -3,6 +3,8 @@ const {
   DIMENSION_MAP,
   MEASURE_MAP,
   DATE_FIELD_MAP,
+  buildAccessFilter,
+  buildWhereClause,
 } = require('../queries/analyticsShared');
 const {
   TABLES_QUERY,
@@ -56,16 +58,17 @@ function createExplorerRouter(pool) {
     const dateExpr = DATE_FIELD_MAP[dateField];
 
     try {
-      const matrixParams = [];
-      const matrixWhere = [];
+      const matrixScope = buildAccessFilter(req.auth, 1, 'rv');
+      const matrixParams = [...matrixScope.params];
+      const matrixWhere = [...matrixScope.predicates];
 
       if (dim1Value) {
         matrixParams.push(dim1Value);
         matrixWhere.push(`${dim1Expr}::text = $${matrixParams.length}`);
       }
 
-      const matrixWhereClause = matrixWhere.length ? `WHERE ${matrixWhere.join(' AND ')}` : '';
-      const matrixSql = getMatrixQuery(dim1Expr, dim2Expr, measureExpr, matrixWhereClause);
+      const matrixWhereClause = buildWhereClause(matrixWhere);
+      const matrixSql = getMatrixQuery(dim1Expr, dim2Expr, measureExpr, matrixScope.join, matrixWhereClause);
 
       const matrixRows = (await pool.query(matrixSql, matrixParams)).rows.map((row) => ({
         dim1: row.dim1,
@@ -78,15 +81,16 @@ function createExplorerRouter(pool) {
 
       let timeSeriesRows = [];
       if (timeGrain !== 'none') {
-        const tsParams = [timeGrain];
-        const tsWhere = [`${dateExpr} IS NOT NULL`];
+        const tsScope = buildAccessFilter(req.auth, 2, 'rv');
+        const tsParams = [timeGrain, ...tsScope.params];
+        const tsWhere = [...tsScope.predicates, `${dateExpr} IS NOT NULL`];
 
         if (dim1Value) {
           tsParams.push(dim1Value);
           tsWhere.push(`${dim1Expr}::text = $${tsParams.length}`);
         }
 
-        const tsSql = getTimeSeriesQuery(dateExpr, dim2Expr, measureExpr, tsWhere.join(' AND '));
+        const tsSql = getTimeSeriesQuery(dateExpr, dim2Expr, measureExpr, tsScope.join, tsWhere.join(' AND '));
 
         timeSeriesRows = (await pool.query(tsSql, tsParams)).rows.map((row) => ({
           period: row.period,
@@ -113,6 +117,10 @@ function createExplorerRouter(pool) {
   });
 
   router.get('/tables', async (_req, res) => {
+    if (_req.auth.role !== 'website_admin') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
     try {
       const { rows } = await pool.query(TABLES_QUERY);
 
@@ -123,6 +131,10 @@ function createExplorerRouter(pool) {
   });
 
   router.get('/table/:tableName', async (req, res) => {
+    if (req.auth.role !== 'website_admin') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
     const tableName = req.params.tableName;
     const limit = Math.min(Number(req.query.limit || 100), 500);
 
@@ -147,6 +159,10 @@ function createExplorerRouter(pool) {
   });
 
   router.get('/chart', async (req, res) => {
+    if (req.auth.role !== 'website_admin') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
     const { table, x, y, aggregation = 'count' } = req.query;
 
     if (!table || !x) {

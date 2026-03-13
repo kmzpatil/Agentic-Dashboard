@@ -1,13 +1,13 @@
 const express = require('express');
-const { buildFunnelFilter } = require('../queries/analyticsShared');
+const { buildFunnelFilter, buildAccessFilter } = require('../queries/analyticsShared');
 const {
   getStageCountsQuery,
   getBreakdownQuery,
   getCompositionQuery,
   getJourneyQuery,
   getMixQuery,
-  VIDEO_HEADER_QUERY,
-  VIDEO_ASSETS_QUERY,
+  getVideoHeaderQuery,
+  getVideoAssetsQuery,
 } = require('../queries/funnelQueries');
 
 function createFunnelRouter(pool) {
@@ -20,7 +20,7 @@ function createFunnelRouter(pool) {
       ? req.query.breakdown
       : 'channel';
 
-    const filter = buildFunnelFilter(dimension, value, 1);
+    const filter = buildFunnelFilter(dimension, value, 1, req.auth);
 
     try {
       const stageCounts = (await pool.query(getStageCountsQuery(filter), filter.params)).rows[0];
@@ -86,13 +86,16 @@ function createFunnelRouter(pool) {
     }
 
     try {
-      const headerResult = await pool.query(VIDEO_HEADER_QUERY, [videoId]);
+      const accessFilter = buildAccessFilter(req.auth, 2, 'rv');
+      const accessParams = [videoId, ...accessFilter.params];
+
+      const headerResult = await pool.query(getVideoHeaderQuery(accessFilter), accessParams);
 
       if (headerResult.rowCount === 0) {
         return res.status(404).json({ error: 'Video not found' });
       }
 
-            const assetsResult = await pool.query(VIDEO_ASSETS_QUERY, [videoId]);
+          const assetsResult = await pool.query(getVideoAssetsQuery(accessFilter), accessParams);
 
       return res.json({
         video: headerResult.rows[0],

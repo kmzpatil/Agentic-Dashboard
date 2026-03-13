@@ -1,5 +1,10 @@
 const express = require('express');
-const { METRIC_SQL, getTrendInsights } = require('../queries/analyticsShared');
+const {
+  METRIC_SQL,
+  getTrendInsights,
+  buildAccessFilter,
+  getMetricQuery,
+} = require('../queries/analyticsShared');
 
 function createUsageTrendsRouter(pool) {
   const router = express.Router();
@@ -14,7 +19,9 @@ function createUsageTrendsRouter(pool) {
       : 'uploaded_count';
 
     try {
-      const { rows } = await pool.query(METRIC_SQL[metric], [granularity]);
+      const accessFilter = buildAccessFilter(req.auth, 2, 'rv');
+      const sql = getMetricQuery(metric, accessFilter);
+      const { rows } = await pool.query(sql, [granularity, ...accessFilter.params]);
       const points = rows.map((r) => ({
         period: r.period,
         value: Number(r.value || 0),

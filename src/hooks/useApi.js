@@ -20,8 +20,19 @@ export function useApi(url, dependencies = []) {
       setLoading(true);
       setError('');
       try {
-        const response = await fetch(url);
+        const token = localStorage.getItem('frammer_auth_token');
+        const response = await fetch(url, {
+          headers: token
+            ? {
+              Authorization: `Bearer ${token}`,
+            }
+            : {},
+        });
         if (!response.ok) {
+          if (response.status === 401) {
+            localStorage.removeItem('frammer_auth_token');
+            localStorage.removeItem('frammer_auth_user');
+          }
           throw new Error(`Request failed: ${response.status}`);
         }
         const payload = await response.json();

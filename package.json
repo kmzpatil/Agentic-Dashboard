@@ -12,17 +12,20 @@
     "build": "vite build",
     "preview": "vite preview",
     "api": "node server.js",
-    "dev:full": "concurrently \"npm run api\" \"npm run dev\""
+    "dev:full": "concurrently \"npm run api\" \"npm run dev\"",
+    "seed:auth": "node backend/db/seedAuthUsers.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "chart.js": "^4.5.1",
     "chartjs-chart-sankey": "^0.14.0",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
     "lucide-react": "^0.577.0",
     "pg": "^8.20.0",
     "react": "^19.2.4",

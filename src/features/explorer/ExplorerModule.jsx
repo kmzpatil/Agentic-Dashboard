@@ -5,8 +5,10 @@ import { useApi } from '../../hooks/useApi';
 import { API_BASE } from '../../lib/constants';
 import { formatNumber } from '../../lib/formatters';
 
-export default function ExplorerModule() {
-  const { data: tableData } = useApi(`${API_BASE}/explorer/tables`, []);
+export default function ExplorerModule({ authUser }) {
+  const canUseRawExplorer = authUser?.role === 'website_admin';
+
+  const { data: tableData } = useApi(canUseRawExplorer ? `${API_BASE}/explorer/tables` : null, [canUseRawExplorer]);
   const { data: dimsData } = useApi(`${API_BASE}/explorer/dimensions`, []);
 
   const [tableName, setTableName] = useState('');
@@ -26,7 +28,9 @@ export default function ExplorerModule() {
     if (!tableName && tableData?.tables?.length) setTableName(tableData.tables[0]);
   }, [tableData, tableName]);
 
-  const tableUrl = tableName ? `${API_BASE}/explorer/table/${encodeURIComponent(tableName)}?limit=120` : null;
+  const tableUrl = canUseRawExplorer && tableName
+    ? `${API_BASE}/explorer/table/${encodeURIComponent(tableName)}?limit=120`
+    : null;
   const { data: rowsData, loading: rowsLoading, error: rowsError } = useApi(tableUrl, [tableUrl]);
 
   useEffect(() => {
@@ -36,7 +40,7 @@ export default function ExplorerModule() {
     }
   }, [rowsData, xColumn, yColumn]);
 
-  const chartQuery = tableName && xColumn
+  const chartQuery = canUseRawExplorer && tableName && xColumn
     ? `${API_BASE}/explorer/chart?table=${encodeURIComponent(tableName)}&x=${encodeURIComponent(xColumn)}&aggregation=${encodeURIComponent(aggregation)}${aggregation === 'sum' ? `&y=${encodeURIComponent(yColumn)}` : ''}`
     : null;
   const { data: chartRows } = useApi(chartQuery, [chartQuery]);
@@ -162,74 +166,82 @@ export default function ExplorerModule() {
         )}
       </div>
 
-      <div className="bg-[#111111] rounded-xl border border-neutral-800 p-4 flex flex-wrap gap-4 items-end">
-        <div>
-          <label className="block text-xs text-neutral-500 mb-2">TABLE</label>
-          <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-white" value={tableName} onChange={(e) => setTableName(e.target.value)}>
-            {(tableData?.tables || []).map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-neutral-500 mb-2">X COLUMN</label>
-          <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-white" value={xColumn} onChange={(e) => setXColumn(e.target.value)}>
-            {(rowsData?.columns || []).map((col) => <option key={col} value={col}>{col}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-neutral-500 mb-2">AGGREGATION</label>
-          <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-white" value={aggregation} onChange={(e) => setAggregation(e.target.value)}>
-            <option value="count">count</option>
-            <option value="sum">sum</option>
-          </select>
-        </div>
-        {aggregation === 'sum' && (
-          <div>
-            <label className="block text-xs text-neutral-500 mb-2">Y COLUMN</label>
-            <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-white" value={yColumn} onChange={(e) => setYColumn(e.target.value)}>
-              {(rowsData?.columns || []).map((col) => <option key={col} value={col}>{col}</option>)}
-            </select>
+      {canUseRawExplorer ? (
+        <>
+          <div className="bg-[#111111] rounded-xl border border-neutral-800 p-4 flex flex-wrap gap-4 items-end">
+            <div>
+              <label className="block text-xs text-neutral-500 mb-2">TABLE</label>
+              <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-white" value={tableName} onChange={(e) => setTableName(e.target.value)}>
+                {(tableData?.tables || []).map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-neutral-500 mb-2">X COLUMN</label>
+              <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-white" value={xColumn} onChange={(e) => setXColumn(e.target.value)}>
+                {(rowsData?.columns || []).map((col) => <option key={col} value={col}>{col}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-neutral-500 mb-2">AGGREGATION</label>
+              <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-white" value={aggregation} onChange={(e) => setAggregation(e.target.value)}>
+                <option value="count">count</option>
+                <option value="sum">sum</option>
+              </select>
+            </div>
+            {aggregation === 'sum' && (
+              <div>
+                <label className="block text-xs text-neutral-500 mb-2">Y COLUMN</label>
+                <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-white" value={yColumn} onChange={(e) => setYColumn(e.target.value)}>
+                  {(rowsData?.columns || []).map((col) => <option key={col} value={col}>{col}</option>)}
+                </select>
+              </div>
+            )}
+            <div>
+              <label className="block text-xs text-neutral-500 mb-2">CHART TYPE</label>
+              <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-white" value={chartType} onChange={(e) => setChartType(e.target.value)}>
+                <option value="bar">bar</option>
+                <option value="line">line</option>
+                <option value="pie">pie</option>
+              </select>
+            </div>
           </div>
-        )}
-        <div>
-          <label className="block text-xs text-neutral-500 mb-2">CHART TYPE</label>
-          <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-white" value={chartType} onChange={(e) => setChartType(e.target.value)}>
-            <option value="bar">bar</option>
-            <option value="line">line</option>
-            <option value="pie">pie</option>
-          </select>
-        </div>
-      </div>
 
-      <div className="bg-[#111111] rounded-xl border border-neutral-800 p-4">
-        <h3 className="font-bold text-white mb-4 flex items-center gap-2"><Database size={16} /> TABLE CHART BUILDER</h3>
-        <div className="h-[340px]">
-          <ChartComponent data={tableChartData} options={{ responsive: true, maintainAspectRatio: false }} />
-        </div>
-      </div>
-
-      <div className="bg-[#111111] rounded-xl border border-neutral-800 p-4">
-        <h3 className="font-bold text-white mb-4 flex items-center gap-2"><Table size={16} /> TABLE DATA ({tableName || '-'})</h3>
-        {rowsLoading && <div className="text-neutral-400">Loading table...</div>}
-        {rowsError && <div className="text-red-400">{rowsError}</div>}
-        {!rowsLoading && !rowsError && (
-          <div className="overflow-auto max-h-[420px]">
-            <table className="min-w-full text-xs">
-              <thead className="sticky top-0 bg-[#0A0A0A]">
-                <tr>
-                  {(rowsData?.columns || []).map((col) => <th key={col} className="text-left px-3 py-2 text-neutral-400 border-b border-neutral-800">{col}</th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {(rowsData?.rows || []).map((row, idx) => (
-                  <tr key={`${tableName}-${idx}`} className="border-b border-neutral-900 hover:bg-[#0A0A0A]">
-                    {(rowsData?.columns || []).map((col) => <td key={`${idx}-${col}`} className="px-3 py-2 text-neutral-200 whitespace-nowrap">{String(row[col] ?? '')}</td>)}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="bg-[#111111] rounded-xl border border-neutral-800 p-4">
+            <h3 className="font-bold text-white mb-4 flex items-center gap-2"><Database size={16} /> TABLE CHART BUILDER</h3>
+            <div className="h-[340px]">
+              <ChartComponent data={tableChartData} options={{ responsive: true, maintainAspectRatio: false }} />
+            </div>
           </div>
-        )}
-      </div>
+
+          <div className="bg-[#111111] rounded-xl border border-neutral-800 p-4">
+            <h3 className="font-bold text-white mb-4 flex items-center gap-2"><Table size={16} /> TABLE DATA ({tableName || '-'})</h3>
+            {rowsLoading && <div className="text-neutral-400">Loading table...</div>}
+            {rowsError && <div className="text-red-400">{rowsError}</div>}
+            {!rowsLoading && !rowsError && (
+              <div className="overflow-auto max-h-[420px]">
+                <table className="min-w-full text-xs">
+                  <thead className="sticky top-0 bg-[#0A0A0A]">
+                    <tr>
+                      {(rowsData?.columns || []).map((col) => <th key={col} className="text-left px-3 py-2 text-neutral-400 border-b border-neutral-800">{col}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(rowsData?.rows || []).map((row, idx) => (
+                      <tr key={`${tableName}-${idx}`} className="border-b border-neutral-900 hover:bg-[#0A0A0A]">
+                        {(rowsData?.columns || []).map((col) => <td key={`${idx}-${col}`} className="px-3 py-2 text-neutral-200 whitespace-nowrap">{String(row[col] ?? '')}</td>)}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
+        <div className="bg-[#111111] rounded-xl border border-neutral-800 p-4 text-sm text-neutral-400">
+          Raw table browsing is available only for website admin users. Multi-dimension analytics above remains role-scoped.
+        </div>
+      )}
     </div>
   );
 }

@@ -1,27 +1,29 @@
 const express = require('express');
 const {
-  KPI_QUERY,
-  CHANNEL_TOP_PERFORMER_QUERY,
-  USER_TOP_PERFORMER_QUERY,
-  INPUT_TOP_PERFORMER_QUERY,
-  OUTPUT_TOP_PERFORMER_QUERY,
-  LANGUAGE_TOP_PERFORMER_QUERY,
-  ALERTS_QUERY,
+  getKpiQuery,
+  getChannelTopPerformerQuery,
+  getUserTopPerformerQuery,
+  getInputTopPerformerQuery,
+  getOutputTopPerformerQuery,
+  getLanguageTopPerformerQuery,
+  getAlertsQuery,
 } = require('../queries/overviewQueries');
+const { buildAccessFilter } = require('../queries/analyticsShared');
 
 function createOverviewRouter(pool) {
   const router = express.Router();
 
   router.get('/', async (_req, res) => {
     try {
+      const accessFilter = buildAccessFilter(_req.auth, 1, 'rv');
       const [kpiResult, channelResult, userResult, inputResult, outputResult, langResult, alertResult] = await Promise.all([
-        pool.query(KPI_QUERY),
-        pool.query(CHANNEL_TOP_PERFORMER_QUERY),
-        pool.query(USER_TOP_PERFORMER_QUERY),
-        pool.query(INPUT_TOP_PERFORMER_QUERY),
-        pool.query(OUTPUT_TOP_PERFORMER_QUERY),
-        pool.query(LANGUAGE_TOP_PERFORMER_QUERY),
-        pool.query(ALERTS_QUERY),
+        pool.query(getKpiQuery(accessFilter), accessFilter.params),
+        pool.query(getChannelTopPerformerQuery(accessFilter), accessFilter.params),
+        pool.query(getUserTopPerformerQuery(accessFilter), accessFilter.params),
+        pool.query(getInputTopPerformerQuery(accessFilter), accessFilter.params),
+        pool.query(getOutputTopPerformerQuery(accessFilter), accessFilter.params),
+        pool.query(getLanguageTopPerformerQuery(accessFilter), accessFilter.params),
+        pool.query(getAlertsQuery(accessFilter), accessFilter.params),
       ]);
 
       const kpis = kpiResult.rows[0];
