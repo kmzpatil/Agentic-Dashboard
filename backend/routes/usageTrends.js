@@ -1,5 +1,5 @@
 const express = require('express');
-const { METRIC_SQL, getTrendInsights } = require('./shared/analytics');
+const { METRIC_SQL, getTrendInsights } = require('../queries/analyticsShared');
 
 function createUsageTrendsRouter(pool) {
   const router = express.Router();

@@ -3,8 +3,17 @@ const {
   DIMENSION_MAP,
   MEASURE_MAP,
   DATE_FIELD_MAP,
-  ANALYTICS_BASE_FROM,
-} = require('./shared/analytics');
+} = require('../queries/analyticsShared');
+const {
+  TABLES_QUERY,
+  TABLE_EXISTS_QUERY,
+  TABLE_COLUMNS_QUERY,
+  getMatrixQuery,
+  getTimeSeriesQuery,
+  getTableDataQuery,
+  getSumChartQuery,
+  getCountChartQuery,
+} = require('../queries/explorerQueries');
 
 function createExplorerRouter(pool) {
   const router = express.Router();
@@ -55,16 +64,8 @@ function createExplorerRouter(pool) {
         matrixWhere.push(`${dim1Expr}::text = $${matrixParams.length}`);
       }
 
-      const matrixSql = `
-      SELECT COALESCE(${dim1Expr}::text, 'Unknown') AS dim1,
-             COALESCE(${dim2Expr}::text, 'Unknown') AS dim2,
-             ${measureExpr} AS value
-      ${ANALYTICS_BASE_FROM}
-      ${matrixWhere.length ? `WHERE ${matrixWhere.join(' AND ')}` : ''}
-      GROUP BY 1, 2
-      ORDER BY value DESC
-      LIMIT 600;
-    `;
+      const matrixWhereClause = matrixWhere.length ? `WHERE ${matrixWhere.join(' AND ')}` : '';
+      const matrixSql = getMatrixQuery(dim1Expr, dim2Expr, measureExpr, matrixWhereClause);
 
       const matrixRows = (await pool.query(matrixSql, matrixParams)).rows.map((row) => ({
         dim1: row.dim1,
@@ -85,15 +86,7 @@ function createExplorerRouter(pool) {
           tsWhere.push(`${dim1Expr}::text = $${tsParams.length}`);
         }
 
-        const tsSql = `
-        SELECT date_trunc($1, ${dateExpr})::date AS period,
-               COALESCE(${dim2Expr}::text, 'Unknown') AS dim2,
-               ${measureExpr} AS value
-        ${ANALYTICS_BASE_FROM}
-        WHERE ${tsWhere.join(' AND ')}
-        GROUP BY 1, 2
-        ORDER BY 1, 2;
-      `;
+        const tsSql = getTimeSeriesQuery(dateExpr, dim2Expr, measureExpr, tsWhere.join(' AND '));
 
         timeSeriesRows = (await pool.query(tsSql, tsParams)).rows.map((row) => ({
           period: row.period,
@@ -121,12 +114,7 @@ function createExplorerRouter(pool) {
 
   router.get('/tables', async (_req, res) => {
     try {
-      const { rows } = await pool.query(`
-      SELECT tablename
-      FROM pg_tables
-      WHERE schemaname = 'public'
-      ORDER BY tablename;
-    `);
+      const { rows } = await pool.query(TABLES_QUERY);
 
       res.json({ tables: rows.map((r) => r.tablename) });
     } catch (error) {
@@ -139,22 +127,14 @@ function createExplorerRouter(pool) {
     const limit = Math.min(Number(req.query.limit || 100), 500);
 
     try {
-      const tableCheck = await pool.query(
-        'SELECT tablename FROM pg_tables WHERE schemaname = \'public\' AND tablename = $1',
-        [tableName],
-      );
+      const tableCheck = await pool.query(TABLE_EXISTS_QUERY, [tableName]);
 
       if (tableCheck.rowCount === 0) {
         return res.status(404).json({ error: 'Table not found' });
       }
 
-      const columnsResult = await pool.query(
-        'SELECT column_name FROM information_schema.columns WHERE table_schema=\'public\' AND table_name=$1 ORDER BY ordinal_position',
-        [tableName],
-      );
-
-      const quotedTableName = `"${tableName.replace(/"/g, '""')}"`;
-      const dataResult = await pool.query(`SELECT * FROM ${quotedTableName} LIMIT ${limit}`);
+      const columnsResult = await pool.query(TABLE_COLUMNS_QUERY, [tableName]);
+      const dataResult = await pool.query(getTableDataQuery(tableName, limit));
 
       return res.json({
         table: tableName,
@@ -174,19 +154,13 @@ function createExplorerRouter(pool) {
     }
 
     try {
-      const tableCheck = await pool.query(
-        'SELECT tablename FROM pg_tables WHERE schemaname=\'public\' AND tablename=$1',
-        [table],
-      );
+      const tableCheck = await pool.query(TABLE_EXISTS_QUERY, [table]);
 
       if (tableCheck.rowCount === 0) {
         return res.status(404).json({ error: 'Invalid table' });
       }
 
-      const columnsResult = await pool.query(
-        'SELECT column_name FROM information_schema.columns WHERE table_schema=\'public\' AND table_name=$1',
-        [table],
-      );
+      const columnsResult = await pool.query(TABLE_COLUMNS_QUERY, [table]);
 
       const validColumns = new Set(columnsResult.rows.map((r) => r.column_name));
 
@@ -199,26 +173,12 @@ function createExplorerRouter(pool) {
           return res.status(400).json({ error: 'Valid numeric y column required for sum aggregation' });
         }
 
-        const sql = `
-        SELECT "${x.replace(/"/g, '""')}"::text AS label,
-               COALESCE(SUM("${y.replace(/"/g, '""')}"), 0)::float8 AS value
-        FROM "${table.replace(/"/g, '""')}"
-        GROUP BY 1
-        ORDER BY value DESC
-        LIMIT 30;
-      `;
+        const sql = getSumChartQuery(table, x, y);
         const result = await pool.query(sql);
         return res.json({ rows: result.rows });
       }
 
-      const sql = `
-      SELECT "${x.replace(/"/g, '""')}"::text AS label,
-             COUNT(*)::float8 AS value
-      FROM "${table.replace(/"/g, '""')}"
-      GROUP BY 1
-      ORDER BY value DESC
-      LIMIT 30;
-    `;
+      const sql = getCountChartQuery(table, x);
 
       const result = await pool.query(sql);
       return res.json({ rows: result.rows });
