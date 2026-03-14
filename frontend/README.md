@@ -103,8 +103,6 @@ npm run preview
 ## Directory Structure
 ```text
 .
-├── app.js
-├── app.jsx
 ├── server.js
 ├── backend
 │   ├── app.js

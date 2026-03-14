@@ -16,6 +16,7 @@ import logging
 import re
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Annotated, Dict, List, Optional, TypedDict
 
 from dotenv import load_dotenv
@@ -34,6 +35,8 @@ from tools import (
     retrieve_metric_definitions,
 )
 
+_AGENT_DIR = Path(__file__).resolve().parent
+load_dotenv(_AGENT_DIR / ".env")
 load_dotenv()
 logger = logging.getLogger("frammer.agent")
 

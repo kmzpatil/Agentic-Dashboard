@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -26,12 +27,10 @@ LOCAL_DIR = ROOT_DIR / "database" / ".local_postgres"
 DATA_DIR = LOCAL_DIR / "data"
 SOCKET_DIR = LOCAL_DIR / "socket"
 LOG_FILE = LOCAL_DIR / "postgres.log"
-BIN_DIR = Path(os.getenv("POSTGRES_BIN_DIR", "/opt/homebrew/opt/postgres/bin"))
-
-PG_CTL = BIN_DIR / "pg_ctl"
-INITDB = BIN_DIR / "initdb"
-PSQL = BIN_DIR / "psql"
-CREATEDB = BIN_DIR / "createdb"
+PG_CTL = Path("pg_ctl")
+INITDB = Path("initdb")
+PSQL = Path("psql")
+CREATEDB = Path("createdb")
 
 PG_PORT = int(os.getenv("LOCAL_POSTGRES_PORT", "5433"))
 PG_USER = os.getenv("LOCAL_POSTGRES_USER") or os.getenv("USER") or "postgres"
@@ -54,12 +53,78 @@ def run(cmd: list[str], check: bool = True, capture_output: bool = False, env: d
     )
 
 
+def _candidate_bin_dirs() -> list[Path]:
+    candidates: list[Path] = []
+
+    env_bin_dir = os.getenv("POSTGRES_BIN_DIR")
+    if env_bin_dir:
+        candidates.append(Path(env_bin_dir))
+
+    candidates.extend(
+        [
+            Path("/opt/homebrew/opt/postgres/bin"),
+            Path("/usr/local/opt/postgresql/bin"),
+            Path("/usr/local/opt/postgresql@18/bin"),
+            Path("/usr/local/opt/postgresql@17/bin"),
+            Path("/usr/local/opt/postgresql@16/bin"),
+            Path("/usr/lib/postgresql/18/bin"),
+            Path("/usr/lib/postgresql/17/bin"),
+            Path("/usr/lib/postgresql/16/bin"),
+            Path("/usr/lib/postgresql/15/bin"),
+            Path("/usr/bin"),
+            Path("/bin"),
+        ]
+    )
+
+    unique_existing: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        if candidate.exists():
+            unique_existing.append(candidate)
+    return unique_existing
+
+
+def _resolve_binary(binary_name: str) -> Path | None:
+    resolved = shutil.which(binary_name)
+    if resolved:
+        return Path(resolved)
+
+    for bin_dir in _candidate_bin_dirs():
+        candidate = bin_dir / binary_name
+        if candidate.exists() and os.access(candidate, os.X_OK):
+            return candidate
+
+    return None
+
+
 def ensure_binaries() -> None:
-    missing = [path.name for path in (PG_CTL, INITDB, PSQL, CREATEDB) if not path.exists()]
+    global PG_CTL, INITDB, PSQL, CREATEDB
+
+    resolved = {
+        "pg_ctl": _resolve_binary("pg_ctl"),
+        "initdb": _resolve_binary("initdb"),
+        "psql": _resolve_binary("psql"),
+        "createdb": _resolve_binary("createdb"),
+    }
+    missing = [name for name, path in resolved.items() if path is None]
+
     if missing:
+        searched_dirs = ", ".join(str(path) for path in _candidate_bin_dirs())
         raise RuntimeError(
-            f"Missing PostgreSQL binaries: {', '.join(missing)}. Set POSTGRES_BIN_DIR if Homebrew is elsewhere.",
+            "Missing PostgreSQL binaries: "
+            f"{', '.join(missing)}. "
+            "Install PostgreSQL locally or set POSTGRES_BIN_DIR to your postgres bin directory. "
+            f"Searched PATH and: {searched_dirs}",
         )
+
+    PG_CTL = resolved["pg_ctl"]
+    INITDB = resolved["initdb"]
+    PSQL = resolved["psql"]
+    CREATEDB = resolved["createdb"]
 
 
 def ensure_directories() -> None:

@@ -1,20 +1,36 @@
-"""
-main.py — FastAPI application entry point.
-Replaces the NodeJS Express server (backend_legacy/).
-"""
+from pathlib import Path
+from contextlib import asynccontextmanager
 
-import logging
-
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .config import settings
-from .routers import agent, auth, explorer, funnel, health, overview, usage_trends
+from backend.config.env import get_config
+from backend.db.pool import close_pool, init_pool
+from backend.routes.agent_proxy import router as agent_proxy_router
+from backend.routes.api import router as api_router
+from backend.routes.auth import router as auth_router
+from backend.routes.health import router as health_router
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-log = logging.getLogger("frammer-api")
 
-app = FastAPI(title="Frammer API", version="1.0.0")
+BACKEND_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = BACKEND_DIR.parent
+
+load_dotenv(BACKEND_DIR / ".env")
+load_dotenv(PROJECT_ROOT / ".env")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    config = get_config()
+    init_pool(config.db)
+    try:
+        yield
+    finally:
+        close_pool()
+
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -24,19 +40,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth.router)
-app.include_router(health.router)
-app.include_router(overview.router)
-app.include_router(usage_trends.router)
-app.include_router(funnel.router)
-app.include_router(explorer.router)
-app.include_router(agent.router)
-
-
-@app.on_event("startup")
-def startup():
-    from .dependencies import get_engine
-    engine = get_engine()
-    log.info("Database engine created: %s", engine.url)
-    log.info("Agent proxy target: %s", settings.agent_base_url)
-    log.info("Frammer FastAPI ready on port %s", settings.port)
+app.include_router(agent_proxy_router, prefix="/api", tags=["agent-proxy"])
+app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
+app.include_router(health_router, prefix="/api/health", tags=["health"])
+app.include_router(api_router, prefix="/api", tags=["analytics"])

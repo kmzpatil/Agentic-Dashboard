@@ -90,7 +90,7 @@ export default function AppShell() {
         body: JSON.stringify({ username: loginUsername, password: loginPassword }),
       });
       const payload = await res.json();
-      if (!res.ok) throw new Error(payload.error || 'Login failed');
+      if (!res.ok) throw new Error(payload.detail || payload.error || 'Login failed');
       localStorage.setItem('frammer_auth_token', payload.token);
       localStorage.setItem('frammer_auth_user', JSON.stringify(payload.user));
       setAuthToken(payload.token);
@@ -273,7 +273,7 @@ export default function AppShell() {
         )}
 
         {/* AI chat panel (slide-in) */}
-        {!isTalkTab && (
+        {!isTalkTab && isAiOpen && (
           <ChatPanel
             isOpen={isAiOpen}
             onClose={() => setIsAiOpen(false)}

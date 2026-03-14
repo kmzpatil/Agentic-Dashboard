@@ -4,11 +4,12 @@ import { useApi } from '../../hooks/useApi';
 import { API_BASE } from '../../lib/constants';
 import { formatHours, formatNumber, formatPct } from '../../lib/formatters';
 import KpiCard from '../../components/common/KpiCard';
+import { OverviewSkeleton } from '../../components/common/Skeleton';
 
 export default function OverviewModule() {
   const { data, loading, error } = useApi(`${API_BASE}/overview`, []);
 
-  if (loading) return <div className="p-6 text-neutral-400">Loading overview...</div>;
+  if (loading) return <OverviewSkeleton />;
   if (error) return <div className="p-6 text-red-400">{error}</div>;
 
   const kpis = data?.kpis || {};

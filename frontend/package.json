@@ -2,7 +2,6 @@
   "name": "gcdata26",
   "version": "1.0.0",
   "description": "",
-  "main": "app.js",
   "directories": {
     "doc": "docs"
   },
@@ -11,12 +10,12 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "api": "node server.js",
-    "agent": "python -m uvicorn --app-dir .. agent.api_server:app --host 0.0.0.0 --port 8000",
-    "db:start": "python ../database/local_postgres.py start",
-    "db:stop": "python ../database/local_postgres.py stop",
-    "db:status": "python ../database/local_postgres.py status",
-    "db:bootstrap": "python ../database/bootstrap_postgres.py",
+    "api": "python3 -m uvicorn --app-dir .. backend.main:app --host 0.0.0.0 --port 4000 --reload --reload-dir ../backend",
+    "agent": "python3 -m uvicorn --app-dir .. agent.api_server:app --host 0.0.0.0 --port 8000",
+    "db:start": "python3 ../database/local_postgres.py start",
+    "db:stop": "python3 ../database/local_postgres.py stop",
+    "db:status": "python3 ../database/local_postgres.py status",
+    "db:bootstrap": "python3 ../database/bootstrap_postgres.py",
     "seed:auth": "node ../backend_legacy/db/seedAuthUsers.js",
     "dev:full": "npm run db:start && concurrently --names \"api,agent,vite\" --prefix-colors \"cyan,yellow,magenta\" \"npm run api\" \"npm run agent\" \"npm run dev\""
   },

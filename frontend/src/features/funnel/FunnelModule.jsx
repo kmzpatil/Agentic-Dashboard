@@ -5,6 +5,7 @@ import { useApi } from '../../hooks/useApi';
 import { API_BASE } from '../../lib/constants';
 import { formatNumber, formatPct } from '../../lib/formatters';
 import KpiCard from '../../components/common/KpiCard';
+import { FunnelSkeleton, Skeleton } from '../../components/common/Skeleton';
 
 export default function FunnelModule() {
   const [breakdown, setBreakdown] = useState('channel');
@@ -69,7 +70,7 @@ export default function FunnelModule() {
         {zoomFilter.dimension && <div className="text-sm text-neutral-400">Zoomed: {zoomFilter.dimension} = <span className="text-white font-semibold">{zoomFilter.value}</span></div>}
       </div>
 
-      {loading && <div className="text-neutral-400">Loading funnel...</div>}
+      {loading && <FunnelSkeleton />}
       {error && <div className="text-red-400">{error}</div>}
 
       {!loading && !error && (
@@ -171,7 +172,15 @@ export default function FunnelModule() {
                 <h3 className="font-bold text-white">Video {selectedVideoId} detailed asset journey</h3>
                 <button className="text-xs px-3 py-1 rounded-full bg-[#1A1A1A] hover:bg-[#2A2A2A]" onClick={() => setSelectedVideoId(null)}>Close</button>
               </div>
-              {videoDetails.loading && <div className="text-neutral-400">Loading video details...</div>}
+              {videoDetails.loading && (
+                <div className="space-y-3">
+                  <Skeleton className="h-4 w-64" />
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-10 rounded" />)}
+                  </div>
+                  <Skeleton className="h-40 w-full rounded-lg" />
+                </div>
+              )}
               {videoDetails.error && <div className="text-red-400">{videoDetails.error}</div>}
               {videoDetails.data && (
                 <div className="space-y-3 text-sm">
