@@ -3,11 +3,12 @@ import {
   Bot, Loader2, Send, Database, Table2,
   ChevronRight, X, PanelRightOpen, BarChart3,
   Sparkles, ArrowRight, Plus, MessageSquare, Trash2,
-  FileText, Clock, Activity,
+  FileText, Clock, Activity, Mic, MicOff,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { API_BASE } from '../../lib/constants';
+import useVoiceInput from '../../hooks/useVoiceInput';
 import XmlChartRenderer from '../../components/charts/XmlChartRenderer';
 
 // ── Markdown overrides ──────────────────────────────────────────────────────
@@ -329,6 +330,9 @@ export default function TalkToDataModule({ authToken }) {
   const [conversationId, setConversationId] = useState(null);
   const [conversations, setConversations] = useState([]);
   const endRef = useRef(null);
+  const voice = useVoiceInput({
+    onResult: (text) => setInput((prev) => (prev ? `${prev} ${text}` : text)),
+  });
 
   useEffect(() => {
     if (endRef.current) endRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -493,10 +497,25 @@ export default function TalkToDataModule({ authToken }) {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Ask about your data..."
+                placeholder={voice.listening ? '🎙️ Listening...' : 'Ask about your data...'}
                 disabled={loading}
                 className="flex-1 bg-transparent pl-5 pr-3 py-3.5 text-[15px] text-white placeholder-neutral-600 focus:outline-none disabled:opacity-50"
               />
+              {voice.supported && (
+                <button
+                  onClick={voice.toggle}
+                  disabled={loading}
+                  type="button"
+                  className={`mr-1 p-2.5 rounded-lg transition-all active:scale-95 disabled:opacity-30 ${
+                    voice.listening
+                      ? 'bg-red-500 text-white animate-pulse shadow-[0_0_12px_rgba(239,68,68,0.6)]'
+                      : 'bg-[#1A1A1A] text-neutral-400 hover:bg-neutral-700 hover:text-white'
+                  }`}
+                  title={voice.listening ? 'Stop listening' : 'Voice input'}
+                >
+                  {voice.listening ? <MicOff size={15} /> : <Mic size={15} />}
+                </button>
+              )}
               <button
                 onClick={() => send()}
                 disabled={loading || !input.trim()}
