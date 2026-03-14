@@ -1,21 +1,46 @@
-# Environments
+# ── Environments ──────────────────────────────────────────────────────────────
 .env
+.env.*
 .venv/
 venv/
 env/
 
-# Byte-compiled / optimized / DLL files
+# ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
+*.egg-info/
 
-# Databases
+# ── Databases & data files ────────────────────────────────────────────────────
 *.db
+*.sqlite
 *.sqlite3
+actual_db.sqlite
+database/.local_postgres/
 
-# OS generated files
+# ── Agent outputs (logs, charts, reports) ─────────────────────────────────────
+agent/outputs/
+.run_logs/
+
+# ── Generated chart / report artifacts ────────────────────────────────────────
+chart_output.json
+chart_output.xml
+*.xml.bak
+
+# ── OS generated ──────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 
-# Any locally generated outputs
-chart_output.json
+# ── Node ──────────────────────────────────────────────────────────────────────
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ── Misc ──────────────────────────────────────────────────────────────────────
+*.log

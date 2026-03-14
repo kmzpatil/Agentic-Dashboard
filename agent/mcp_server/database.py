@@ -8,6 +8,14 @@ import pandas as pd
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine
 
+try:
+    from sentence_transformers import SentenceTransformer
+    from scipy.spatial.distance import cosine
+except ImportError:
+    SentenceTransformer = None
+    cosine = None
+
+
 
 FORBIDDEN_SQL_PATTERN = re.compile(
     r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|GRANT|REVOKE|MERGE|"
@@ -25,6 +33,14 @@ class DatabaseClient:
     def __init__(self, database_url: str, default_schema: str) -> None:
         self.database_url = database_url
         self.default_schema = default_schema
+        self._schema_index = None
+
+    @cached_property
+    def embedding_model(self) -> "SentenceTransformer":
+        if SentenceTransformer is None:
+            raise ImportError("sentence-transformers is not installed")
+        # Initialize a very small and fast embedding model
+        return SentenceTransformer("all-MiniLM-L6-v2")
 
     @cached_property
     def engine(self) -> Engine:
@@ -164,6 +180,64 @@ class DatabaseClient:
                 table_name, schema=target_schema
             ),
         }
+
+    def build_schema_index(self, schema: str | None = None) -> None:
+        tables = self.list_tables(schema=schema)
+        index = []
+        for tbl in tables:
+            name = tbl["name"]
+            kind = tbl["kind"]
+            try:
+                details = self.describe_table(name, schema)
+                cols_repr = ", ".join(f"{c['name']} ({c['type']})" for c in details.get("columns", []))
+                text_repr = f"{kind.capitalize()} {name}: columns are {cols_repr}."
+                index.append({
+                    "name": name,
+                    "kind": kind,
+                    "text": text_repr,
+                    "details": details
+                })
+            except Exception:
+                continue
+
+        if not index:
+            self._schema_index = []
+            return
+
+        texts = [item["text"] for item in index]
+        embeddings = self.embedding_model.encode(texts)
+
+        for i, item in enumerate(index):
+            item["embedding"] = embeddings[i]
+
+        self._schema_index = index
+
+    def search_table_schemas(self, query: str, schema: str | None = None, limit: int = 5) -> list[dict[str, Any]]:
+        """Search the table schemas using RAG and sentence-transformers."""
+        if self._schema_index is None:
+            self.build_schema_index(schema=schema)
+
+        if not self._schema_index:
+            return []
+
+        query_embedding = self.embedding_model.encode([query])[0]
+        results = []
+        for item in self._schema_index:
+            dist = cosine(query_embedding, item["embedding"])
+            similarity = 1 - dist
+            results.append((similarity, item))
+
+        results.sort(key=lambda x: x[0], reverse=True)
+
+        return [
+            {
+                "name": item["name"],
+                "kind": item["kind"],
+                "similarity": float(sim),
+                "details": item["details"]
+            }
+            for sim, item in results[:limit]
+        ]
 
     def preview_table(
         self,

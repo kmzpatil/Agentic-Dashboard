@@ -1,80 +1,64 @@
 """
 Tool: get_frammer_schema
-Retrieves the live database schema (tables + columns) from the PostgreSQL database.
+Retrieves the live database schema (tables + columns) using SQLAlchemy.
+Works with any SQLAlchemy-supported backend (SQLite, PostgreSQL, etc.).
 Always call this before writing SQL to ensure table and column names are correct.
 """
 
-import os
+from pathlib import Path
 
-import psycopg2
+from dotenv import load_dotenv
+from sqlalchemy import create_engine, inspect
+
+# Load env so DATABASE_URL (or fallback) is available
+ROOT_DIR = Path(__file__).resolve().parents[2]
+load_dotenv(ROOT_DIR / ".env")
+load_dotenv()
+
+from mcp_server.config import ServerSettings
 
 
-def _get_connection() -> psycopg2.extensions.connection:
-    """Open a connection to the Frammer PostgreSQL database using env variables."""
-    return psycopg2.connect(
-        host=os.environ["POSTGRES_HOST"],
-        port=int(os.environ.get("POSTGRES_PORT", 5432)),
-        dbname=os.environ["POSTGRES_DB"],
-        user=os.environ["POSTGRES_USER"],
-        password=os.environ["POSTGRES_PASSWORD"],
-        sslmode=os.environ.get("POSTGRES_SSLMODE", "prefer"),
-    )
+def _get_engine():
+    """Create an SQLAlchemy engine from the shared ServerSettings."""
+    settings = ServerSettings.from_env()
+    return create_engine(settings.database_url, pool_pre_ping=True, future=True)
 
 
 def get_frammer_schema() -> str:
     """
-    Inspect the PostgreSQL database and return a human-readable schema string.
+    Inspect the database and return a human-readable schema string.
 
-    Queries information_schema.columns so it works across any PostgreSQL host
-    (Supabase, Neon, Railway, self-hosted, etc.).
+    Uses SQLAlchemy's inspector so it works with SQLite, PostgreSQL, etc.
 
     Returns:
         A multi-line string listing every table and its columns (with types),
         or an error message if the database cannot be opened.
     """
-    query = """
-        SELECT
-            table_name,
-            column_name,
-            data_type,
-            is_nullable
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name NOT IN ('schema_migrations', 'secrets', 'subscription')
-          AND table_name NOT LIKE 'pg_%'
-        ORDER BY table_name, ordinal_position;
-    """
-
     try:
-        conn = _get_connection()
-        cursor = conn.cursor()
-        cursor.execute(query)
-        rows = cursor.fetchall()
-        conn.close()
+        engine = _get_engine()
+        inspector = inspect(engine)
+        settings = ServerSettings.from_env()
 
-        if not rows:
-            return "No tables found in the public schema."
+        # Resolve schema — None for SQLite, 'public' for Postgres, etc.
+        schema = settings.default_schema if engine.dialect.name == "postgresql" else None
 
-        schema_info = "Frammer AI Database Schema (PostgreSQL):\n"
-        current_table = None
-        col_parts = []
+        table_names = inspector.get_table_names(schema=schema)
+        view_names = inspector.get_view_names(schema=schema)
+        all_names = sorted(set(table_names + view_names))
 
-        for table_name, col_name, data_type, nullable in rows:
-            if table_name != current_table:
-                if current_table is not None:
-                    schema_info += f"\nTable: {current_table}\nColumns: {', '.join(col_parts)}\n"
-                current_table = table_name
-                col_parts = []
-            nullable_tag = "" if nullable == "YES" else " NOT NULL"
-            col_parts.append(f"{col_name} ({data_type}{nullable_tag})")
+        if not all_names:
+            return "No tables found in the database."
 
-        # Flush the last table
-        if current_table:
-            schema_info += f"\nTable: {current_table}\nColumns: {', '.join(col_parts)}\n"
+        schema_info = "Frammer AI Database Schema:\n"
+        for table_name in all_names:
+            columns = inspector.get_columns(table_name, schema=schema)
+            col_parts = []
+            for col in columns:
+                nullable_tag = "" if col.get("nullable", True) else " NOT NULL"
+                col_parts.append(f"{col['name']} ({col['type']}{nullable_tag})")
+            schema_info += f"\nTable: {table_name}\nColumns: {', '.join(col_parts)}\n"
 
         return schema_info
 
-    except psycopg2.OperationalError as exc:
-        return f"Error: Database connection failed — {exc}"
     except Exception as exc:
         return f"Error retrieving schema: {exc}"

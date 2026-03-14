@@ -43,6 +43,16 @@ class DatabaseToolModule:
             return json.dumps(table_details, indent=2, default=str)
 
         @mcp.tool()
+        def search_table_schemas(query: str, schema: str | None = None, limit: int = 5) -> str:
+            """Search for relevant table schemas based on a natural language query using RAG."""
+            try:
+                results = self.db.search_table_schemas(query, schema=schema, limit=limit)
+            except Exception as exc:
+                return f"Error: {exc}"
+            return json.dumps(results, indent=2, default=str)
+
+
+        @mcp.tool()
         def preview_table(
             table_name: str,
             schema: str | None = None,

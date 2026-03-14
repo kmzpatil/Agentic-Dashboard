@@ -1,73 +1,175 @@
-# React + TypeScript + Vite
+# Frammer AI Dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + Vite frontend with a Node/Express gateway, a Python agent service, and a PostgreSQL analytics backend.
 
-Currently, two official plugins are available:
+## Current Status (March 2026)
+- Frontend is modularized into feature modules: Overview, Usage & Trends, Funnel, Explorer.
+- The public API is now a single Node gateway under `frontend/backend` for analytics, health, and agent proxying.
+- The Python agent stays focused on chat/query/schema features and is reachable through the gateway.
+- PostgreSQL config is normalized across `PG*`, `POSTGRES_*`, and PostgreSQL `DATABASE_URL` values.
+- Basic runtime smoke checks are passing locally (`vite build`, Python compile, Node syntax checks).
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Tech Stack
+- Frontend: React 19, Vite 5, Tailwind CSS
+- Charts: Chart.js, react-chartjs-2, chartjs-chart-sankey
+- Backend: Express 5, pg
+- Database: PostgreSQL (`frammer_database`)
 
-## React Compiler
+## Prerequisites
+- Node.js 18+
+- npm 9+
+- PostgreSQL (local or remote)
+- Python 3.10+
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Setup
+1. Create env file in the repo root or inside `frontend/`:
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+cp .env.example .env
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+2. Update `.env` values:
+- `PORT` (or `API_PORT`): Node gateway port (default `4000`)
+- `POSTGRES_HOST` / `PGHOST`
+- `POSTGRES_PORT` / `PGPORT`
+- `POSTGRES_DB` / `PGDATABASE`
+- `POSTGRES_USER` / `PGUSER`
+- `POSTGRES_PASSWORD` / `PGPASSWORD`
+- `POSTGRES_SSLMODE` / `PGSSLMODE`: `prefer`, `require`, etc.
+- `AGENT_BASE_URL`: Python agent base URL (default `http://127.0.0.1:8000`)
+- `VITE_API_BASE_URL`: frontend-to-gateway base URL
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+3. If Postgres does not already contain the Frammer schema/data, bootstrap it from the bundled SQLite snapshot:
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run db:bootstrap
 ```
+
+4. Install frontend dependencies:
+
+```bash
+npm install
+```
+
+5. Install Python dependencies for the agent service:
+
+```bash
+pip install -r ../agent/requirements.txt
+```
+
+## Run
+Run frontend + gateway + agent together:
+
+```bash
+npm run dev:full
+```
+
+Run separately:
+
+```bash
+npm run api
+npm run agent
+npm run dev
+```
+
+Default URLs:
+- Frontend: `http://localhost:5173`
+- Gateway API: `http://localhost:4000`
+- Agent service: `http://localhost:8000`
+
+## Build
+```bash
+npm run build
+npm run preview
+```
+
+## API Surface
+- `GET /api/health`
+- `GET /api/overview`
+- `GET /api/usage-trends`
+- `GET /api/funnel`
+- `GET /api/funnel/video/:videoId`
+- `GET /api/explorer/dimensions`
+- `GET /api/explorer/multidim`
+- `GET /api/explorer/tables`
+- `GET /api/explorer/table/:tableName`
+- `GET /api/explorer/chart`
+- `POST /api/chat`
+- `POST /api/query`
+- `GET /api/agent/health`
+- `GET /api/agent/tables`
+- `GET /api/agent/schema/search`
+
+## Directory Structure
+```text
+.
+├── app.js
+├── app.jsx
+├── server.js
+├── backend
+│   ├── app.js
+│   ├── agent
+│   │   └── client.js
+│   ├── config
+│   │   └── env.js
+│   ├── db
+│   │   └── pool.js
+│   ├── queries
+│   │   ├── analyticsShared.js
+│   │   ├── explorerQueries.js
+│   │   ├── funnelQueries.js
+│   │   └── overviewQueries.js
+│   ├── routes
+│   │   ├── agent.js
+│   │   ├── api.js
+│   │   ├── explorer.js
+│   │   ├── funnel.js
+│   │   ├── health.js
+│   │   ├── overview.js
+│   │   └── usageTrends.js
+│   └── utils
+└── src
+    ├── main.jsx
+    ├── index.css
+    ├── AppShell.jsx
+    ├── hooks
+    │   └── useApi.js
+    ├── components
+    │   ├── common
+    │   │   └── KpiCard.jsx
+    │   └── layout
+    │       ├── FilterDock.jsx
+    │       └── PipelineRail.jsx
+    ├── features
+    │   ├── overview
+    │   │   └── OverviewModule.jsx
+    │   ├── usage
+    │   │   └── UsageTrendsModule.jsx
+    │   ├── funnel
+    │   │   └── FunnelModule.jsx
+    │   ├── explorer
+    │   │   └── ExplorerModule.jsx
+    │   └── shared
+    │       └── ComingSoonModule.jsx
+    └── lib
+        ├── chartSetup.js
+        ├── constants.js
+        └── formatters.js
+```
+
+## Environment Variables
+- `PORT`: gateway port fallback
+- `API_PORT`: optional gateway port alias
+- `POSTGRES_HOST` / `PGHOST`: PostgreSQL host or socket path
+- `POSTGRES_PORT` / `PGPORT`: PostgreSQL port
+- `POSTGRES_USER` / `PGUSER`: PostgreSQL username
+- `POSTGRES_DB` / `PGDATABASE`: PostgreSQL database name
+- `POSTGRES_PASSWORD` / `PGPASSWORD`: PostgreSQL password
+- `POSTGRES_SSLMODE` / `PGSSLMODE`: PostgreSQL SSL mode
+- `AGENT_BASE_URL`: Python agent base URL for proxying
+- `VITE_API_BASE_URL`: frontend API base URL
+
+## Notes
+- Keep `.env` local; commit `.env.example` only.
+- The Node gateway is the only API the frontend should talk to directly.
+- The Postgres bootstrap script lives at [database/bootstrap_postgres.py](/Users/praty/Downloads/Projects/gc/gcdata/database/bootstrap_postgres.py).
