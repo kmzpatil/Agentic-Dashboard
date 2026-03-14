@@ -5,7 +5,7 @@
 #   1. Local PostgreSQL 18 cluster  (port 5433)
 #   2. Auth users seeded            (idempotent — safe every run)
 #   3. Python FastAPI agent          (port 8000)
-#   4. Node.js Express API           (port 4000)
+#   4. Python FastAPI backend API    (port 4000)
 #   5. Vite React dev server         (port 5173)
 #
 # Usage:
@@ -22,6 +22,7 @@ CYN='\033[0;36m'; MAG='\033[0;35m'; BLD='\033[1m'; RST='\033[0m'
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FRONTEND_DIR="$ROOT_DIR/frontend"
 AGENT_DIR="$ROOT_DIR/agent"
+BACKEND_DIR="$ROOT_DIR/backend"
 DATABASE_DIR="$ROOT_DIR/database"
 LOG_DIR="$ROOT_DIR/.run_logs"
 
@@ -37,7 +38,7 @@ cleanup() {
   echo ""
   echo -e "${YLW}━━━ Shutting down Frammer AI stack ━━━${RST}"
   [[ -n "$VITE_PID"  ]] && kill "$VITE_PID"  2>/dev/null && echo -e "  ${MAG}▸ Vite stopped${RST}"
-  [[ -n "$API_PID"   ]] && kill "$API_PID"   2>/dev/null && echo -e "  ${CYN}▸ Node API stopped${RST}"
+  [[ -n "$API_PID"   ]] && kill "$API_PID"   2>/dev/null && echo -e "  ${CYN}▸ FastAPI backend stopped${RST}"
   [[ -n "$AGENT_PID" ]] && kill "$AGENT_PID" 2>/dev/null && echo -e "  ${YLW}▸ Python agent stopped${RST}"
   echo -e "${GRN}✓ All services stopped.${RST}"
   exit 0
@@ -80,6 +81,7 @@ done
 
 [[ -f "$FRONTEND_DIR/package.json" ]]      || fail "frontend/package.json not found."
 [[ -f "$AGENT_DIR/api_server.py" ]]        || fail "agent/api_server.py not found."
+[[ -f "$BACKEND_DIR/main.py" ]]            || fail "backend/main.py not found."
 [[ -f "$DATABASE_DIR/local_postgres.py" ]] || fail "database/local_postgres.py not found."
 
 echo -e "  ${GRN}✓ node $(node --version)  npm $(npm --version)  $("$PYTHON" --version)${RST}"
@@ -101,6 +103,10 @@ else
   echo -e "  ${CYN}▸ Starting cluster…${RST}"
   (cd "$FRONTEND_DIR" && npm run db:start --silent) 2>&1 | sed 's/^/  /'
   echo -e "  ${GRN}✓ PostgreSQL ready${RST}"
+
+  echo -e "  ${CYN}▸ Seeding auth users…${RST}"
+  (cd "$FRONTEND_DIR" && npm run seed:auth --silent) 2>&1 | sed 's/^/  /' || true
+  echo -e "  ${GRN}✓ Auth users seeded${RST}"
 fi
 
 # ── 4. Application services ───────────────────────────────────────────────────
@@ -121,9 +127,13 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$AGENT_DIR" \
   > "$LOG_DIR/agent.log" 2>&1 &
 AGENT_PID=$!
 
-# Node.js Express API — port 4000
-echo -e "  ${CYN}▸ Node.js API    → http://localhost:4000${RST}  (log: .run_logs/api.log)"
-(cd "$FRONTEND_DIR" && node server.js > "$LOG_DIR/api.log" 2>&1) &
+# FastAPI backend API — port 4000
+echo -e "  ${CYN}▸ FastAPI backend → http://localhost:4000${RST}  (log: .run_logs/api.log)"
+PYTHONDONTWRITEBYTECODE=1 \
+  "$PYTHON" -m uvicorn backend.main:app \
+  --host 0.0.0.0 --port 4000 --log-level info \
+  --reload --reload-dir "$BACKEND_DIR" \
+  > "$LOG_DIR/api.log" 2>&1 &
 API_PID=$!
 
 # Vite dev server — port 5173
@@ -162,7 +172,7 @@ wait_for_vite() {
   echo -e "  ${RED}✗ Vite frontend did not start in ${max_wait}s — check .run_logs/vite.log${RST}"
 }
 
-wait_for_port "Node.js API"  4000
+wait_for_port "FastAPI backend" 4000
 wait_for_port "Python agent" 8000
 wait_for_vite
 
@@ -173,7 +183,7 @@ echo -e "${GRN}${BLD}  Frammer AI is running!  (PID $$)${RST}"
 echo -e "${GRN}${BLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RST}"
 echo ""
 echo -e "  ${MAG}React UI     →  http://localhost:5173${RST}"
-echo -e "  ${CYN}Node API     →  http://localhost:4000/api/health${RST}"
+echo -e "  ${CYN}FastAPI API   →  http://localhost:4000/api/health${RST}"
 echo -e "  ${YLW}Python agent →  http://localhost:8000/healthz${RST}"
 echo ""
 echo -e "  ${BLD}Stop:${RST}  Ctrl-C  ${BLD}or${RST}  kill $$"

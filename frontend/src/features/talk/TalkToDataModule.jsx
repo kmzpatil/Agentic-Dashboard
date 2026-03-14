@@ -13,21 +13,21 @@ import XmlChartRenderer from '../../components/charts/XmlChartRenderer';
 // ── Markdown overrides ──────────────────────────────────────────────────────
 
 const md = {
-  p:      ({ children }) => <p className="mb-3 last:mb-0 leading-[1.75] text-[15px]">{children}</p>,
-  ul:     ({ children }) => <ul className="list-disc pl-5 mb-3 space-y-1.5 text-[15px]">{children}</ul>,
-  ol:     ({ children }) => <ol className="list-decimal pl-5 mb-3 space-y-1.5 text-[15px]">{children}</ol>,
-  li:     ({ children }) => <li className="leading-relaxed">{children}</li>,
+  p: ({ children }) => <p className="mb-3 last:mb-0 leading-[1.75] text-[15px]">{children}</p>,
+  ul: ({ children }) => <ul className="list-disc pl-5 mb-3 space-y-1.5 text-[15px]">{children}</ul>,
+  ol: ({ children }) => <ol className="list-decimal pl-5 mb-3 space-y-1.5 text-[15px]">{children}</ol>,
+  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
   strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
-  em:     ({ children }) => <em className="text-neutral-300 italic">{children}</em>,
-  code:   ({ inline, children }) =>
+  em: ({ children }) => <em className="text-neutral-300 italic">{children}</em>,
+  code: ({ inline, children }) =>
     inline
       ? <code className="bg-neutral-800/50 text-amber-300 text-[13px] px-1.5 py-0.5 rounded font-mono">{children}</code>
       : <pre className="bg-[#111] border border-neutral-800 rounded-lg p-4 overflow-x-auto my-3 text-[13px] text-neutral-300 font-mono leading-relaxed"><code>{children}</code></pre>,
-  h2:     ({ children }) => <h2 className="text-[17px] font-bold text-white mt-5 mb-2">{children}</h2>,
-  h3:     ({ children }) => <h3 className="text-[16px] font-bold text-white mt-4 mb-1.5">{children}</h3>,
-  table:  ({ children }) => <div className="overflow-x-auto my-3 rounded-lg border border-neutral-800"><table className="text-[13px] border-collapse w-full">{children}</table></div>,
-  th:     ({ children }) => <th className="border-b border-neutral-700 px-3 py-2.5 text-left text-neutral-300 bg-[#111] font-semibold text-[12px] uppercase tracking-wide">{children}</th>,
-  td:     ({ children }) => <td className="border-b border-neutral-800/40 px-3 py-2.5 text-neutral-400 text-[13px]">{children}</td>,
+  h2: ({ children }) => <h2 className="text-[17px] font-bold text-white mt-5 mb-2">{children}</h2>,
+  h3: ({ children }) => <h3 className="text-[16px] font-bold text-white mt-4 mb-1.5">{children}</h3>,
+  table: ({ children }) => <div className="overflow-x-auto my-3 rounded-lg border border-neutral-800"><table className="text-[13px] border-collapse w-full">{children}</table></div>,
+  th: ({ children }) => <th className="border-b border-neutral-700 px-3 py-2.5 text-left text-neutral-300 bg-[#111] font-semibold text-[12px] uppercase tracking-wide">{children}</th>,
+  td: ({ children }) => <td className="border-b border-neutral-800/40 px-3 py-2.5 text-neutral-400 text-[13px]">{children}</td>,
 };
 
 const SUGGESTIONS = [
@@ -54,11 +54,10 @@ function HistorySidebar({ conversations, activeId, onSelect, onNew, onDelete }) 
         {conversations.map((conv) => (
           <div
             key={conv.id}
-            className={`group flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer transition-colors ${
-              conv.id === activeId
+            className={`group flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer transition-colors ${conv.id === activeId
                 ? 'bg-[#1A1A1A] text-white'
                 : 'text-neutral-500 hover:bg-[#111] hover:text-neutral-300'
-            }`}
+              }`}
             onClick={() => onSelect(conv.id)}
           >
             <MessageSquare size={13} className="shrink-0" />
@@ -126,11 +125,10 @@ function CanvasPanel({ artifact, onClose }) {
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`flex items-center gap-1.5 px-3.5 py-2.5 text-[12px] font-semibold rounded-t-lg transition-colors ${
-                validTab === t.id
+              className={`flex items-center gap-1.5 px-3.5 py-2.5 text-[12px] font-semibold rounded-t-lg transition-colors ${validTab === t.id
                   ? 'text-white bg-[#161616] border border-neutral-800/60 border-b-transparent -mb-px'
                   : 'text-neutral-500 hover:text-neutral-300'
-              }`}
+                }`}
             >
               {t.icon} {t.label}
             </button>
@@ -342,7 +340,9 @@ export default function TalkToDataModule({ authToken }) {
 
   const fetchConversations = async () => {
     try {
-      const res = await fetch(`${API_BASE}/conversations`);
+      const res = await fetch(`${API_BASE}/conversations`, {
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+      });
       if (res.ok) {
         const data = await res.json();
         setConversations(data.conversations || []);
@@ -361,7 +361,9 @@ export default function TalkToDataModule({ authToken }) {
 
   const handleSelectConversation = async (id) => {
     try {
-      const res = await fetch(`${API_BASE}/conversations/${id}`);
+      const res = await fetch(`${API_BASE}/conversations/${id}`, {
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+      });
       if (!res.ok) return;
       const data = await res.json();
       setConversationId(id);
@@ -382,7 +384,10 @@ export default function TalkToDataModule({ authToken }) {
 
   const handleDeleteConversation = async (id) => {
     try {
-      await fetch(`${API_BASE}/conversations/${id}`, { method: 'DELETE' });
+      await fetch(`${API_BASE}/conversations/${id}`, {
+        method: 'DELETE',
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+      });
       setConversations((prev) => prev.filter((c) => c.id !== id));
       if (id === conversationId) handleNewConversation();
     } catch {

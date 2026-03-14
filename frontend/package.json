@@ -17,7 +17,7 @@
     "db:stop": "python ../database/local_postgres.py stop",
     "db:status": "python ../database/local_postgres.py status",
     "db:bootstrap": "python ../database/bootstrap_postgres.py",
-    "seed:auth": "node backend/db/seedAuthUsers.js",
+    "seed:auth": "node ../backend_legacy/db/seedAuthUsers.js",
     "dev:full": "npm run db:start && concurrently --names \"api,agent,vite\" --prefix-colors \"cyan,yellow,magenta\" \"npm run api\" \"npm run agent\" \"npm run dev\""
   },
   "keywords": [],
