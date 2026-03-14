@@ -9,6 +9,7 @@ AGENT_DIR="$ROOT_DIR/agent"
 BACKEND_DIR="$ROOT_DIR/backend"
 FRONTEND_DIR="$ROOT_DIR/frontend"
 LOG_DIR="$ROOT_DIR/.run_logs"
+REQUIREMENTS_FILE="$ROOT_DIR/requirements.txt"
 SKIP_DB=false
 [[ "${1:-}" == "--no-db" ]] && SKIP_DB=true
 
@@ -17,12 +18,43 @@ mkdir -p "$LOG_DIR"
 # ── Load .env so all child processes inherit env vars (e.g. GROQ_API_KEY) ────
 [[ -f "$ROOT_DIR/.env" ]] && set -a && source "$ROOT_DIR/.env" && set +a
 
-# ── Python interpreter (prefer local venv) ────────────────────────────────────
-PYTHON=""
-for c in "$ROOT_DIR/.venv/bin/python" "$(command -v python3 2>/dev/null)" "$(command -v python 2>/dev/null)"; do
-  [[ -x "$c" ]] && PYTHON="$c" && break
+# ── Python interpreter / virtualenv bootstrap ─────────────────────────────────
+VENV_DIR="$ROOT_DIR/.venv"
+VENV_PYTHON=""
+for c in "$VENV_DIR/bin/python" "$VENV_DIR/Scripts/python.exe"; do
+  [[ -x "$c" ]] && VENV_PYTHON="$c" && break
 done
-[[ -z "$PYTHON" ]] && echo "ERROR: python not found" && exit 1
+
+if [[ -z "$VENV_PYTHON" ]]; then
+  BOOTSTRAP_PYTHON=""
+  for c in "$(command -v python3 2>/dev/null)" "$(command -v python 2>/dev/null)" "$(command -v py 2>/dev/null)"; do
+    [[ -n "$c" && -x "$c" ]] && BOOTSTRAP_PYTHON="$c" && break
+  done
+
+  [[ -z "$BOOTSTRAP_PYTHON" ]] && echo "ERROR: python not found" && exit 1
+
+  echo "Creating virtual environment at .venv..."
+  if [[ "$(basename "$BOOTSTRAP_PYTHON")" == "py" || "$(basename "$BOOTSTRAP_PYTHON")" == "py.exe" ]]; then
+    "$BOOTSTRAP_PYTHON" -3 -m venv "$VENV_DIR"
+  else
+    "$BOOTSTRAP_PYTHON" -m venv "$VENV_DIR"
+  fi
+
+  for c in "$VENV_DIR/bin/python" "$VENV_DIR/Scripts/python.exe"; do
+    [[ -x "$c" ]] && VENV_PYTHON="$c" && break
+  done
+fi
+
+[[ -z "$VENV_PYTHON" ]] && echo "ERROR: could not locate virtualenv python" && exit 1
+PYTHON="$VENV_PYTHON"
+
+if [[ -f "$REQUIREMENTS_FILE" ]]; then
+  echo "Installing Python dependencies from requirements.txt..."
+  "$PYTHON" -m pip install --upgrade pip --quiet
+  "$PYTHON" -m pip install -r "$REQUIREMENTS_FILE"
+else
+  echo "WARN: requirements.txt not found at $REQUIREMENTS_FILE"
+fi
 
 # ── Node deps ─────────────────────────────────────────────────────────────────
 [[ ! -d "$FRONTEND_DIR/node_modules" ]] && (cd "$FRONTEND_DIR" && npm install --silent)
@@ -30,8 +62,16 @@ done
 # ── PostgreSQL ────────────────────────────────────────────────────────────────
 if ! $SKIP_DB; then
   echo "Starting PostgreSQL..."
-  (cd "$FRONTEND_DIR" && npm run db:start --silent)
-  (cd "$FRONTEND_DIR" && npm run seed:auth --silent) || true
+  if (cd "$FRONTEND_DIR" && npm run db:start --silent); then
+    (cd "$FRONTEND_DIR" && npm run seed:auth --silent) || true
+  else
+    echo ""
+    echo "WARN: Local PostgreSQL could not be started."
+    echo "      Continuing without DB bootstrap (--no-db behavior)."
+    echo "      If you need local DB bootstrap, install PostgreSQL binaries"
+    echo "      (pg_ctl/initdb/psql/createdb) and set POSTGRES_BIN_DIR."
+    echo ""
+  fi
 fi
 
 # ── Clear stale processes on target ports ─────────────────────────────────────
