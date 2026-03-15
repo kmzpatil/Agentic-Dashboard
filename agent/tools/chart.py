@@ -17,28 +17,17 @@ Returns the dashboard XML string, or an error JSON string on failure.
 """
 
 import json
-import os
 import re
 from datetime import date
 from typing import Any, Dict, List, Optional
 from xml.etree.ElementTree import Element, SubElement, indent, tostring
 
 import pandas as pd
-import psycopg2
+
+from tools._db import get_db, DEFAULT_QUERY_LIMIT, MAX_QUERY_LIMIT
+from mcp_server.database import QueryValidationError
 
 FORBIDDEN_KEYWORDS = {"DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "CREATE", "TRUNCATE"}
-
-
-def _get_connection() -> psycopg2.extensions.connection:
-    """Open a connection to the Frammer PostgreSQL database using env variables."""
-    return psycopg2.connect(
-        host=os.environ["POSTGRES_HOST"],
-        port=int(os.environ.get("POSTGRES_PORT", 5432)),
-        dbname=os.environ["POSTGRES_DB"],
-        user=os.environ["POSTGRES_USER"],
-        password=os.environ["POSTGRES_PASSWORD"],
-        sslmode=os.environ.get("POSTGRES_SSLMODE", "prefer"),
-    )
 
 
 def _df_from_records(records: List[Dict[str, Any]]) -> pd.DataFrame:
@@ -201,7 +190,7 @@ def generate_plotly_chart(
       - generate_plotly_chart(data_records=[...], chart_attributes={...})
           → preferred: uses pre-fetched data + LLM-decided attributes
       - generate_plotly_chart(query="SELECT ...")
-          → fallback: queries PostgreSQL and auto-guesses chart config
+          → fallback: queries PostgreSQL via DatabaseClient and auto-guesses chart config
 
     Args:
         query:            A valid PostgreSQL SELECT statement (fallback mode).
@@ -221,14 +210,12 @@ def generate_plotly_chart(
     if data_records is not None:
         df = _df_from_records(data_records)
     elif query:
-        if any(re.search(rf"\b{kw}\b", query.upper()) for kw in FORBIDDEN_KEYWORDS):
-            return json.dumps({"error": "Only read-only SELECT queries are allowed."})
         try:
-            conn = _get_connection()
-            df = pd.read_sql_query(query, conn)
-            conn.close()
-        except psycopg2.OperationalError as exc:
-            return json.dumps({"error": f"Chart DB connection failed: {exc}"})
+            db = get_db()
+            limit = min(DEFAULT_QUERY_LIMIT, MAX_QUERY_LIMIT)
+            df = db.run_read_only_query(query, limit=limit)
+        except QueryValidationError as exc:
+            return json.dumps({"error": str(exc)})
         except Exception as exc:
             return json.dumps({"error": f"Chart DB query failed: {exc}"})
     else:

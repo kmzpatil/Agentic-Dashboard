@@ -32,6 +32,7 @@ from client import LLMClient
 from tools import (
     execute_sql_query,
     generate_plotly_chart,
+    get_db,
     get_frammer_schema,
     retrieve_metric_definitions,
 )
@@ -121,6 +122,29 @@ def get_metric_definitions(query: str) -> str:
 
 
 @tool
+def search_relevant_schemas(query: str) -> str:
+    """Semantic search for database tables and columns relevant to a question.
+    Uses CHESS-style RAG with embedding vectors to find the most relevant
+    schema elements. Returns table names, column details, and similarity scores.
+    Call this when you need to discover which tables are relevant for a query.
+
+    Args:
+        query: Natural language description of the data you need (e.g. 'interview uploads by channel').
+    """
+    ctx = _get_ctx()
+    try:
+        db = get_db()
+        results = db.search_table_schemas(query, limit=5)
+        ctx["actions"].append(f"Searched schemas — {len(results)} matches")
+        logger.info("[tool] search_relevant_schemas(%r) -> %d results", query[:50], len(results))
+        return json.dumps(results, indent=2, default=str)
+    except Exception as exc:
+        ctx["actions"].append("Schema search failed")
+        logger.warning("[tool] search_relevant_schemas error: %s", exc)
+        return f"Schema search error: {exc}. Use get_schema instead."
+
+
+@tool
 def run_sql_query(sql: str) -> str:
     """Execute a read-only PostgreSQL SELECT query and return results.
     Returns JSON with row_count, columns, and sample_rows on success.
@@ -203,23 +227,25 @@ def build_chart(chart_type: str, x_column: str, y_columns: str, title: str) -> s
 
 # ── LangGraph ReAct graph ────────────────────────────────────────────────────
 
-TOOLS = [get_schema, get_metric_definitions, run_sql_query, build_chart]
+TOOLS = [get_schema, get_metric_definitions, search_relevant_schemas, run_sql_query, build_chart]
 
 SYSTEM_PROMPT = """\
 You are Frammer AI, an analytics assistant for the Frammer media production platform.
 
 ## Tools
-1. **get_schema** — Database tables and columns. Call FIRST.
+1. **get_schema** — Full database schema (tables + columns). Call FIRST.
 2. **get_metric_definitions** — How business metrics are calculated.
-3. **run_sql_query** — Execute a PostgreSQL SELECT query.
-4. **build_chart** — Visualize query results as a chart.
+3. **search_relevant_schemas** — Semantic search for relevant tables/columns using CHESS RAG.
+4. **run_sql_query** — Execute a PostgreSQL SELECT query.
+5. **build_chart** — Visualize query results as a chart.
 
 ## Workflow for data questions
 1. get_schema → see available tables
 2. get_metric_definitions → understand the metric
-3. run_sql_query → get data (retry on error — fix SQL based on the error message)
-4. build_chart → visualize results
-5. Write a clear, concise markdown summary
+3. search_relevant_schemas → find the most relevant tables for your question
+4. run_sql_query → get data (retry on error — fix SQL based on the error message)
+5. build_chart → visualize results
+6. Write a clear, concise markdown summary
 
 ## Response rules
 - **Bold** key numbers and terms

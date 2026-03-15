@@ -1,50 +1,26 @@
 """
 Tool: execute_sql_query
-Executes a read-only SELECT query using SQLAlchemy (supports SQLite, PostgreSQL, etc.),
+Executes a read-only SELECT query via the shared MCP DatabaseClient,
 extracts the data, and returns a combined JSON payload containing both
 the data records and the chart attributes for the downstream charting agent.
 """
 
 import json
 import re
-from pathlib import Path
 from typing import Any, Dict, Optional
 
-import pandas as pd
-from dotenv import load_dotenv
-from sqlalchemy import create_engine, text
-
-# Load env
-ROOT_DIR = Path(__file__).resolve().parents[2]
-load_dotenv(ROOT_DIR / ".env")
-load_dotenv()
-
-from mcp_server.config import ServerSettings
-
-# Mutations that are never allowed
-FORBIDDEN_KEYWORDS = {"DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "CREATE", "TRUNCATE"}
-
-# Known table name typo corrections (LLMs often drop trailing 's' on plurals)
-TABLE_NAME_ALIASES: Dict[str, str] = {
-    "channel_metric": "channel_metrics",
-    "input_type_metric": "input_type_metrics",
-    "language_statistic": "language_statistics",
-    "output_type_statistic": "output_type_statistics",
-    "video_list": "video_list_data",
-    "monthly_count_duration": "monthly_counts_duration",
-    "monthly_count": "monthly_counts_duration",
-}
-
-
-def _get_engine():
-    """Create an SQLAlchemy engine from the shared ServerSettings."""
-    settings = ServerSettings.from_env()
-    return create_engine(settings.database_url, pool_pre_ping=True, future=True)
+from tools._db import get_db, DEFAULT_QUERY_LIMIT, MAX_QUERY_LIMIT
+from mcp_server.database import QueryValidationError
 
 
 def execute_sql_query(query: str, chart_attributes: Optional[Dict[str, Any]] = None) -> str:
     """
     Execute a SELECT SQL query and bundle the results with chart attributes.
+
+    Routes through the MCP DatabaseClient which provides:
+      - Query validation (blocks mutations, multi-statement)
+      - Proper LIMIT enforcement
+      - Clean connection management
 
     Args:
         query:            A valid SELECT statement.
@@ -59,23 +35,17 @@ def execute_sql_query(query: str, chart_attributes: Optional[Dict[str, Any]] = N
     if chart_attributes is None:
         chart_attributes = {}
 
-    # Strip markdown code fences the LLM sometimes wraps around the SQL
-    query = query.strip().strip("```sql").strip("```").strip()
-
-    # Auto-correct known LLM table name typos (e.g. 'channel_metric' → 'channel_metrics')
-    for wrong, correct in TABLE_NAME_ALIASES.items():
-        query = re.sub(rf"\b{re.escape(wrong)}\b", correct, query, flags=re.IGNORECASE)
-
-    # Guard against write operations using word-boundary regex so we don't
-    # accidentally flag column names that contain a forbidden word as a substring.
-    query_upper = query.upper()
-    for kw in FORBIDDEN_KEYWORDS:
-        if re.search(rf"\b{kw}\b", query_upper):
-            return json.dumps({"error": "Only read-only SELECT queries are allowed."})
+    # Strip markdown code fences the LLM sometimes wraps around the SQL.
+    # NOTE: must use regex, NOT str.strip() — strip() removes individual
+    # characters, which would corrupt table names (e.g. raw_videos → raw_video).
+    query = query.strip()
+    query = re.sub(r"^```(?:sql)?\s*\n?", "", query, flags=re.IGNORECASE)
+    query = re.sub(r"\n?```\s*$", "", query).strip()
 
     try:
-        engine = _get_engine()
-        df = pd.read_sql_query(text(query), engine)
+        db = get_db()
+        limit = min(DEFAULT_QUERY_LIMIT, MAX_QUERY_LIMIT)
+        df = db.run_read_only_query(query, limit=limit)
 
         df = df.fillna(0)
 
@@ -85,5 +55,7 @@ def execute_sql_query(query: str, chart_attributes: Optional[Dict[str, Any]] = N
         }
         return json.dumps(payload, default=str)  # default=str handles dates/Decimals
 
+    except QueryValidationError as exc:
+        return json.dumps({"error": str(exc)})
     except Exception as exc:
         return json.dumps({"error": f"SQL Execution Error: {exc}"})
