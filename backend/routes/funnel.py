@@ -18,6 +18,7 @@ from backend.queries.funnel_queries import (
 router = APIRouter()
 
 
+@router.get("", include_in_schema=False)
 @router.get("/")
 def get_funnel(
     auth: AuthContext = Depends(require_auth),

@@ -216,7 +216,7 @@ export default function AppShell() {
                 Analytics OS
               </div>
             </div>
-            <p className="mt-2 text-sm text-neutral-500">Mission Control for seeded client analytics, routed insights, and Copilot workflows.</p>
+            <p className="mt-2 text-sm text-neutral-500">A single workspace for performance monitoring, operating priorities, and AI-guided analysis.</p>
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-2">

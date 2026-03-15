@@ -8,6 +8,7 @@ from backend.middleware.auth import AuthContext, require_auth
 router = APIRouter()
 
 
+@router.get("", include_in_schema=False)
 @router.get("/")
 def get_overview(auth: AuthContext = Depends(require_auth)):
     try:

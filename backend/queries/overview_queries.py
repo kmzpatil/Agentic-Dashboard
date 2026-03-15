@@ -15,14 +15,16 @@ def get_scoped_ctes(access_filter: dict) -> str:
       JOIN scoped_videos sv ON sv."Video_ID" = rvc."Video_ID"
     ),
     scoped_assets AS (
-      SELECT ca.*
+      SELECT DISTINCT ON (ca."Asset_ID") ca.*
       FROM created_assets ca
       JOIN scoped_videos sv ON sv."Video_ID" = ca."Video_ID"
+      ORDER BY ca."Asset_ID"
     ),
     scoped_posts AS (
-      SELECT pp.*
+      SELECT DISTINCT ON (pp."Post_ID") pp.*
       FROM published_posts pp
       JOIN scoped_assets sa ON sa."Asset_ID" = pp."Asset_ID"
+      ORDER BY pp."Post_ID"
     )
   '''
 
@@ -38,11 +40,11 @@ def get_kpi_query(access_filter: dict) -> str:
       FROM scoped_assets
     ),
     created AS (
-      SELECT COUNT(*)::int AS count, COALESCE(SUM("Created_Duration"), 0)::float8 AS duration, COALESCE(AVG("Created_Duration"), 0)::float8 AS avg_duration
+      SELECT COUNT(DISTINCT "Asset_ID")::int AS count, COALESCE(SUM("Created_Duration"), 0)::float8 AS duration, COALESCE(AVG("Created_Duration"), 0)::float8 AS avg_duration
       FROM scoped_assets
     ),
     published AS (
-      SELECT COUNT(*)::int AS count, COALESCE(SUM("Published_Duration"), 0)::float8 AS duration, COALESCE(AVG("Published_Duration"), 0)::float8 AS avg_duration
+      SELECT COUNT(DISTINCT "Post_ID")::int AS count, COALESCE(SUM("Published_Duration"), 0)::float8 AS duration, COALESCE(AVG("Published_Duration"), 0)::float8 AS avg_duration
       FROM scoped_posts
     )
     SELECT

@@ -18,6 +18,7 @@ REQUIRED_TABLES = (
 )
 
 
+@router.get("", response_model=HealthStatus, include_in_schema=False)
 @router.get("/", response_model=HealthStatus)
 def health_check():
     config = get_config()

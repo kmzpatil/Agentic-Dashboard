@@ -7,6 +7,13 @@ import { formatNumber, formatPct } from '../../lib/formatters';
 import KpiCard from '../../components/common/KpiCard';
 import { FunnelSkeleton, Skeleton } from '../../components/common/Skeleton';
 
+const BREAKDOWN_OPTIONS = [
+  { value: 'channel', label: 'Channel' },
+  { value: 'input_type', label: 'Input type' },
+  { value: 'language', label: 'Language' },
+  { value: 'output_type', label: 'Output type' },
+];
+
 export default function FunnelModule({ routeState = {}, onNavigate }) {
   const [breakdown, setBreakdown] = useState(routeState.breakdown || 'channel');
   const [zoomFilter, setZoomFilter] = useState({ dimension: routeState.dimension || '', value: routeState.value || '' });
@@ -65,6 +72,16 @@ export default function FunnelModule({ routeState = {}, onNavigate }) {
 
   return (
     <div className="p-6 space-y-6 h-full overflow-y-auto bg-[#050505]">
+      <section className="rounded-[28px] border border-neutral-800 bg-[radial-gradient(circle_at_top_left,_rgba(239,68,68,0.14),_transparent_48%),linear-gradient(180deg,#141414,_#090909)] p-6">
+        <div className="max-w-3xl">
+          <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-neutral-500">Funnel</div>
+          <h2 className="mt-2 text-3xl font-black tracking-tight text-white">See where uploads turn into created assets and where publishing momentum slows down.</h2>
+          <p className="mt-3 text-sm leading-6 text-neutral-400">
+            Break the funnel down by channel, language, input type, or output type to isolate the sources of drop-off.
+          </p>
+        </div>
+      </section>
+
       <div className="bg-[#111111] rounded-xl border border-neutral-800 p-4 flex flex-wrap gap-4 items-end">
         <div>
           <label className="block text-xs text-neutral-500 mb-2">BREAKDOWN</label>
@@ -76,10 +93,9 @@ export default function FunnelModule({ routeState = {}, onNavigate }) {
               onNavigate?.({ view: 'funnel', breakdown: e.target.value, dimension: zoomFilter.dimension || null, value: zoomFilter.value || null });
             }}
           >
-            <option value="channel">channel</option>
-            <option value="input_type">input_type</option>
-            <option value="language">language</option>
-            <option value="output_type">output_type</option>
+            {BREAKDOWN_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
           </select>
         </div>
         <button
@@ -123,7 +139,7 @@ export default function FunnelModule({ routeState = {}, onNavigate }) {
           </div>
 
           <div className="bg-[#111111] rounded-xl border border-neutral-800 p-4">
-            <h3 className="font-bold text-white mb-4">Top-down breakdown ({breakdown})</h3>
+            <h3 className="font-bold text-white mb-4">Performance breakdown</h3>
             <div className="overflow-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -153,7 +169,7 @@ export default function FunnelModule({ routeState = {}, onNavigate }) {
                             onNavigate?.({ view: 'funnel', breakdown, dimension: next.dimension, value: next.value });
                           }}
                         >
-                          zoom
+                          focus
                         </button>
                       </td>
                     </tr>
@@ -164,7 +180,7 @@ export default function FunnelModule({ routeState = {}, onNavigate }) {
           </div>
 
           <div className="bg-[#111111] rounded-xl border border-neutral-800 p-4">
-            <h3 className="font-bold text-white mb-4">Raw Video Journey Inspector</h3>
+            <h3 className="font-bold text-white mb-4">Video Journey Inspector</h3>
             <div className="overflow-auto max-h-[320px]">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-[#0A0A0A]">
