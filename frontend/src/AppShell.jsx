@@ -177,8 +177,8 @@ export default function AppShell() {
     { id: 'Usage & Trends',   icon: <BarChart3 size={16} /> },
     { id: 'Funnel',           icon: <Funnel size={16} /> },
     { id: 'Explorer',         icon: <Microscope size={16} /> },
-    { id: 'Talk to Your Data', icon: <Database size={16} /> },
     { id: 'Simulator',        icon: <Activity size={16} /> },
+    { id: 'Talk to Your Data', icon: <Database size={16} /> },
   ];
 
   return (

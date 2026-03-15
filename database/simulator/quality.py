@@ -128,7 +128,7 @@ class QualityEngine:
             cols_sql = ", ".join(f'"{c}"' for c in pk_cols)
             rows = self._fetchall(
                 f'SELECT {cols_sql}, COUNT(*) as cnt FROM "{table}" '
-                f"GROUP BY {cols_sql} HAVING cnt > 1"
+                f"GROUP BY {cols_sql} HAVING COUNT(*) > 1"
             )
             for row in rows:
                 dup_vals = row[:-1]
@@ -251,7 +251,8 @@ class QualityEngine:
         rows = self._fetchall(
             "SELECT table_name FROM information_schema.tables "
             "WHERE table_schema = 'public' AND table_type = 'BASE TABLE' "
-            "AND table_name NOT LIKE '\\_%'"
+            "AND table_name NOT LIKE %s",
+            [r'\_%'],
         )
         return [r[0] for r in rows]
 

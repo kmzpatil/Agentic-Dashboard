@@ -360,7 +360,7 @@ class SimulatorEngine:
         )
         try:
             self._execute(
-                "INSERT INTO clients (Client_Name) VALUES (%s) ON CONFLICT DO NOTHING",
+                'INSERT INTO clients ("Client_Name") VALUES (%s) ON CONFLICT DO NOTHING',
                 [SIM_CLIENT],
                 commit=True,
             )
@@ -380,7 +380,7 @@ class SimulatorEngine:
             log_id = self._logger.log_pending("INSERT", "users", row_id=str(uid), new_values=row)
             try:
                 self._execute(
-                    "INSERT INTO users (User_ID, User_Name, Team_Name, Client_Name) VALUES (%s,%s,%s,%s) "
+                    'INSERT INTO users ("User_ID", "User_Name", "Team_Name", "Client_Name") VALUES (%s,%s,%s,%s) '
                     "ON CONFLICT DO NOTHING",
                     [row["User_ID"], row["User_Name"], row["Team_Name"], row["Client_Name"]],
                     commit=True,
@@ -395,7 +395,7 @@ class SimulatorEngine:
             log_id = self._logger.log_pending("INSERT", "channels", row_id=ch_name, new_values=row)
             try:
                 self._execute(
-                    "INSERT INTO channels (Channel_Name, Client_Name) VALUES (%s,%s) ON CONFLICT DO NOTHING",
+                    'INSERT INTO channels ("Channel_Name", "Client_Name") VALUES (%s,%s) ON CONFLICT DO NOTHING',
                     [row["Channel_Name"], row["Client_Name"]],
                     commit=True,
                 )
@@ -430,8 +430,8 @@ class SimulatorEngine:
             log_id = self._logger.log_pending("INSERT", "raw_videos", row_id=str(vid), new_values=row)
             try:
                 self._execute(
-                    "INSERT INTO raw_videos (Video_ID, User_ID, Headline, Source_URL, Upload_Date, Input_Type, "
-                    "Language, Uploaded_Duration) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+                    'INSERT INTO raw_videos ("Video_ID", "User_ID", "Headline", "Source_URL", "Upload_Date", "Input_Type", '
+                    '"Language", "Uploaded_Duration") VALUES (%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING',
                     list(row.values()),
                     commit=True,
                 )
@@ -450,7 +450,7 @@ class SimulatorEngine:
                 )
                 try:
                     self._execute(
-                        "INSERT INTO raw_video_channel (Video_ID, Channel_Name) VALUES (%s,%s) "
+                        'INSERT INTO raw_video_channel ("Video_ID", "Channel_Name") VALUES (%s,%s) '
                         "ON CONFLICT DO NOTHING",
                         [vid, channel],
                         commit=True,
@@ -478,7 +478,7 @@ class SimulatorEngine:
             log_id = self._logger.log_pending("INSERT", "created_assets", row_id=str(aid), new_values=row)
             try:
                 self._execute(
-                    "INSERT INTO created_assets (Asset_ID, Video_ID, Output_Type, Create_Date, Created_Duration) "
+                    'INSERT INTO created_assets ("Asset_ID", "Video_ID", "Output_Type", "Create_Date", "Created_Duration") '
                     "VALUES (%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
                     list(row.values()),
                     commit=True,
@@ -511,7 +511,7 @@ class SimulatorEngine:
             log_id = self._logger.log_pending("INSERT", "published_posts", row_id=str(pid), new_values=row)
             try:
                 self._execute(
-                    "INSERT INTO published_posts (Post_ID, Asset_ID, Publish_Date, Published_Duration) "
+                    'INSERT INTO published_posts ("Post_ID", "Asset_ID", "Publish_Date", "Published_Duration") '
                     "VALUES (%s,%s,%s,%s) ON CONFLICT DO NOTHING",
                     list(row.values()),
                     commit=True,
@@ -533,7 +533,7 @@ class SimulatorEngine:
                 )
                 try:
                     self._execute(
-                        "INSERT INTO post_distribution (Post_ID, Channel_Name, Published_Platform, Published_URL) "
+                        'INSERT INTO post_distribution ("Post_ID", "Channel_Name", "Published_Platform", "Published_URL") '
                         "VALUES (%s,%s,%s,%s) ON CONFLICT DO NOTHING",
                         list(dist_row.values()),
                         commit=True,
@@ -594,7 +594,7 @@ class SimulatorEngine:
             )
             try:
                 self._execute(
-                    "UPDATE raw_videos SET Headline = %s WHERE Video_ID = %s",
+                    'UPDATE raw_videos SET "Headline" = %s WHERE "Video_ID" = %s',
                     [new_headline, vid],
                     commit=True,
                 )
@@ -623,7 +623,7 @@ class SimulatorEngine:
             )
             try:
                 self._execute(
-                    "UPDATE created_assets SET Output_Type = %s WHERE Asset_ID = %s",
+                    'UPDATE created_assets SET "Output_Type" = %s WHERE "Asset_ID" = %s',
                     [new_type, aid],
                     commit=True,
                 )
@@ -650,7 +650,7 @@ class SimulatorEngine:
             )
             try:
                 self._execute(
-                    "UPDATE users SET Team_Name = %s WHERE User_ID = %s",
+                    'UPDATE users SET "Team_Name" = %s WHERE "User_ID" = %s',
                     [new_team, uid],
                     commit=True,
                 )
@@ -671,7 +671,7 @@ class SimulatorEngine:
             vid = rows[0][0]
             log_id = self._logger.log_pending("DELETE", table, str(vid))
             try:
-                self._execute("DELETE FROM raw_videos WHERE Video_ID = %s", [vid], commit=True)
+                self._execute('DELETE FROM raw_videos WHERE "Video_ID" = %s', [vid], commit=True)
                 self._logger.mark_success(log_id)
             except Exception as exc:
                 self._logger.mark_error(log_id, str(exc))
@@ -688,7 +688,7 @@ class SimulatorEngine:
             aid = rows[0][0]
             log_id = self._logger.log_pending("DELETE", table, str(aid))
             try:
-                self._execute("DELETE FROM created_assets WHERE Asset_ID = %s", [aid], commit=True)
+                self._execute('DELETE FROM created_assets WHERE "Asset_ID" = %s', [aid], commit=True)
                 self._logger.mark_success(log_id)
             except Exception as exc:
                 self._logger.mark_error(log_id, str(exc))
