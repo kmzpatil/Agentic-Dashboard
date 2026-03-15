@@ -75,8 +75,23 @@ if ! $SKIP_DB; then
 fi
 
 # ── Clear stale processes on target ports ─────────────────────────────────────
+# ── Clear stale processes on target ports ─────────────────────────────────────
+OS_TYPE="$(uname -s)"
+
 for port in 8000 4000 5173; do
-  lsof -ti tcp:"$port" 2>/dev/null | xargs kill -9 2>/dev/null || true
+  if [[ "$OS_TYPE" == MINGW* || "$OS_TYPE" == MSYS* || "$OS_TYPE" == CYGWIN* ]]; then
+    # Windows (via Git Bash / MSYS2)
+    # Find the PID listening on the target port
+    WIN_PID=$(netstat -ano | grep "LISTENING" | grep ":$port " | awk '{print $5}' | head -n 1)
+    if [[ -n "$WIN_PID" ]]; then
+      # Use cmd.exe to run taskkill. 
+      # The //C and //F are used to prevent Git Bash from mangling Windows paths/flags.
+      cmd.exe //C "taskkill /F /PID $WIN_PID" >/dev/null 2>&1 || true
+    fi
+  else
+    # Mac / Linux
+    lsof -ti tcp:"$port" 2>/dev/null | xargs kill -9 2>/dev/null || true
+  fi
 done
 
 # ── Cleanup on exit ───────────────────────────────────────────────────────────

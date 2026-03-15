@@ -11,6 +11,7 @@ from backend.routes.agent_proxy import router as agent_proxy_router
 from backend.routes.api import router as api_router
 from backend.routes.auth import router as auth_router
 from backend.routes.health import router as health_router
+from database.simulator.router import router as simulator_router
 
 
 BACKEND_DIR = Path(__file__).resolve().parent
@@ -44,3 +45,4 @@ app.include_router(agent_proxy_router, prefix="/api", tags=["agent-proxy"])
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(health_router, prefix="/api/health", tags=["health"])
 app.include_router(api_router, prefix="/api", tags=["analytics"])
+app.include_router(simulator_router, prefix="/api/simulator", tags=["simulator"])
