@@ -1,318 +1,166 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Bot, Loader2, Send, Database, Table2,
-  ChevronRight, X, PanelRightOpen, BarChart3,
-  Sparkles, ArrowRight, Plus, MessageSquare, Trash2,
-  FileText, Clock, Activity, Mic, MicOff,
+  Bot,
+  Loader2,
+  MessageSquare,
+  Mic,
+  MicOff,
+  PanelRightOpen,
+  Plus,
+  Send,
+  Trash2,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { API_BASE } from '../../lib/constants';
 import useVoiceInput from '../../hooks/useVoiceInput';
-import XmlChartRenderer from '../../components/charts/XmlChartRenderer';
+import ArtifactCanvas from '../../components/artifacts/ArtifactCanvas';
 
-// ── Markdown overrides ──────────────────────────────────────────────────────
-
-const md = {
+const markdownComponents = {
   p: ({ children }) => <p className="mb-3 last:mb-0 leading-[1.75] text-[15px]">{children}</p>,
-  ul: ({ children }) => <ul className="list-disc pl-5 mb-3 space-y-1.5 text-[15px]">{children}</ul>,
-  ol: ({ children }) => <ol className="list-decimal pl-5 mb-3 space-y-1.5 text-[15px]">{children}</ol>,
+  ul: ({ children }) => <ul className="mb-3 list-disc space-y-1.5 pl-5 text-[15px]">{children}</ul>,
   li: ({ children }) => <li className="leading-relaxed">{children}</li>,
   strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
-  em: ({ children }) => <em className="text-neutral-300 italic">{children}</em>,
-  code: ({ inline, children }) =>
+  code: ({ inline, children }) => (
     inline
-      ? <code className="bg-neutral-800/50 text-amber-300 text-[13px] px-1.5 py-0.5 rounded font-mono">{children}</code>
-      : <pre className="bg-[#111] border border-neutral-800 rounded-lg p-4 overflow-x-auto my-3 text-[13px] text-neutral-300 font-mono leading-relaxed"><code>{children}</code></pre>,
-  h2: ({ children }) => <h2 className="text-[17px] font-bold text-white mt-5 mb-2">{children}</h2>,
-  h3: ({ children }) => <h3 className="text-[16px] font-bold text-white mt-4 mb-1.5">{children}</h3>,
-  table: ({ children }) => <div className="overflow-x-auto my-3 rounded-lg border border-neutral-800"><table className="text-[13px] border-collapse w-full">{children}</table></div>,
-  th: ({ children }) => <th className="border-b border-neutral-700 px-3 py-2.5 text-left text-neutral-300 bg-[#111] font-semibold text-[12px] uppercase tracking-wide">{children}</th>,
-  td: ({ children }) => <td className="border-b border-neutral-800/40 px-3 py-2.5 text-neutral-400 text-[13px]">{children}</td>,
+      ? <code className="rounded bg-neutral-800/60 px-1.5 py-0.5 text-[13px] text-amber-300">{children}</code>
+      : <pre className="my-3 overflow-x-auto rounded-2xl border border-neutral-800 bg-[#111111] p-4 text-[13px] text-neutral-300"><code>{children}</code></pre>
+  ),
 };
 
 const SUGGESTIONS = [
-  { text: 'Show me uploads by channel this month', icon: <BarChart3 size={16} /> },
-  { text: 'What is the conversion rate by output type?', icon: <Sparkles size={16} /> },
-  { text: 'Compare top 5 clients by published duration', icon: <Table2 size={16} /> },
-  { text: 'Monthly upload trend over the last year', icon: <ArrowRight size={16} /> },
+  'Summarize the latest pipeline health',
+  'Which channels are losing conversion?',
+  'Show the monthly uploaded trend',
+  'What should I investigate next?',
 ];
-
-// ── Conversation history sidebar ────────────────────────────────────────────
 
 function HistorySidebar({ conversations, activeId, onSelect, onNew, onDelete }) {
   return (
-    <div className="w-[260px] shrink-0 bg-[#0A0A0A] border-r border-neutral-800/50 flex flex-col h-full">
-      <div className="p-3 border-b border-neutral-800/50">
+    <div className="flex h-full w-[260px] shrink-0 flex-col border-r border-neutral-800 bg-[#0A0A0A]">
+      <div className="border-b border-neutral-800 p-3">
         <button
           onClick={onNew}
-          className="w-full flex items-center gap-2 px-3 py-2.5 text-[13px] font-semibold text-neutral-300 bg-[#111] hover:bg-[#1A1A1A] border border-neutral-800 rounded-lg transition-colors"
+          className="flex w-full items-center gap-2 rounded-2xl border border-neutral-800 bg-[#111111] px-3 py-3 text-[13px] font-semibold text-neutral-300 transition-colors hover:bg-[#171717]"
         >
-          <Plus size={14} /> New conversation
+          <Plus size={14} />
+          New conversation
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
-        {conversations.map((conv) => (
+      <div className="flex-1 overflow-y-auto p-2">
+        {conversations.map((conversation) => (
           <div
-            key={conv.id}
-            className={`group flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer transition-colors ${conv.id === activeId
-                ? 'bg-[#1A1A1A] text-white'
-                : 'text-neutral-500 hover:bg-[#111] hover:text-neutral-300'
-              }`}
-            onClick={() => onSelect(conv.id)}
+            key={conversation.id}
+            className={`group flex cursor-pointer items-center gap-2 rounded-2xl px-3 py-3 transition-colors ${
+              conversation.id === activeId
+                ? 'bg-[#171717] text-white'
+                : 'text-neutral-500 hover:bg-[#111111] hover:text-neutral-300'
+            }`}
+            onClick={() => onSelect(conversation.id)}
           >
             <MessageSquare size={13} className="shrink-0" />
-            <span className="text-[13px] truncate flex-1">{conv.title || 'New conversation'}</span>
+            <span className="flex-1 truncate text-[13px]">{conversation.title || 'New conversation'}</span>
             <button
-              onClick={(e) => { e.stopPropagation(); onDelete(conv.id); }}
-              className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-red-400 transition-all"
+              onClick={(event) => {
+                event.stopPropagation();
+                onDelete(conversation.id);
+              }}
+              className="opacity-0 transition-opacity group-hover:opacity-100 hover:text-red-400"
             >
               <Trash2 size={12} />
             </button>
           </div>
         ))}
-        {conversations.length === 0 && (
-          <div className="px-3 py-8 text-center">
-            <Clock size={20} className="mx-auto text-neutral-700 mb-2" />
-            <div className="text-[12px] text-neutral-600">No conversations yet</div>
-          </div>
-        )}
       </div>
     </div>
   );
 }
 
-// ── Canvas panel (right, >=50% width) ───────────────────────────────────────
-
-function CanvasPanel({ artifact, onClose }) {
-  const [tab, setTab] = useState('chart');
-
-  if (!artifact) return null;
-
-  const { chartData, actions, chartXml } = artifact;
-  const datasets = chartData ? Object.entries(chartData) : [];
-  const hasChart = Boolean(chartXml);
-  const hasData = datasets.length > 0;
-  const hasActivity = actions && actions.length > 0;
-
-  const tabs = [
-    ...(hasChart ? [{ id: 'chart', label: 'Chart', icon: <BarChart3 size={13} /> }] : []),
-    ...(hasData ? [{ id: 'data', label: 'Data', icon: <Table2 size={13} /> }] : []),
-    ...(hasActivity ? [{ id: 'activity', label: 'Activity', icon: <Activity size={13} /> }] : []),
-  ];
-
-  const validTab = tabs.find(t => t.id === tab) ? tab : tabs[0]?.id || 'data';
+function AssistantMessage({ message, onOpenCanvas, onNavigate }) {
+  const hasArtifacts = (message.artifacts || []).length > 0;
 
   return (
-    <div className="flex-1 min-w-0 bg-[#0C0C0C] border-l border-neutral-800/50 flex flex-col h-full">
-      <div className="px-5 py-3.5 border-b border-neutral-800/50 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-7 h-7 rounded-lg bg-red-500/10 flex items-center justify-center">
-            <FileText size={14} className="text-red-400" />
-          </div>
-          <span className="text-[13px] font-bold text-neutral-200 uppercase tracking-wider">Analysis</span>
-        </div>
-        <button
-          onClick={onClose}
-          className="p-1.5 rounded-lg hover:bg-neutral-800 text-neutral-500 hover:text-neutral-300 transition-colors"
-        >
-          <X size={16} />
-        </button>
-      </div>
-
-      {tabs.length > 1 && (
-        <div className="px-5 pt-2 flex gap-1 border-b border-neutral-800/40 shrink-0">
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`flex items-center gap-1.5 px-3.5 py-2.5 text-[12px] font-semibold rounded-t-lg transition-colors ${validTab === t.id
-                  ? 'text-white bg-[#161616] border border-neutral-800/60 border-b-transparent -mb-px'
-                  : 'text-neutral-500 hover:text-neutral-300'
-                }`}
-            >
-              {t.icon} {t.label}
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div className="flex-1 overflow-y-auto p-5">
-        {validTab === 'chart' && hasChart && (
-          <XmlChartRenderer xmlString={chartXml} data={chartData} />
-        )}
-
-        {validTab === 'data' && hasData && (
-          <div className="space-y-5">
-            {datasets.map(([name, rows], idx) => (
-              <DatasetTable key={idx} name={name} rows={rows} />
-            ))}
-          </div>
-        )}
-
-        {validTab === 'activity' && hasActivity && (
-          <div>
-            <div className="text-[12px] font-semibold text-neutral-500 uppercase tracking-wide mb-4">Agent Activity</div>
-            <div className="space-y-2">
-              {actions.map((action, i) => (
-                <div key={i} className="flex items-start gap-3">
-                  <div className="w-6 h-6 rounded-full bg-neutral-800 text-neutral-500 flex items-center justify-center text-[11px] font-bold shrink-0 mt-0.5">
-                    {i + 1}
-                  </div>
-                  <div className="flex-1 text-[13px] text-neutral-400 leading-relaxed py-0.5">
-                    {action}
-                  </div>
-                  <ChevronRight size={12} className="text-neutral-700 shrink-0 mt-1.5" />
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function DatasetTable({ name, rows }) {
-  const [expanded, setExpanded] = useState(false);
-  if (!Array.isArray(rows) || rows.length === 0) return null;
-
-  const cols = Object.keys(rows[0]);
-  const displayRows = expanded ? rows.slice(0, 50) : rows.slice(0, 10);
-
-  return (
-    <div className="rounded-lg border border-neutral-800 overflow-hidden">
-      <div className="px-4 py-2.5 bg-[#111] flex items-center justify-between">
-        <span className="text-[12px] font-semibold text-neutral-400 truncate">{name}</span>
-        <span className="text-[11px] text-neutral-600 font-mono">{rows.length} rows</span>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-[12px]">
-          <thead>
-            <tr>
-              {cols.map((col) => (
-                <th key={col} className="px-3 py-2 text-left text-neutral-500 bg-[#0E0E0E] font-semibold border-b border-neutral-800/50 whitespace-nowrap text-[11px]">
-                  {col}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {displayRows.map((row, i) => (
-              <tr key={i} className="hover:bg-neutral-800/20 transition-colors">
-                {cols.map((col) => (
-                  <td key={col} className="px-3 py-2 text-neutral-400 border-b border-neutral-800/30 whitespace-nowrap">
-                    {String(row[col] ?? '')}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {rows.length > 10 && (
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="w-full py-2 text-[11px] font-semibold text-neutral-500 hover:text-neutral-300 bg-[#0E0E0E] border-t border-neutral-800/50 transition-colors"
-        >
-          {expanded ? 'Show less' : `Show all ${rows.length} rows`}
-        </button>
-      )}
-    </div>
-  );
-}
-
-// ── Chat messages ───────────────────────────────────────────────────────────
-
-function AssistantMessage({ msg, onOpenCanvas }) {
-  const hasArtifact = (msg.chartData && Object.keys(msg.chartData).length > 0) || msg.chartXml;
-
-  return (
-    <div className="max-w-[760px]">
-      <div className="flex items-center gap-2.5 mb-2.5">
-        <div className="w-6 h-6 rounded-lg bg-red-500/10 flex items-center justify-center">
+    <div className="max-w-[780px]">
+      <div className="mb-2.5 flex items-center gap-2.5">
+        <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-red-500/10">
           <Bot size={13} className="text-red-400" />
         </div>
-        <span className="text-[12px] font-semibold text-neutral-600">Frammer AI</span>
+        <span className="text-[12px] font-semibold text-neutral-600">Frammer Copilot</span>
       </div>
 
-      <div className="text-[15px] text-neutral-300 leading-[1.75] pl-[34px]">
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={md}>
-          {msg.content || ''}
+      <div className="pl-[34px] text-[15px] leading-[1.75] text-neutral-300">
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+          {message.markdown || message.content || ''}
         </ReactMarkdown>
 
-        {hasArtifact && (
+        {hasArtifacts && (
           <button
-            onClick={() => onOpenCanvas(msg)}
-            className="mt-4 inline-flex items-center gap-2.5 text-[13px] font-semibold text-neutral-400 bg-[#111] hover:bg-[#1A1A1A] border border-neutral-800 hover:border-neutral-600 px-4 py-2.5 rounded-lg transition-all group"
+            onClick={() => onOpenCanvas(message)}
+            className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-neutral-800 bg-[#111111] px-4 py-2.5 text-[13px] font-semibold text-neutral-400 transition-colors hover:border-neutral-700 hover:bg-[#171717] hover:text-neutral-200"
           >
-            <PanelRightOpen size={15} className="text-neutral-500 group-hover:text-red-400 transition-colors" />
+            <PanelRightOpen size={14} />
             View analysis
-            {msg.chartData && (
-              <span className="text-[11px] text-neutral-600 font-mono">
-                {Object.values(msg.chartData).reduce((sum, r) => sum + (Array.isArray(r) ? r.length : 0), 0)} rows
-              </span>
-            )}
           </button>
+        )}
+
+        {!!message.suggested_actions?.length && (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {message.suggested_actions.map((action) => (
+              <button
+                key={`${action.label}-${action.target}`}
+                onClick={() => onNavigate?.(action.filter_state || { view: action.target })}
+                className="rounded-full border border-neutral-800 bg-[#0E0E0E] px-3 py-1.5 text-xs font-semibold text-neutral-400 transition-colors hover:border-neutral-700 hover:text-neutral-200"
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
         )}
       </div>
     </div>
   );
 }
 
-function UserMessage({ msg }) {
+function UserMessage({ message }) {
   return (
-    <div className="max-w-[760px]">
-      <div className="text-[15px] text-white leading-[1.75] font-medium">
-        {msg.content}
-      </div>
+    <div className="max-w-[780px]">
+      <div className="text-[15px] font-medium leading-[1.75] text-white">{message.content}</div>
     </div>
   );
 }
 
 function LoadingIndicator() {
   return (
-    <div className="max-w-[760px]">
-      <div className="flex items-center gap-2.5 mb-2.5">
-        <div className="w-6 h-6 rounded-lg bg-red-500/10 flex items-center justify-center">
-          <Loader2 size={13} className="text-red-400 animate-spin" />
+    <div className="max-w-[780px]">
+      <div className="mb-2.5 flex items-center gap-2.5">
+        <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-red-500/10">
+          <Loader2 size={13} className="animate-spin text-red-400" />
         </div>
-        <span className="text-[12px] font-semibold text-neutral-600">Frammer AI</span>
+        <span className="text-[12px] font-semibold text-neutral-600">Frammer Copilot</span>
       </div>
-      <div className="pl-[34px] flex items-center gap-3">
-        <div className="flex gap-1">
-          <div className="w-2 h-2 rounded-full bg-neutral-600 animate-bounce" style={{ animationDelay: '0ms' }} />
-          <div className="w-2 h-2 rounded-full bg-neutral-600 animate-bounce" style={{ animationDelay: '150ms' }} />
-          <div className="w-2 h-2 rounded-full bg-neutral-600 animate-bounce" style={{ animationDelay: '300ms' }} />
-        </div>
-        <span className="text-[14px] text-neutral-600">Analyzing your data...</span>
-      </div>
+      <div className="pl-[34px] text-sm text-neutral-500">Analyzing your data and building artifacts...</div>
     </div>
   );
 }
 
-// ── Empty state ─────────────────────────────────────────────────────────────
-
 function EmptyState({ onSelect }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full px-6">
-      <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-red-500/20 to-red-500/5 border border-red-500/20 flex items-center justify-center mb-6">
+    <div className="flex h-full flex-col items-center justify-center px-6">
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-red-500/20 bg-gradient-to-br from-red-500/20 to-red-500/5">
         <Bot size={28} className="text-red-400" />
       </div>
-      <h2 className="text-2xl font-bold text-white mb-2">Talk to Your Data</h2>
-      <p className="text-neutral-500 text-[14px] text-center max-w-md mb-10 leading-relaxed">
-        Ask questions in plain English. I'll query the database, analyze results,
-        and generate charts and reports for you.
+      <h2 className="mt-6 text-2xl font-bold text-white">Copilot</h2>
+      <p className="mt-2 max-w-md text-center text-[14px] leading-relaxed text-neutral-500">
+        Ask a question in plain English and Copilot will query the backend, return typed artifacts, and suggest where to drill next.
       </p>
-      <div className="grid grid-cols-2 gap-3 max-w-lg w-full">
-        {SUGGESTIONS.map(({ text, icon }) => (
+      <div className="mt-8 grid w-full max-w-2xl grid-cols-1 gap-3 md:grid-cols-2">
+        {SUGGESTIONS.map((text) => (
           <button
             key={text}
             onClick={() => onSelect(text)}
-            className="group text-left text-[14px] bg-[#0E0E0E] text-neutral-500 p-4 rounded-xl border border-neutral-800/60 hover:border-neutral-700 hover:text-neutral-300 hover:bg-[#111] transition-all flex items-start gap-3"
+            className="rounded-2xl border border-neutral-800 bg-[#0E0E0E] p-4 text-left text-[14px] text-neutral-400 transition-colors hover:border-neutral-700 hover:bg-[#111111] hover:text-neutral-200"
           >
-            <span className="mt-0.5 text-neutral-600 group-hover:text-red-400 transition-colors shrink-0">{icon}</span>
-            <span className="leading-snug">{text}</span>
+            {text}
           </button>
         ))}
       </div>
@@ -320,19 +168,24 @@ function EmptyState({ onSelect }) {
   );
 }
 
-// ── Main module ─────────────────────────────────────────────────────────────
-
-export default function TalkToDataModule({ authToken }) {
+export default function TalkToDataModule({ authToken, routeState, onNavigate }) {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [canvasArtifact, setCanvasArtifact] = useState(null);
   const [conversationId, setConversationId] = useState(null);
   const [conversations, setConversations] = useState([]);
+  const [canvasMessage, setCanvasMessage] = useState(null);
   const endRef = useRef(null);
+
   const voice = useVoiceInput({
-    onResult: (text) => setInput((prev) => (prev ? `${prev} ${text}` : text)),
+    onResult: (text) => setInput((previous) => (previous ? `${previous} ${text}` : text)),
   });
+
+  useEffect(() => {
+    if (routeState?.prompt) {
+      setInput(routeState.prompt);
+    }
+  }, [routeState?.prompt]);
 
   useEffect(() => {
     if (endRef.current) endRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -347,20 +200,19 @@ export default function TalkToDataModule({ authToken }) {
       const res = await fetch(`${API_BASE}/conversations`, {
         headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
       });
-      if (res.ok) {
-        const data = await res.json();
-        setConversations(data.conversations || []);
-      }
+      if (!res.ok) return;
+      const payload = await res.json();
+      setConversations(payload.conversations || []);
     } catch {
-      /* agent offline */
+      // Keep UI resilient if the assistant runtime is unavailable.
     }
   };
 
   const handleNewConversation = () => {
     setMessages([]);
     setConversationId(null);
-    setCanvasArtifact(null);
-    setInput('');
+    setCanvasMessage(null);
+    setInput(routeState?.prompt || '');
   };
 
   const handleSelectConversation = async (id) => {
@@ -369,20 +221,12 @@ export default function TalkToDataModule({ authToken }) {
         headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
       });
       if (!res.ok) return;
-      const data = await res.json();
+      const payload = await res.json();
       setConversationId(id);
-      setCanvasArtifact(null);
-      setMessages(
-        (data.messages || []).map((m) => ({
-          role: m.role,
-          content: m.content,
-          actions: m.metadata?.actions || [],
-          chartData: null,
-          chartXml: '',
-        }))
-      );
+      setCanvasMessage(null);
+      setMessages(payload.messages || []);
     } catch {
-      /* ignore */
+      // Ignore and keep the current panel stable.
     }
   };
 
@@ -392,19 +236,19 @@ export default function TalkToDataModule({ authToken }) {
         method: 'DELETE',
         headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
       });
-      setConversations((prev) => prev.filter((c) => c.id !== id));
+      setConversations((current) => current.filter((conversation) => conversation.id !== id));
       if (id === conversationId) handleNewConversation();
     } catch {
-      /* ignore */
+      // Ignore.
     }
   };
 
-  const send = async (overrideMsg) => {
-    const text = (overrideMsg || input).trim();
+  const send = async (overrideValue) => {
+    const text = (overrideValue || input).trim();
     if (!text || loading) return;
 
     setInput('');
-    setMessages((prev) => [...prev, { role: 'user', content: text }]);
+    setMessages((current) => [...current, { role: 'user', content: text }]);
     setLoading(true);
 
     try {
@@ -420,41 +264,45 @@ export default function TalkToDataModule({ authToken }) {
           conversation_id: conversationId,
         }),
       });
-      const result = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(result.error || `Request failed: ${res.status}`);
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload.detail || payload.error || `Request failed: ${res.status}`);
 
-      if (result.conversation_id) {
-        setConversationId(result.conversation_id);
+      if (payload.conversation_id) {
+        setConversationId(payload.conversation_id);
       }
 
-      const assistantMsg = {
+      const assistantMessage = {
         role: 'assistant',
-        content: result.response || 'No response generated.',
-        chartData: result.chart_data,
-        chartXml: result.chart_xml || '',
-        actions: result.actions || [],
+        content: payload.response || '',
+        markdown: payload.message?.markdown || payload.response || '',
+        artifacts: payload.message?.artifacts || [],
+        datasets: payload.message?.datasets || [],
+        suggested_actions: payload.message?.suggested_actions || [],
+        intent: payload.message?.intent || 'analytics',
+        error: payload.error || '',
       };
-      setMessages((prev) => [...prev, assistantMsg]);
-
-      const hasData = result.chart_data && Object.keys(result.chart_data).length > 0;
-      if (hasData || result.chart_xml) {
-        setCanvasArtifact(assistantMsg);
+      setMessages((current) => [...current, assistantMessage]);
+      if ((assistantMessage.artifacts || []).length) {
+        setCanvasMessage(assistantMessage);
       }
-
       fetchConversations();
-    } catch (err) {
-      setMessages((prev) => [...prev, {
+    } catch (error) {
+      setMessages((current) => [...current, {
         role: 'assistant',
-        content: `Something went wrong: ${err.message}`,
+        markdown: `Something went wrong: ${error.message}`,
+        content: `Something went wrong: ${error.message}`,
+        artifacts: [],
+        datasets: [],
+        suggested_actions: [],
       }]);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
+  const handleKeyDown = (event) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
       send();
     }
   };
@@ -469,18 +317,17 @@ export default function TalkToDataModule({ authToken }) {
         onDelete={handleDeleteConversation}
       />
 
-      <div className={`flex flex-col min-w-0 ${canvasArtifact ? 'w-[45%]' : 'flex-1'} transition-all duration-300`}>
+      <div className={`flex min-w-0 flex-col transition-all duration-300 ${canvasMessage ? 'w-[48%]' : 'flex-1'}`}>
         <div className="flex-1 overflow-y-auto">
           {messages.length === 0 ? (
             <EmptyState onSelect={(text) => send(text)} />
           ) : (
-            <div className="max-w-3xl mx-auto px-6 py-6 space-y-8">
-              {messages.map((msg, idx) => (
-                <div key={idx}>
-                  {msg.role === 'user'
-                    ? <UserMessage msg={msg} />
-                    : <AssistantMessage msg={msg} onOpenCanvas={setCanvasArtifact} />
-                  }
+            <div className="mx-auto max-w-4xl space-y-8 px-6 py-6">
+              {messages.map((message, index) => (
+                <div key={`${message.role}-${index}`}>
+                  {message.role === 'user'
+                    ? <UserMessage message={message} />
+                    : <AssistantMessage message={message} onOpenCanvas={setCanvasMessage} onNavigate={onNavigate} />}
                 </div>
               ))}
               {loading && <LoadingIndicator />}
@@ -489,29 +336,28 @@ export default function TalkToDataModule({ authToken }) {
           )}
         </div>
 
-        <div className="shrink-0 border-t border-neutral-800/40 bg-[#080808] px-4 py-4">
-          <div className="max-w-3xl mx-auto">
-            <div className="relative flex items-center bg-[#111] border border-neutral-800 rounded-xl focus-within:border-neutral-600 transition-colors">
+        <div className="border-t border-neutral-800/40 bg-[#080808] px-4 py-4">
+          <div className="mx-auto max-w-4xl">
+            <div className="flex items-center rounded-2xl border border-neutral-800 bg-[#111111] focus-within:border-neutral-600">
               <input
                 type="text"
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onChange={(event) => setInput(event.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={voice.listening ? '🎙️ Listening...' : 'Ask about your data...'}
+                placeholder={voice.listening ? 'Listening...' : 'Ask Copilot about your data...'}
                 disabled={loading}
-                className="flex-1 bg-transparent pl-5 pr-3 py-3.5 text-[15px] text-white placeholder-neutral-600 focus:outline-none disabled:opacity-50"
+                className="flex-1 bg-transparent px-5 py-4 text-[15px] text-white placeholder-neutral-600 focus:outline-none disabled:opacity-50"
               />
               {voice.supported && (
                 <button
                   onClick={voice.toggle}
                   disabled={loading}
                   type="button"
-                  className={`mr-1 p-2.5 rounded-lg transition-all active:scale-95 disabled:opacity-30 ${
+                  className={`mr-2 rounded-xl p-2.5 transition-all ${
                     voice.listening
-                      ? 'bg-red-500 text-white animate-pulse shadow-[0_0_12px_rgba(239,68,68,0.6)]'
+                      ? 'bg-red-500 text-white'
                       : 'bg-[#1A1A1A] text-neutral-400 hover:bg-neutral-700 hover:text-white'
                   }`}
-                  title={voice.listening ? 'Stop listening' : 'Voice input'}
                 >
                   {voice.listening ? <MicOff size={15} /> : <Mic size={15} />}
                 </button>
@@ -519,7 +365,7 @@ export default function TalkToDataModule({ authToken }) {
               <button
                 onClick={() => send()}
                 disabled={loading || !input.trim()}
-                className="mr-2 p-2.5 rounded-lg bg-white text-black hover:bg-neutral-200 transition-all active:scale-95 disabled:opacity-30 disabled:hover:bg-white"
+                className="mr-2 rounded-xl bg-white p-2.5 text-black transition-colors hover:bg-neutral-200 disabled:opacity-30"
               >
                 <Send size={15} />
               </button>
@@ -528,11 +374,15 @@ export default function TalkToDataModule({ authToken }) {
         </div>
       </div>
 
-      {canvasArtifact && (
-        <CanvasPanel
-          artifact={canvasArtifact}
-          onClose={() => setCanvasArtifact(null)}
-        />
+      {canvasMessage && (
+        <div className="flex-1 border-l border-neutral-800/50 bg-[#0C0C0C]">
+          <div className="border-b border-neutral-800/50 px-5 py-4">
+            <div className="text-[12px] font-bold uppercase tracking-[0.2em] text-neutral-500">Artifact Canvas</div>
+          </div>
+          <div className="h-[calc(100%-57px)] overflow-y-auto p-5">
+            <ArtifactCanvas artifacts={canvasMessage.artifacts || []} datasets={canvasMessage.datasets || []} />
+          </div>
+        </div>
       )}
     </div>
   );

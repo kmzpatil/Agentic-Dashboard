@@ -1,31 +1,33 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   BarChart3,
-  LayoutDashboard,
+  Bot,
   Funnel,
+  LayoutDashboard,
   Microscope,
-  MessageSquare,
-  Sparkles,
-  Database,
-  Activity,
+  FlaskConical,
+  Braces,
 } from 'lucide-react';
 import './lib/chartSetup';
-import { customStyles, API_BASE } from './lib/constants';
+import { API_BASE, customStyles } from './lib/constants';
 import { useApi } from './hooks/useApi';
-import PipelineRail from './components/layout/PipelineRail';
-import FilterDock from './components/layout/FilterDock';
-import ChatPanel from './components/chat/ChatPanel';
 import OverviewModule from './features/overview/OverviewModule';
 import UsageTrendsModule from './features/usage/UsageTrendsModule';
 import FunnelModule from './features/funnel/FunnelModule';
 import ExplorerModule from './features/explorer/ExplorerModule';
 import TalkToDataModule from './features/talk/TalkToDataModule';
-import SimulatorModule from './features/simulator/SimulatorModule';
+import LabsModule from './features/labs/LabsModule';
+
+function readRouteState() {
+  const params = new URLSearchParams(window.location.search);
+  return Object.fromEntries(params.entries());
+}
 
 function StatusPill({ label, ok, detail }) {
   const tone = ok
     ? 'border-emerald-500/30 text-emerald-300 bg-emerald-500/10'
     : 'border-amber-500/30 text-amber-300 bg-amber-500/10';
+
   return (
     <div className={`rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em] ${tone}`}>
       {label}: {ok ? 'online' : 'degraded'}
@@ -38,21 +40,48 @@ export default function AppShell() {
   const [authToken, setAuthToken] = useState(() => localStorage.getItem('frammer_auth_token') || '');
   const [authUser, setAuthUser] = useState(() => {
     try { return JSON.parse(localStorage.getItem('frammer_auth_user') || 'null'); }
-    catch (_e) { return null; }
+    catch (_error) { return null; }
   });
   const [authLoading, setAuthLoading] = useState(Boolean(localStorage.getItem('frammer_auth_token')));
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loginSubmitting, setLoginSubmitting] = useState(false);
+  const [routeState, setRouteState] = useState(readRouteState);
 
-  const [activeTab, setActiveTab] = useState('Overview');
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [isAiOpen, setIsAiOpen] = useState(false);
+  useEffect(() => {
+    const onPopState = () => setRouteState(readRouteState());
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  const navigate = (nextState) => {
+    const params = new URLSearchParams(window.location.search);
+    Object.entries(nextState || {}).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '') params.delete(key);
+      else params.set(key, String(value));
+    });
+    if (!params.get('view')) params.set('view', 'mission-control');
+    const query = params.toString();
+    const nextUrl = `${window.location.pathname}${query ? `?${query}` : ''}`;
+    window.history.replaceState({}, '', nextUrl);
+    setRouteState(Object.fromEntries(params.entries()));
+  };
+
+  useEffect(() => {
+    if (!routeState.view) {
+      navigate({ view: 'mission-control' });
+    }
+  }, [routeState.view]);
 
   useEffect(() => {
     const bootstrapSession = async () => {
-      if (!authToken) { setAuthLoading(false); setAuthUser(null); return; }
+      if (!authToken) {
+        setAuthLoading(false);
+        setAuthUser(null);
+        return;
+      }
+
       try {
         const res = await fetch(`${API_BASE}/auth/me`, {
           headers: { Authorization: `Bearer ${authToken}` },
@@ -61,7 +90,7 @@ export default function AppShell() {
         const payload = await res.json();
         setAuthUser(payload.user || null);
         localStorage.setItem('frammer_auth_user', JSON.stringify(payload.user || null));
-      } catch (_e) {
+      } catch (_error) {
         localStorage.removeItem('frammer_auth_token');
         localStorage.removeItem('frammer_auth_user');
         setAuthToken('');
@@ -73,18 +102,23 @@ export default function AppShell() {
     bootstrapSession();
   }, [authToken]);
 
-  const overview = useApi(authUser ? `${API_BASE}/overview` : null, [authUser?.id]);
   const health = useApi(authUser ? `${API_BASE}/health` : null, [authUser?.id]);
+  const activeView = routeState.view || 'mission-control';
 
-  const databaseOk = health.data?.services?.database?.ok;
-  const agentOk = health.data?.services?.agent?.ok;
-  const missingTables = health.data?.services?.database?.missingTables || [];
-  const agentDetail = health.data?.services?.agent?.error || '';
+  const navItems = useMemo(() => ([
+    { id: 'mission-control', label: 'Mission Control', icon: <LayoutDashboard size={16} /> },
+    { id: 'trends', label: 'Trends', icon: <BarChart3 size={16} /> },
+    { id: 'funnel', label: 'Funnel', icon: <Funnel size={16} /> },
+    { id: 'explorer', label: 'Explorer', icon: <Microscope size={16} /> },
+    { id: 'copilot', label: 'Copilot', icon: <Bot size={16} /> },
+    { id: 'labs', label: 'Labs', icon: <FlaskConical size={16} /> },
+  ]), []);
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
+  const handleLogin = async (event) => {
+    event.preventDefault();
     setLoginError('');
     setLoginSubmitting(true);
+
     try {
       const res = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
@@ -98,8 +132,8 @@ export default function AppShell() {
       setAuthToken(payload.token);
       setAuthUser(payload.user);
       setLoginPassword('');
-    } catch (err) {
-      setLoginError(err.message || 'Login failed');
+    } catch (error) {
+      setLoginError(error.message || 'Login failed');
     } finally {
       setLoginSubmitting(false);
     }
@@ -116,177 +150,138 @@ export default function AppShell() {
 
   if (authLoading) {
     return (
-      <div className="h-screen w-full bg-[#050505] text-white flex items-center justify-center">
-        <div className="text-neutral-400 text-sm tracking-wide">Restoring session...</div>
+      <div className="flex h-screen w-full items-center justify-center bg-[#050505] text-white">
+        <div className="text-sm tracking-wide text-neutral-400">Restoring session...</div>
       </div>
     );
   }
 
   if (!authToken || !authUser) {
     return (
-      <div className="h-screen w-full bg-[#050505] text-white flex items-center justify-center px-4">
-        <div className="w-full max-w-md bg-[#111111] border border-neutral-800 rounded-xl p-8 space-y-6">
-          <div>
-            <h1 className="text-red-500 font-black text-2xl tracking-tighter">FRAMMER AI</h1>
-            <p className="text-neutral-500 text-sm mt-1">Nerve Centre — sign in to continue</p>
+      <div className="flex h-screen w-full items-center justify-center bg-[#050505] px-4 text-white">
+        <div className="w-full max-w-md rounded-3xl border border-neutral-800 bg-[#101010] p-8 shadow-[0_30px_120px_rgba(0,0,0,0.55)]">
+          <div className="mb-6">
+            <div className="text-[11px] font-bold uppercase tracking-[0.25em] text-neutral-500">Frammer Analytics OS</div>
+            <h1 className="mt-2 text-3xl font-black tracking-tight text-red-500">FRAMMER AI</h1>
+            <p className="mt-2 text-sm text-neutral-500">Sign in to open Mission Control.</p>
           </div>
           <form className="space-y-4" onSubmit={handleLogin}>
             <div>
-              <label className="block text-xs font-bold text-neutral-500 mb-2 tracking-widest uppercase">Username</label>
+              <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-neutral-500">Username</label>
               <input
                 type="text"
                 value={loginUsername}
-                onChange={(e) => setLoginUsername(e.target.value)}
-                className="w-full bg-[#0A0A0A] border border-neutral-700 rounded-lg px-4 py-2.5 text-white placeholder-neutral-600 focus:outline-none focus:border-red-500 transition-colors"
+                onChange={(event) => setLoginUsername(event.target.value)}
+                className="w-full rounded-2xl border border-neutral-700 bg-[#0A0A0A] px-4 py-3 text-white placeholder-neutral-600 focus:border-red-500 focus:outline-none"
                 placeholder="website_admin"
                 required
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-neutral-500 mb-2 tracking-widest uppercase">Password</label>
+              <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-neutral-500">Password</label>
               <input
                 type="password"
                 value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                className="w-full bg-[#0A0A0A] border border-neutral-700 rounded-lg px-4 py-2.5 text-white placeholder-neutral-600 focus:outline-none focus:border-red-500 transition-colors"
+                onChange={(event) => setLoginPassword(event.target.value)}
+                className="w-full rounded-2xl border border-neutral-700 bg-[#0A0A0A] px-4 py-3 text-white placeholder-neutral-600 focus:border-red-500 focus:outline-none"
                 placeholder="••••••••"
                 required
               />
             </div>
-            {loginError && <div className="text-red-400 text-sm">{loginError}</div>}
+            {loginError && <div className="text-sm text-red-400">{loginError}</div>}
             <button
               type="submit"
               disabled={loginSubmitting}
-              className="w-full px-4 py-3 rounded-lg bg-white text-black font-bold hover:bg-neutral-200 transition-colors disabled:opacity-50"
+              className="w-full rounded-2xl bg-white px-4 py-3 text-sm font-bold text-black transition-colors hover:bg-neutral-200 disabled:opacity-50"
             >
               {loginSubmitting ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
-          <p className="text-xs text-neutral-600 text-center">
-            Run <code className="text-neutral-400">npm run seed:auth</code> to create default users.
-          </p>
         </div>
       </div>
     );
   }
 
-  const isTalkTab = activeTab === 'Talk to Your Data';
-
-  const navItems = [
-    { id: 'Overview',         icon: <LayoutDashboard size={16} /> },
-    { id: 'Usage & Trends',   icon: <BarChart3 size={16} /> },
-    { id: 'Funnel',           icon: <Funnel size={16} /> },
-    { id: 'Explorer',         icon: <Microscope size={16} /> },
-    { id: 'Simulator',        icon: <Activity size={16} /> },
-    { id: 'Talk to Your Data', icon: <Database size={16} /> },
-  ];
-
   return (
-    <div className="h-screen w-full bg-[#0A0A0A] flex flex-col font-sans overflow-hidden text-white">
+    <div className="flex h-screen w-full flex-col overflow-hidden bg-[#050505] text-white">
       <style>{customStyles}</style>
 
-      {/* Top header */}
-      <div className="flex items-center justify-between gap-4 px-6 py-4 bg-[#050505] border-b border-neutral-900">
-        <div className="flex items-center min-w-0">
-          <h1 className="text-red-500 font-black text-2xl tracking-tighter">FRAMMER AI</h1>
-          <div className="ml-4 text-xs font-bold tracking-widest text-neutral-600 uppercase mt-1">Nerve Center</div>
-        </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {health.data && (
-            <>
-              <StatusPill
-                label="DB"
-                ok={Boolean(databaseOk)}
-                detail={missingTables.length
-                  ? `${missingTables.length} missing table${missingTables.length === 1 ? '' : 's'}`
-                  : health.data?.services?.database?.database}
-              />
-              <StatusPill
-                label="Agent"
-                ok={Boolean(agentOk)}
-                detail={agentOk ? 'Ready for chat' : (agentDetail || 'Start the agent service')}
-              />
-            </>
-          )}
-          <div className="text-xs text-neutral-500 ml-2">
-            {authUser.username} · <span className="text-neutral-400">{authUser.role.replace(/_/g, ' ')}</span>
-            {authUser.clientName ? ` · ${authUser.clientName}` : ''}
+      <header className="border-b border-neutral-900 bg-[#050505] px-6 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-black tracking-tight text-red-500">FRAMMER AI</h1>
+              <div className="inline-flex items-center gap-2 rounded-full border border-neutral-800 bg-[#111111] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-500">
+                <Braces size={12} />
+                Analytics OS
+              </div>
+            </div>
+            <p className="mt-2 text-sm text-neutral-500">Mission Control for seeded client analytics, routed insights, and Copilot workflows.</p>
           </div>
-          <button
-            onClick={handleLogout}
-            className="px-3 py-1.5 text-xs rounded-full bg-neutral-800 text-neutral-300 hover:bg-neutral-700 transition-colors"
-          >
-            Logout
-          </button>
+
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {health.data?.services && (
+              <>
+                <StatusPill
+                  label="DB"
+                  ok={Boolean(health.data.services.database?.ok)}
+                  detail={health.data.services.database?.missing_tables?.length
+                    ? `${health.data.services.database.missing_tables.length} missing`
+                    : health.data.services.database?.database}
+                />
+                <StatusPill
+                  label="AI"
+                  ok={Boolean(health.data.services.ai?.ok)}
+                  detail={health.data.services.ai?.detail || health.data.services.ai?.error}
+                />
+                <StatusPill
+                  label="MCP"
+                  ok={Boolean(health.data.services.mcp?.ok)}
+                  detail={health.data.services.mcp?.detail}
+                />
+              </>
+            )}
+            <div className="ml-2 text-xs text-neutral-500">
+              {authUser.username} · <span className="text-neutral-400">{authUser.role.replace(/_/g, ' ')}</span>
+              {authUser.clientName ? ` · ${authUser.clientName}` : ''}
+            </div>
+            <button
+              onClick={handleLogout}
+              className="rounded-full bg-neutral-800 px-3 py-1.5 text-xs text-neutral-300 transition-colors hover:bg-neutral-700"
+            >
+              Logout
+            </button>
+          </div>
         </div>
-      </div>
+      </header>
 
-      {!isTalkTab && <PipelineRail overview={overview.data} />}
-
-      {/* Navigation bar */}
-      <div className="bg-[#0A0A0A] border-b border-neutral-900 px-4 py-3 flex items-center justify-between z-10">
-        <div className="flex space-x-2 overflow-auto hide-scrollbar">
+      <nav className="border-b border-neutral-900 bg-[#090909] px-4 py-3">
+        <div className="flex gap-2 overflow-auto hide-scrollbar">
           {navItems.map((item) => (
             <button
               key={item.id}
-              onClick={() => !item.disabled && setActiveTab(item.id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold transition-colors ${
-                activeTab === item.id
-                  ? 'bg-[#1A1A1A] text-white'
-                  : item.disabled
-                    ? 'text-neutral-700 cursor-not-allowed'
-                    : 'text-neutral-500 hover:bg-[#111111] hover:text-neutral-300'
+              onClick={() => navigate({ view: item.id })}
+              className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold transition-colors ${
+                activeView === item.id
+                  ? 'bg-[#171717] text-white'
+                  : 'text-neutral-500 hover:bg-[#111111] hover:text-neutral-200'
               }`}
             >
-              {item.icon} {item.id}
+              {item.icon}
+              {item.label}
             </button>
           ))}
         </div>
-        {!isTalkTab && (
-          <button
-            onClick={() => setIsAiOpen(true)}
-            className="flex items-center gap-2 px-6 py-2 bg-white text-black rounded-full text-sm font-bold hover:bg-neutral-200 transition-colors"
-          >
-            <span className={`w-2 h-2 rounded-full ${agentOk === false ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-            <MessageSquare size={16} /> Ask Frammer AI
-          </button>
-        )}
-      </div>
+      </nav>
 
-      {/* Body */}
-      <div className="flex flex-1 overflow-hidden relative">
-        {!isTalkTab && <FilterDock isOpen={isFilterOpen} setIsOpen={setIsFilterOpen} />}
-
-        <main className="flex-1 bg-[#050505] relative overflow-hidden">
-          {activeTab === 'Overview'         && <OverviewModule />}
-          {activeTab === 'Usage & Trends'   && <UsageTrendsModule />}
-          {activeTab === 'Funnel'           && <FunnelModule />}
-          {activeTab === 'Explorer'         && <ExplorerModule authUser={authUser} />}
-          {activeTab === 'Talk to Your Data' && <TalkToDataModule authToken={authToken} />}
-          {activeTab === 'Simulator'        && <SimulatorModule />}
-        </main>
-
-        {/* Floating AI button (hidden on Talk to Data tab) */}
-        {!isAiOpen && !isTalkTab && (
-          <button
-            onClick={() => setIsAiOpen(true)}
-            className="absolute bottom-16 right-6 w-14 h-14 bg-white text-black rounded-full shadow-lg flex items-center justify-center hover:bg-neutral-200 hover:scale-105 transition-all z-20"
-          >
-            <Sparkles size={24} />
-          </button>
-        )}
-
-        {/* AI chat panel (slide-in) */}
-        {!isTalkTab && isAiOpen && (
-          <ChatPanel
-            isOpen={isAiOpen}
-            onClose={() => setIsAiOpen(false)}
-            authToken={authToken}
-            agentOk={agentOk}
-            databaseOk={databaseOk}
-          />
-        )}
-      </div>
+      <main className="flex-1 overflow-hidden">
+        {activeView === 'mission-control' && <OverviewModule routeState={routeState} onNavigate={navigate} />}
+        {activeView === 'trends' && <UsageTrendsModule routeState={routeState} onNavigate={navigate} />}
+        {activeView === 'funnel' && <FunnelModule routeState={routeState} onNavigate={navigate} />}
+        {activeView === 'explorer' && <ExplorerModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
+        {activeView === 'copilot' && <TalkToDataModule authToken={authToken} routeState={routeState} onNavigate={navigate} />}
+        {activeView === 'labs' && <LabsModule />}
+      </main>
     </div>
   );
 }

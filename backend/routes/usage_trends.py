@@ -1,15 +1,37 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 import pandas as pd
 import numpy as np
 import importlib
 import os
 from typing import Optional, List
 
-router = APIRouter()
+from backend.analytics.trends_service import get_trends_snapshot
+from backend.middleware.auth import AuthContext, require_auth
 
-# Update this with your actual PostgreSQL credentials
-DATABASE_URL = "postgresql://postgres:NAITIK@localhost:5432/frammer_db"
+router = APIRouter(dependencies=[Depends(require_auth)])
+
+DATABASE_URL = (
+    os.getenv("DATABASE_URL")
+    or os.getenv("POSTGRES_URL")
+    or (
+        f"postgresql://{os.getenv('POSTGRES_USER', 'postgres')}:"
+        f"{os.getenv('POSTGRES_PASSWORD', '')}@"
+        f"{os.getenv('POSTGRES_HOST', 'localhost')}:"
+        f"{os.getenv('POSTGRES_PORT', '5432')}/"
+        f"{os.getenv('POSTGRES_DB', 'frammer_database')}"
+    )
+)
 _ENGINE = None
+
+
+@router.get("")
+def deprecated_trends_alias(
+    metric: str = Query("uploaded_count"),
+    granularity: str = Query("month"),
+    auth: AuthContext = Depends(require_auth),
+):
+    snapshot = get_trends_snapshot(auth, metric=metric, granularity=granularity)
+    return {"deprecated": True, "redirect": "/api/trends", **snapshot}
 
 
 def _create_db_engine(db_url: str):
@@ -733,4 +755,3 @@ def forecast_all_clients(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
