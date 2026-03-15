@@ -11,9 +11,15 @@ import string
 import threading
 import time
 from datetime import date, timedelta
+from pathlib import Path
 from typing import Any, Iterable
 
+from dotenv import load_dotenv
 from psycopg2.pool import SimpleConnectionPool
+
+# Ensure env vars are available even when this module is imported before
+# the caller has called load_dotenv (e.g. module-level instantiation in router.py)
+load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
 
 from .data_logger import DataLogger
 from .quality import QualityEngine

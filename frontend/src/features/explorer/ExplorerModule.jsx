@@ -6,7 +6,7 @@ import { API_BASE } from '../../lib/constants';
 import { formatNumber } from '../../lib/formatters';
 import { ExplorerSkeleton, TableSkeleton } from '../../components/common/Skeleton';
 
-export default function ExplorerModule({ authUser }) {
+export default function ExplorerModule({ authUser, routeState = {}, onNavigate }) {
   const canUseRawExplorer = authUser?.role === 'website_admin';
 
   const { data: tableData } = useApi(canUseRawExplorer ? `${API_BASE}/explorer/tables` : null, [canUseRawExplorer]);
@@ -17,12 +17,20 @@ export default function ExplorerModule({ authUser }) {
   const [xColumn,      setXColumn]      = useState('');
   const [aggregation,  setAggregation]  = useState('count');
   const [yColumn,      setYColumn]      = useState('');
-  const [dim1,         setDim1]         = useState('channel');
-  const [dim2,         setDim2]         = useState('language');
+  const [dim1,         setDim1]         = useState(routeState.dim1 || 'channel');
+  const [dim2,         setDim2]         = useState(routeState.dim2 || 'language');
   const [measure,      setMeasure]      = useState('uploaded_videos');
-  const [timeGrain,    setTimeGrain]    = useState('none');
-  const [dateField,    setDateField]    = useState('upload_date');
-  const [dim1Value,    setDim1Value]    = useState('');
+  const [timeGrain,    setTimeGrain]    = useState(routeState.timeGrain || 'none');
+  const [dateField,    setDateField]    = useState(routeState.dateField || 'upload_date');
+  const [dim1Value,    setDim1Value]    = useState(routeState.dim1Value || '');
+
+  useEffect(() => {
+    setDim1(routeState.dim1 || 'channel');
+    setDim2(routeState.dim2 || 'language');
+    setTimeGrain(routeState.timeGrain || 'none');
+    setDateField(routeState.dateField || 'upload_date');
+    setDim1Value(routeState.dim1Value || '');
+  }, [routeState.dim1, routeState.dim2, routeState.timeGrain, routeState.dateField, routeState.dim1Value]);
 
   useEffect(() => {
     if (!tableName && tableData?.tables?.length) setTableName(tableData.tables[0]);
@@ -107,25 +115,25 @@ export default function ExplorerModule({ authUser }) {
       <div className="bg-[#111111] rounded-xl border border-neutral-800 p-4">
         <h3 className="font-bold text-white mb-4 flex items-center gap-2"><Database size={16} /> MULTI-DIMENSION ANALYSIS</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-4">
-          <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-white" value={dim1} onChange={(e) => setDim1(e.target.value)}>
+          <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-white" value={dim1} onChange={(e) => { setDim1(e.target.value); onNavigate?.({ view: 'explorer', dim1: e.target.value, dim2, timeGrain, dateField, dim1Value }); }}>
             {(dimsData?.dimensions || []).map((d) => <option key={`d1-${d.key}`} value={d.key}>Dim1: {d.label}</option>)}
           </select>
-          <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-white" value={dim2} onChange={(e) => setDim2(e.target.value)}>
+          <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-white" value={dim2} onChange={(e) => { setDim2(e.target.value); onNavigate?.({ view: 'explorer', dim1, dim2: e.target.value, timeGrain, dateField, dim1Value }); }}>
             {(dimsData?.dimensions || []).map((d) => <option key={`d2-${d.key}`} value={d.key}>Dim2: {d.label}</option>)}
           </select>
           <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-white" value={measure} onChange={(e) => setMeasure(e.target.value)}>
             {(dimsData?.measures || []).map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
           </select>
-          <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-white" value={timeGrain} onChange={(e) => setTimeGrain(e.target.value)}>
+          <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-white" value={timeGrain} onChange={(e) => { setTimeGrain(e.target.value); onNavigate?.({ view: 'explorer', dim1, dim2, timeGrain: e.target.value, dateField, dim1Value }); }}>
             <option value="none">No time split</option>
             <option value="day">By day</option>
             <option value="week">By week</option>
             <option value="month">By month</option>
           </select>
-          <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-white" value={dateField} onChange={(e) => setDateField(e.target.value)}>
+          <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-white" value={dateField} onChange={(e) => { setDateField(e.target.value); onNavigate?.({ view: 'explorer', dim1, dim2, timeGrain, dateField: e.target.value, dim1Value }); }}>
             {(dimsData?.dateFields || []).map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
           </select>
-          <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-white" value={dim1Value} onChange={(e) => setDim1Value(e.target.value)}>
+          <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-white" value={dim1Value} onChange={(e) => { setDim1Value(e.target.value); onNavigate?.({ view: 'explorer', dim1, dim2, timeGrain, dateField, dim1Value: e.target.value }); }}>
             <option value="">All {dim1}</option>
             {(multi.data?.dim1Values || []).slice(0, 80).map((v) => <option key={v} value={v}>{v}</option>)}
           </select>

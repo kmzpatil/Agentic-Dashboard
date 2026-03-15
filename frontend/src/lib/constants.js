@@ -1,6 +1,16 @@
 export const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api';
 
 export const customStyles = `
+  :root {
+    --frammer-bg: #050505;
+    --frammer-panel: #111111;
+    --frammer-panel-alt: #171717;
+    --frammer-border: #262626;
+    --frammer-copy: #f5f5f5;
+    --frammer-muted: #737373;
+    --frammer-accent: #ef4444;
+    --frammer-accent-soft: rgba(239, 68, 68, 0.12);
+  }
   @keyframes flowRight {
     0% { transform: translateX(-10px); opacity: 0; }
     50% { opacity: 1; }

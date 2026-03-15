@@ -10,4 +10,21 @@ body,
 
 body {
   margin: 0;
+  background: #050505;
+  color: #fafafa;
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body::-webkit-scrollbar,
+.hide-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+::selection {
+  background: rgba(239, 68, 68, 0.32);
 }
