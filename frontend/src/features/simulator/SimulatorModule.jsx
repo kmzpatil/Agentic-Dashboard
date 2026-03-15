@@ -102,7 +102,7 @@ export default function SimulatorModule() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-2xl font-black tracking-tight">Data Simulator</h2>
-          <p className="text-sm text-neutral-500 mt-1">In-memory data generator with logging and quality checks.</p>
+          <p className="text-sm text-neutral-500 mt-1">Isolated simulator database with logging and quality checks.</p>
         </div>
         <button
           onClick={loadAll}
@@ -120,7 +120,7 @@ export default function SimulatorModule() {
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <KpiCard title="Running" value={status?.running ? 'Yes' : 'No'} subtitle="Simulator thread" />
-        <KpiCard title="Total Tables" value={formatCount(tables.length)} subtitle="In-memory schema" />
+        <KpiCard title="Total Tables" value={formatCount(tables.length)} subtitle="Isolated simulator schema" />
         <KpiCard title="Total Logs" value={formatCount(totalLogs)} subtitle="Recorded operations" />
         <KpiCard
           title="Quality Score"

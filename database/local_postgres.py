@@ -32,7 +32,8 @@ INITDB = Path("initdb")
 PSQL = Path("psql")
 CREATEDB = Path("createdb")
 
-PG_PORT = int(os.getenv("LOCAL_POSTGRES_PORT", "5433"))
+PG_HOST = os.getenv("LOCAL_POSTGRES_HOST", "127.0.0.1")
+PG_PORT = int(os.getenv("LOCAL_POSTGRES_PORT", "55433"))
 PG_USER = os.getenv("LOCAL_POSTGRES_USER") or os.getenv("USER") or "postgres"
 PG_DATABASE = os.getenv("LOCAL_POSTGRES_DB", "frammer_database")
 SERVER_CONFIG = [
@@ -40,6 +41,8 @@ SERVER_CONFIG = [
     "shared_memory_type=mmap",
     "-c",
     "dynamic_shared_memory_type=posix",
+    "-c",
+    f"listen_addresses={PG_HOST}",
 ]
 
 
@@ -208,7 +211,7 @@ def psql_cmd(database: str, sql: str) -> list[str]:
     return [
         str(PSQL),
         "-h",
-        str(SOCKET_DIR),
+        PG_HOST,
         "-p",
         str(PG_PORT),
         "-U",
@@ -237,7 +240,7 @@ def ensure_database() -> None:
         [
             str(CREATEDB),
             "-h",
-            str(SOCKET_DIR),
+            PG_HOST,
             "-p",
             str(PG_PORT),
             "-U",
@@ -293,7 +296,7 @@ def bootstrap_if_needed(force: bool = False) -> None:
     env = os.environ.copy()
     env.update(
         {
-            "POSTGRES_HOST": str(SOCKET_DIR),
+            "POSTGRES_HOST": PG_HOST,
             "POSTGRES_PORT": str(PG_PORT),
             "POSTGRES_DB": PG_DATABASE,
             "POSTGRES_USER": PG_USER,
@@ -305,7 +308,7 @@ def bootstrap_if_needed(force: bool = False) -> None:
 
 
 def print_env() -> None:
-    print(f"POSTGRES_HOST={SOCKET_DIR}")
+    print(f"POSTGRES_HOST={PG_HOST}")
     print(f"POSTGRES_PORT={PG_PORT}")
     print(f"POSTGRES_DB={PG_DATABASE}")
     print(f"POSTGRES_USER={PG_USER}")

@@ -121,7 +121,7 @@ async def healthz():
         "service": "frammer-agent",
         "database": database,
         "providers": {
-            "groq_configured": bool(os.getenv("GROQ_API_KEY")),
+            "azure_openai_configured": bool(os.getenv("AZURE_OPENAI_API_KEY") and os.getenv("AZURE_OPENAI_ENDPOINT")),
         },
     }
 

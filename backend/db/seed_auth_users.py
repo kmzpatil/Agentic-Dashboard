@@ -1,4 +1,5 @@
 import os
+import re
 from pathlib import Path
 
 import bcrypt
@@ -37,20 +38,14 @@ def get_client_name() -> str:
     return row.get("Client_Name") or row.get("client_name")
 
 
-def get_scoped_user(fallback_client_name: str) -> dict:
-    requested_user_id = os.getenv("AUTH_USER_ID")
+def get_scoped_user(fallback_client_name: str, requested_user_id: int | None = None) -> dict:
     if requested_user_id:
-        try:
-            requested = int(requested_user_id)
-        except ValueError as exc:
-            raise RuntimeError("AUTH_USER_ID must be an integer") from exc
-
         result = query(
             'SELECT "User_ID", "User_Name", "Client_Name" FROM users WHERE "User_ID" = $1 LIMIT 1',
-            [requested],
+            [requested_user_id],
         )
         if result.row_count == 0:
-            raise RuntimeError(f"AUTH_USER_ID not found in users table: {requested}")
+            raise RuntimeError(f"AUTH_USER_ID not found in users table: {requested_user_id}")
         return result.rows[0]
 
     result = query('SELECT "User_ID", "User_Name", "Client_Name" FROM users ORDER BY "User_ID" LIMIT 1')
@@ -62,6 +57,109 @@ def get_scoped_user(fallback_client_name: str) -> dict:
         **row,
         "Client_Name": row.get("Client_Name") or row.get("client_name") or fallback_client_name,
     }
+
+
+def _hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(12)).decode("utf-8")
+
+
+def _env_int(name: str) -> int | None:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return None
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be an integer") from exc
+
+
+def iter_client_admin_configs(default_client_name: str) -> list[dict]:
+    indexed: list[dict] = []
+    seen_indexes = sorted(
+        {
+            match.group(1)
+            for key in os.environ
+            if (match := re.fullmatch(r"AUTH_CLIENT_ADMIN(\d+)_USERNAME", key))
+        },
+        key=int,
+    )
+
+    for index in seen_indexes:
+        username = os.getenv(f"AUTH_CLIENT_ADMIN{index}_USERNAME")
+        password = os.getenv(f"AUTH_CLIENT_ADMIN{index}_PASSWORD")
+        client_name = os.getenv(f"AUTH_CLIENT_ADMIN{index}_CLIENT")
+        if not username or not password or not client_name:
+            raise RuntimeError(
+                f"AUTH_CLIENT_ADMIN{index}_USERNAME, AUTH_CLIENT_ADMIN{index}_PASSWORD, and "
+                f"AUTH_CLIENT_ADMIN{index}_CLIENT must all be set together",
+            )
+        exists = query('SELECT 1 FROM clients WHERE "Client_Name" = $1 LIMIT 1', [client_name])
+        if exists.row_count == 0:
+            raise RuntimeError(f"Configured client admin client not found: {client_name}")
+        indexed.append(
+            {
+                "username": username,
+                "password": password,
+                "client_name": client_name,
+            }
+        )
+
+    if indexed:
+        return indexed
+
+    return [
+        {
+            "username": os.getenv("AUTH_CLIENT_ADMIN_USERNAME", "client_admin_client1"),
+            "password": os.getenv("AUTH_CLIENT_ADMIN_PASSWORD", "Client@12345"),
+            "client_name": default_client_name,
+        }
+    ]
+
+
+def iter_user_configs(default_client_name: str) -> list[dict]:
+    indexed: list[dict] = []
+    seen_indexes = sorted(
+        {
+            match.group(1)
+            for key in os.environ
+            if (match := re.fullmatch(r"AUTH_USER(\d+)_USERNAME", key))
+        },
+        key=int,
+    )
+
+    for index in seen_indexes:
+        username = os.getenv(f"AUTH_USER{index}_USERNAME")
+        password = os.getenv(f"AUTH_USER{index}_PASSWORD")
+        user_id = _env_int(f"AUTH_USER{index}_ID")
+        client_name = os.getenv(f"AUTH_USER{index}_CLIENT")
+        if not username or not password or user_id is None:
+            raise RuntimeError(
+                f"AUTH_USER{index}_USERNAME, AUTH_USER{index}_PASSWORD, and AUTH_USER{index}_ID "
+                "must all be set together",
+            )
+        scoped_user = get_scoped_user(client_name or default_client_name, requested_user_id=user_id)
+        indexed.append(
+            {
+                "username": username,
+                "password": password,
+                "client_name": client_name or scoped_user.get("Client_Name") or scoped_user.get("client_name") or default_client_name,
+                "user_id": int(scoped_user.get("User_ID") or scoped_user.get("user_id")),
+            }
+        )
+
+    if indexed:
+        return indexed
+
+    requested_user_id = _env_int("AUTH_USER_ID")
+    scoped_user = get_scoped_user(default_client_name, requested_user_id=requested_user_id)
+    return [
+        {
+            "username": os.getenv("AUTH_USER_USERNAME", "user_local_1"),
+            "password": os.getenv("AUTH_USER_PASSWORD", "User@12345"),
+            "client_name": scoped_user.get("Client_Name") or scoped_user.get("client_name") or default_client_name,
+            "user_id": int(scoped_user.get("User_ID") or scoped_user.get("user_id")),
+        }
+    ]
 
 
 def upsert_user(*, username: str, password_hash: str, role: str, client_name: str | None, user_id: int | None) -> None:
@@ -90,51 +188,47 @@ def run() -> None:
         ensure_auth_schema()
 
         client_name = get_client_name()
-        scoped_user = get_scoped_user(client_name)
-
-        website_admin_password = os.getenv("AUTH_WEBSITE_ADMIN_PASSWORD", "Admin@12345")
-        client_admin_password = os.getenv("AUTH_CLIENT_ADMIN_PASSWORD", "Client@12345")
-        user_password = os.getenv("AUTH_USER_PASSWORD", "User@12345")
-
-        website_admin_hash = bcrypt.hashpw(website_admin_password.encode("utf-8"), bcrypt.gensalt(12)).decode("utf-8")
-        client_admin_hash = bcrypt.hashpw(client_admin_password.encode("utf-8"), bcrypt.gensalt(12)).decode("utf-8")
-        user_hash = bcrypt.hashpw(user_password.encode("utf-8"), bcrypt.gensalt(12)).decode("utf-8")
 
         upsert_user(
             username=os.getenv("AUTH_WEBSITE_ADMIN_USERNAME", "website_admin"),
-            password_hash=website_admin_hash,
+            password_hash=_hash_password(os.getenv("AUTH_WEBSITE_ADMIN_PASSWORD", "Admin@12345")),
             role="website_admin",
             client_name=None,
             user_id=None,
         )
 
-        upsert_user(
-            username=os.getenv("AUTH_CLIENT_ADMIN_USERNAME", "client_admin_client1"),
-            password_hash=client_admin_hash,
-            role="client_admin",
-            client_name=client_name,
-            user_id=None,
-        )
+        client_admin_configs = iter_client_admin_configs(client_name)
+        for config_item in client_admin_configs:
+            upsert_user(
+                username=config_item["username"],
+                password_hash=_hash_password(config_item["password"]),
+                role="client_admin",
+                client_name=config_item["client_name"],
+                user_id=None,
+            )
 
-        upsert_user(
-            username=os.getenv("AUTH_USER_USERNAME", "user_local_1"),
-            password_hash=user_hash,
-            role="user",
-            client_name=scoped_user.get("Client_Name") or scoped_user.get("client_name") or client_name,
-            user_id=int(scoped_user.get("User_ID") or scoped_user.get("user_id")),
-        )
+        user_configs = iter_user_configs(client_name)
+        for config_item in user_configs:
+            upsert_user(
+                username=config_item["username"],
+                password_hash=_hash_password(config_item["password"]),
+                role="user",
+                client_name=config_item["client_name"],
+                user_id=config_item["user_id"],
+            )
 
         print("Auth users seeded successfully.")
         print(f"website_admin username: {os.getenv('AUTH_WEBSITE_ADMIN_USERNAME', 'website_admin')}")
-        print(
-            "client_admin username: "
-            f"{os.getenv('AUTH_CLIENT_ADMIN_USERNAME', 'client_admin_client1')} (client: {client_name})"
-        )
-        print(
-            "user username: "
-            f"{os.getenv('AUTH_USER_USERNAME', 'user_local_1')} "
-            f"(User_ID: {scoped_user.get('User_ID') or scoped_user.get('user_id')})"
-        )
+        for config_item in client_admin_configs:
+            print(
+                "client_admin username: "
+                f"{config_item['username']} (client: {config_item['client_name']})"
+            )
+        for config_item in user_configs:
+            print(
+                "user username: "
+                f"{config_item['username']} (User_ID: {config_item['user_id']})"
+            )
     finally:
         close_pool()
 

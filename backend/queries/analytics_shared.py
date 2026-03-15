@@ -226,14 +226,16 @@ def get_metric_query(metric: str, access_filter: dict[str, Any]) -> str:
       {scoped_videos_where}
     ),
     scoped_assets AS (
-      SELECT ca.*
+      SELECT DISTINCT ON (ca."Asset_ID") ca.*
       FROM created_assets ca
       JOIN scoped_videos sv ON sv."Video_ID" = ca."Video_ID"
+      ORDER BY ca."Asset_ID"
     ),
     scoped_posts AS (
-      SELECT pp.*
+      SELECT DISTINCT ON (pp."Post_ID") pp.*
       FROM published_posts pp
       JOIN scoped_assets sa ON sa."Asset_ID" = pp."Asset_ID"
+      ORDER BY pp."Post_ID"
     )
   '''
 
@@ -245,13 +247,13 @@ def get_metric_query(metric: str, access_filter: dict[str, Any]) -> str:
       ORDER BY 1;
     ''',
         "created_count": f'''{scoped_videos_cte}
-      SELECT date_trunc($1, to_date(sa."Create_Date", 'YYYY-MM-DD'))::date AS period, COUNT(*)::float8 AS value
+      SELECT date_trunc($1, to_date(sa."Create_Date", 'YYYY-MM-DD'))::date AS period, COUNT(DISTINCT sa."Asset_ID")::float8 AS value
       FROM scoped_assets sa
       GROUP BY 1
       ORDER BY 1;
     ''',
         "published_count": f'''{scoped_videos_cte}
-      SELECT date_trunc($1, to_date(sp."Publish_Date", 'YYYY-MM-DD'))::date AS period, COUNT(*)::float8 AS value
+      SELECT date_trunc($1, to_date(sp."Publish_Date", 'YYYY-MM-DD'))::date AS period, COUNT(DISTINCT sp."Post_ID")::float8 AS value
       FROM scoped_posts sp
       GROUP BY 1
       ORDER BY 1;
@@ -276,12 +278,12 @@ def get_metric_query(metric: str, access_filter: dict[str, Any]) -> str:
     ''',
         "publish_conversion_rate": f'''{scoped_videos_cte}
       , created AS (
-        SELECT date_trunc($1, to_date(sa."Create_Date", 'YYYY-MM-DD'))::date AS period, COUNT(*)::float8 AS created_count
+        SELECT date_trunc($1, to_date(sa."Create_Date", 'YYYY-MM-DD'))::date AS period, COUNT(DISTINCT sa."Asset_ID")::float8 AS created_count
         FROM scoped_assets sa
         GROUP BY 1
       ),
       published AS (
-        SELECT date_trunc($1, to_date(sp."Publish_Date", 'YYYY-MM-DD'))::date AS period, COUNT(*)::float8 AS published_count
+        SELECT date_trunc($1, to_date(sp."Publish_Date", 'YYYY-MM-DD'))::date AS period, COUNT(DISTINCT sp."Post_ID")::float8 AS published_count
         FROM scoped_posts sp
         GROUP BY 1
       )
@@ -298,7 +300,7 @@ def get_metric_query(metric: str, access_filter: dict[str, Any]) -> str:
         GROUP BY 1
       ),
       created AS (
-        SELECT date_trunc($1, to_date(sa."Create_Date", 'YYYY-MM-DD'))::date AS period, COUNT(*)::float8 AS created_count
+        SELECT date_trunc($1, to_date(sa."Create_Date", 'YYYY-MM-DD'))::date AS period, COUNT(DISTINCT sa."Asset_ID")::float8 AS created_count
         FROM scoped_assets sa
         GROUP BY 1
       )

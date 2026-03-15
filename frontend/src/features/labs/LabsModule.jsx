@@ -12,10 +12,10 @@ export default function LabsModule() {
           </div>
           <div>
             <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-neutral-500">Frammer Labs</div>
-            <h2 className="mt-2 text-2xl font-black tracking-tight text-white">Forecasting and simulation stay separated here.</h2>
+            <h2 className="mt-2 text-2xl font-black tracking-tight text-white">Experimental forecasting and simulation live here.</h2>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-neutral-400">
-              Core KPI workflows now live in Mission Control, Trends, Funnel, Explorer, and Copilot. Labs keeps the
-              experimental surfaces available without mixing them into the canonical analytics journey.
+              Use Labs for scenario testing and experimental analysis without mixing those flows into the core
+              operating views used for day-to-day decisions.
             </p>
             <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-neutral-700 bg-[#111111] px-3 py-1.5 text-[11px] uppercase tracking-[0.18em] text-neutral-400">
               <Sparkles size={12} />

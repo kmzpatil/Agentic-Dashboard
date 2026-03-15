@@ -112,14 +112,24 @@ export default function ExplorerModule({ authUser, routeState = {}, onNavigate }
 
   return (
     <div className="p-6 space-y-6 h-full overflow-y-auto bg-[#050505]">
+      <section className="rounded-[28px] border border-neutral-800 bg-[radial-gradient(circle_at_top_left,_rgba(239,68,68,0.12),_transparent_48%),linear-gradient(180deg,#141414,_#090909)] p-6">
+        <div className="max-w-3xl">
+          <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-neutral-500">Explorer</div>
+          <h2 className="mt-2 text-3xl font-black tracking-tight text-white">Compare performance across dimensions and inspect the underlying records when needed.</h2>
+          <p className="mt-3 text-sm leading-6 text-neutral-400">
+            Use multidimensional analysis for pattern-finding, then move into the raw tables when you need record-level validation.
+          </p>
+        </div>
+      </section>
+
       <div className="bg-[#111111] rounded-xl border border-neutral-800 p-4">
         <h3 className="font-bold text-white mb-4 flex items-center gap-2"><Database size={16} /> MULTI-DIMENSION ANALYSIS</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-4">
           <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-white" value={dim1} onChange={(e) => { setDim1(e.target.value); onNavigate?.({ view: 'explorer', dim1: e.target.value, dim2, timeGrain, dateField, dim1Value }); }}>
-            {(dimsData?.dimensions || []).map((d) => <option key={`d1-${d.key}`} value={d.key}>Dim1: {d.label}</option>)}
+            {(dimsData?.dimensions || []).map((d) => <option key={`d1-${d.key}`} value={d.key}>Primary: {d.label}</option>)}
           </select>
           <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-white" value={dim2} onChange={(e) => { setDim2(e.target.value); onNavigate?.({ view: 'explorer', dim1, dim2: e.target.value, timeGrain, dateField, dim1Value }); }}>
-            {(dimsData?.dimensions || []).map((d) => <option key={`d2-${d.key}`} value={d.key}>Dim2: {d.label}</option>)}
+            {(dimsData?.dimensions || []).map((d) => <option key={`d2-${d.key}`} value={d.key}>Secondary: {d.label}</option>)}
           </select>
           <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-white" value={measure} onChange={(e) => setMeasure(e.target.value)}>
             {(dimsData?.measures || []).map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}

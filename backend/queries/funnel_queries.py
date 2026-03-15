@@ -66,12 +66,12 @@ def get_stage_counts_query(filter_data: dict) -> str:
       JOIN filtered_videos fv ON fv."Video_ID" = ca."Video_ID"
     ),
     created AS (
-      SELECT ca."Asset_ID"
+      SELECT DISTINCT ca."Asset_ID"
       FROM created_assets ca
       JOIN filtered_videos fv ON fv."Video_ID" = ca."Video_ID"
     ),
     published AS (
-      SELECT pp."Post_ID"
+      SELECT DISTINCT pp."Post_ID"
       FROM published_posts pp
       JOIN created c ON c."Asset_ID" = pp."Asset_ID"
     )
@@ -116,6 +116,18 @@ def get_composition_query(filter_data: dict) -> str:
       {filter_data["join"]}
       {filter_data["where"]}
     ),
+    scoped_assets AS (
+      SELECT DISTINCT ON (ca."Asset_ID") ca.*
+      FROM created_assets ca
+      JOIN filtered_videos fv ON fv."Video_ID" = ca."Video_ID"
+      ORDER BY ca."Asset_ID"
+    ),
+    scoped_posts AS (
+      SELECT DISTINCT ON (pp."Post_ID") pp.*
+      FROM published_posts pp
+      JOIN scoped_assets sa ON sa."Asset_ID" = pp."Asset_ID"
+      ORDER BY pp."Post_ID"
+    ),
     input_data AS (
       SELECT rv."Input_Type" AS input_type, COUNT(DISTINCT rv."Video_ID")::int AS uploaded_count
       FROM filtered_videos fv
@@ -124,21 +136,23 @@ def get_composition_query(filter_data: dict) -> str:
     ),
     input_output AS (
       SELECT rv."Input_Type" AS input_type,
-             ca."Output_Type" AS output_type,
-             COUNT(ca."Asset_ID")::int AS created_count
+             sa."Output_Type" AS output_type,
+             COUNT(DISTINCT sa."Asset_ID")::int AS created_count
       FROM filtered_videos fv
       JOIN raw_videos rv ON rv."Video_ID" = fv."Video_ID"
-      JOIN created_assets ca ON ca."Video_ID" = rv."Video_ID"
-      GROUP BY rv."Input_Type", ca."Output_Type"
+      JOIN scoped_assets sa ON sa."Video_ID" = rv."Video_ID"
+      GROUP BY rv."Input_Type", sa."Output_Type"
     ),
     output_publish AS (
-      SELECT ca."Output_Type" AS output_type,
-             SUM(CASE WHEN pp."Post_ID" IS NOT NULL THEN 1 ELSE 0 END)::int AS published_count,
-             SUM(CASE WHEN pp."Post_ID" IS NULL THEN 1 ELSE 0 END)::int AS unpublished_count
-      FROM filtered_videos fv
-      JOIN created_assets ca ON ca."Video_ID" = fv."Video_ID"
-      LEFT JOIN published_posts pp ON pp."Asset_ID" = ca."Asset_ID"
-      GROUP BY ca."Output_Type"
+      SELECT sa."Output_Type" AS output_type,
+             COUNT(DISTINCT CASE WHEN sp."Post_ID" IS NOT NULL THEN sa."Asset_ID" END)::int AS published_count,
+             (
+               COUNT(DISTINCT sa."Asset_ID")
+               - COUNT(DISTINCT CASE WHEN sp."Post_ID" IS NOT NULL THEN sa."Asset_ID" END)
+             )::int AS unpublished_count
+      FROM scoped_assets sa
+      LEFT JOIN scoped_posts sp ON sp."Asset_ID" = sa."Asset_ID"
+      GROUP BY sa."Output_Type"
     )
     SELECT 'uploaded_to_input' AS edge_type,
            'Uploaded' AS edge_from,
@@ -202,15 +216,27 @@ def get_mix_query(filter_data: dict) -> str:
       FROM raw_videos rv
       {filter_data["join"]}
       {filter_data["where"]}
+    ),
+    scoped_assets AS (
+      SELECT DISTINCT ON (ca."Asset_ID") ca.*
+      FROM created_assets ca
+      JOIN filtered_videos fv ON fv."Video_ID" = ca."Video_ID"
+      ORDER BY ca."Asset_ID"
+    ),
+    scoped_posts AS (
+      SELECT DISTINCT ON (pp."Post_ID") pp.*
+      FROM published_posts pp
+      JOIN scoped_assets sa ON sa."Asset_ID" = pp."Asset_ID"
+      ORDER BY pp."Post_ID"
     )
     SELECT rv."Video_ID" AS video_id,
            COALESCE(ca."Output_Type", 'Unknown') AS output_type,
-           COUNT(ca."Asset_ID")::int AS created_count,
-           COUNT(pp."Post_ID")::int AS published_count
+           COUNT(DISTINCT ca."Asset_ID")::int AS created_count,
+           COUNT(DISTINCT pp."Post_ID")::int AS published_count
     FROM filtered_videos fv
     JOIN raw_videos rv ON rv."Video_ID" = fv."Video_ID"
-    LEFT JOIN created_assets ca ON ca."Video_ID" = rv."Video_ID"
-    LEFT JOIN published_posts pp ON pp."Asset_ID" = ca."Asset_ID"
+    LEFT JOIN scoped_assets ca ON ca."Video_ID" = rv."Video_ID"
+    LEFT JOIN scoped_posts pp ON pp."Asset_ID" = ca."Asset_ID"
     GROUP BY rv."Video_ID", COALESCE(ca."Output_Type", 'Unknown')
     ORDER BY rv."Video_ID";
   '''

@@ -19,8 +19,6 @@ def _get_engine() -> SimulatorEngine:
 
     try:
         engine = SimulatorEngine()
-        engine.seed(count=10)
-        engine.start(ops_per_batch=5, interval=2.0)
         engine_error = None
         return engine
     except Exception as exc:
@@ -30,7 +28,19 @@ def _get_engine() -> SimulatorEngine:
 
 @router.get("/status")
 def get_status():
-    return _get_engine().get_state()
+    if engine is None:
+        return {
+            "running": False,
+            "tables": {},
+            "log_counts": {},
+            "settings": {
+                "ops_per_batch": 5,
+                "interval": 2.0,
+            },
+            "initialized": False,
+            "detail": "Simulator has not been started.",
+        }
+    return {**engine.get_state(), "initialized": True}
 
 
 @router.post("/start")
@@ -39,15 +49,17 @@ def start_simulation(
     interval: float = Query(2.0, ge=0.5, le=30.0),
 ):
     active_engine = _get_engine()
+    if sum(active_engine.get_state().get("tables", {}).values()) == 0:
+        active_engine.seed(count=10)
     active_engine.start(ops_per_batch=ops_per_batch, interval=interval)
-    return {"message": "Simulation started", **active_engine.get_state()}
+    return {"message": "Simulation started", **active_engine.get_state(), "initialized": True}
 
 
 @router.post("/stop")
 def stop_simulation():
     active_engine = _get_engine()
     active_engine.stop()
-    return {"message": "Simulation stopped", **active_engine.get_state()}
+    return {"message": "Simulation stopped", **active_engine.get_state(), "initialized": True}
 
 
 @router.post("/reset")
@@ -55,7 +67,7 @@ def reset_simulation():
     active_engine = _get_engine()
     active_engine.reset()
     active_engine.seed(count=10)
-    return {"message": "Simulation reset and re-seeded", **active_engine.get_state()}
+    return {"message": "Simulation reset and re-seeded", **active_engine.get_state(), "initialized": True}
 
 
 @router.get("/tables")

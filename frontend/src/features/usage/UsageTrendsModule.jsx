@@ -9,16 +9,16 @@ import ArtifactCanvas from '../../components/artifacts/ArtifactCanvas';
 import InsightCard from '../../components/insights/InsightCard';
 
 const METRIC_OPTIONS = [
-  'uploaded_count',
-  'created_count',
-  'published_count',
-  'uploaded_duration',
-  'created_duration',
-  'published_duration',
-  'publish_conversion_rate',
-  'creation_rate',
-  'processing_efficiency',
-  'waste_index',
+  { value: 'uploaded_count', label: 'Videos uploaded' },
+  { value: 'created_count', label: 'Assets created' },
+  { value: 'published_count', label: 'Posts published' },
+  { value: 'uploaded_duration', label: 'Uploaded duration' },
+  { value: 'created_duration', label: 'Created duration' },
+  { value: 'published_duration', label: 'Published duration' },
+  { value: 'publish_conversion_rate', label: 'Publish conversion rate' },
+  { value: 'creation_rate', label: 'Creation rate' },
+  { value: 'processing_efficiency', label: 'Processing efficiency' },
+  { value: 'waste_index', label: 'Waste index' },
 ];
 
 function formatMetricValue(metric, value) {
@@ -50,6 +50,16 @@ export default function UsageTrendsModule({ routeState, onNavigate }) {
 
   return (
     <div className="h-full overflow-y-auto bg-[#050505] px-6 py-6 space-y-6">
+      <section className="rounded-[28px] border border-neutral-800 bg-[radial-gradient(circle_at_top_left,_rgba(239,68,68,0.14),_transparent_48%),linear-gradient(180deg,#141414,_#090909)] p-6">
+        <div className="max-w-3xl">
+          <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-neutral-500">Trends</div>
+          <h2 className="mt-2 text-3xl font-black tracking-tight text-white">Track KPI movement over time and spot where performance is changing.</h2>
+          <p className="mt-3 text-sm leading-6 text-neutral-400">
+            Review the latest movement, compare against the prior period, and move from outliers into deeper analysis.
+          </p>
+        </div>
+      </section>
+
       <section className="rounded-[28px] border border-neutral-800 bg-[#101010] p-5">
         <div className="flex flex-wrap items-end gap-4">
           <div>
@@ -60,7 +70,7 @@ export default function UsageTrendsModule({ routeState, onNavigate }) {
               onChange={(event) => onNavigate?.({ view: 'trends', metric: event.target.value, granularity })}
             >
               {METRIC_OPTIONS.map((option) => (
-                <option key={option} value={option}>{option}</option>
+                <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
           </div>
@@ -71,10 +81,10 @@ export default function UsageTrendsModule({ routeState, onNavigate }) {
               value={granularity}
               onChange={(event) => onNavigate?.({ view: 'trends', metric, granularity: event.target.value })}
             >
-              <option value="day">day</option>
-              <option value="week">week</option>
-              <option value="month">month</option>
-              <option value="quarter">quarter</option>
+              <option value="day">Daily</option>
+              <option value="week">Weekly</option>
+              <option value="month">Monthly</option>
+              <option value="quarter">Quarterly</option>
             </select>
           </div>
         </div>
@@ -91,13 +101,13 @@ export default function UsageTrendsModule({ routeState, onNavigate }) {
           <div className="rounded-[28px] border border-neutral-800 bg-[#101010] p-5">
             <div className="mb-4 flex items-center gap-2 text-sm font-bold uppercase tracking-[0.2em] text-neutral-500">
               <TrendingUp size={15} />
-              Typed Artifact Canvas
+              Trend View
             </div>
             <ArtifactCanvas artifacts={data.artifacts || []} datasets={data.datasets || []} />
           </div>
 
           <div className="rounded-[28px] border border-neutral-800 bg-[#101010] p-5">
-            <div className="mb-4 text-sm font-bold uppercase tracking-[0.2em] text-neutral-500">Routed Insights</div>
+            <div className="mb-4 text-sm font-bold uppercase tracking-[0.2em] text-neutral-500">Recommended Follow-ups</div>
             <div className="grid grid-cols-1 gap-4">
               {(insights.data?.insights || []).map((insight) => (
                 <InsightCard key={insight.id} insight={insight} onNavigate={onNavigate} />
@@ -110,7 +120,7 @@ export default function UsageTrendsModule({ routeState, onNavigate }) {
           <div className="rounded-[28px] border border-neutral-800 bg-[#101010] p-5">
             <div className="mb-4 flex items-center gap-2 text-sm font-bold uppercase tracking-[0.2em] text-neutral-500">
               <AlertTriangle size={15} />
-              Trend Anomalies
+              Unusual Movement
             </div>
             <div className="space-y-3">
               {(data.anomalies || []).map((anomaly) => (

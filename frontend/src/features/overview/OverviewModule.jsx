@@ -33,10 +33,10 @@ export default function OverviewModule({ onNavigate }) {
         <div className="flex flex-wrap items-start justify-between gap-6">
           <div className="max-w-3xl">
             <div className="text-[11px] font-bold uppercase tracking-[0.24em] text-neutral-500">Mission Control</div>
-            <h2 className="mt-2 text-3xl font-black tracking-tight text-white">One surface for pipeline health, routed insights, and next actions.</h2>
+            <h2 className="mt-2 text-3xl font-black tracking-tight text-white">Monitor pipeline performance, surface issues early, and move straight into the next action.</h2>
             <p className="mt-3 text-sm leading-6 text-neutral-400">
-              The backend now owns the analytics contracts, and Frammer AI insights route directly into Trends, Funnel,
-              Explorer, or Copilot without relying on disconnected agent-only flows.
+              Track upload volume, creation throughput, publishing performance, and the priorities that need attention
+              across teams, channels, and client scopes.
             </p>
           </div>
           <button
@@ -79,7 +79,7 @@ export default function OverviewModule({ onNavigate }) {
               ))}
               {!insights.loading && !(insights.data?.insights || []).length && (
                 <div className="rounded-3xl border border-dashed border-neutral-800 p-6 text-sm text-neutral-500">
-                  No routed insights fired yet for this surface.
+                  No major issues are active in the current scope.
                 </div>
               )}
             </div>
@@ -98,7 +98,7 @@ export default function OverviewModule({ onNavigate }) {
                   </div>
                   <div className="text-right">
                     <div className="text-lg font-black text-white">{formatPct(item.conversion)}</div>
-                    <div className="text-xs text-neutral-500">conversion</div>
+                    <div className="text-xs text-neutral-500">publish conversion</div>
                   </div>
                 </div>
               ))}

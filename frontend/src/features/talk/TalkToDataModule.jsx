@@ -99,7 +99,7 @@ function AssistantMessage({ message, onOpenCanvas, onNavigate }) {
             className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-neutral-800 bg-[#111111] px-4 py-2.5 text-[13px] font-semibold text-neutral-400 transition-colors hover:border-neutral-700 hover:bg-[#171717] hover:text-neutral-200"
           >
             <PanelRightOpen size={14} />
-            View analysis
+            Open analysis
           </button>
         )}
 
@@ -138,7 +138,7 @@ function LoadingIndicator() {
         </div>
         <span className="text-[12px] font-semibold text-neutral-600">Frammer Copilot</span>
       </div>
-      <div className="pl-[34px] text-sm text-neutral-500">Analyzing your data and building artifacts...</div>
+      <div className="pl-[34px] text-sm text-neutral-500">Analyzing your data and preparing the response...</div>
     </div>
   );
 }
@@ -151,7 +151,7 @@ function EmptyState({ onSelect }) {
       </div>
       <h2 className="mt-6 text-2xl font-bold text-white">Copilot</h2>
       <p className="mt-2 max-w-md text-center text-[14px] leading-relaxed text-neutral-500">
-        Ask a question in plain English and Copilot will query the backend, return typed artifacts, and suggest where to drill next.
+        Ask a business question in plain English and Copilot will return a concise answer, supporting visuals, and the next investigation paths.
       </p>
       <div className="mt-8 grid w-full max-w-2xl grid-cols-1 gap-3 md:grid-cols-2">
         {SUGGESTIONS.map((text) => (
