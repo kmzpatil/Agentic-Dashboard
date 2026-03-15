@@ -3,62 +3,46 @@ client.py
 ---------
 Single LLM client abstraction for the Frammer AI agent.
 
-Wraps AzureChatOpenAI (Azure OpenAI) with:
+Wraps ChatGroq with:
   - Automatic 429 rate-limit retry with exponential backoff
-  - <think>…</think> tag handling (strip or preserve)
+  - Qwen3 <think>…</think> tag handling (strip or preserve)
   - Two factory modes: fast() and thinking()
-
-Note: o-series models (o1, o3, o4-mini, etc.) do not support the temperature
-parameter — only the API default of 1 is accepted. Temperature is omitted for
-these models automatically.
 """
 
 import logging
-import os
 import re
 import time
+from dataclasses import dataclass, field
 from typing import Optional
 
-from dotenv import load_dotenv
-from langchain_openai import AzureChatOpenAI
-
-load_dotenv()
+from langchain_groq import ChatGroq
 
 logger = logging.getLogger("frammer.client")
 
 _THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL)
 
-# Azure OpenAI deployment name (used as the "model" identifier)
-DEFAULT_MODEL = os.getenv("AZURE_DEPLOYMENT", "o4-mini")
-
-# o-series reasoning models do not accept a temperature parameter
-_O_SERIES_PREFIXES = ("o1", "o3", "o4")
+DEFAULT_MODEL = "qwen/qwen3-32b"
 
 
-def _is_o_series(model: str) -> bool:
-    return any(model.lower().startswith(p) for p in _O_SERIES_PREFIXES)
-
-
+@dataclass
 class LLMResponse:
     """Structured response from an LLM call."""
-
-    def __init__(self, content: str, thinking: Optional[str] = None, raw: str = ""):
-        self.content = content          # cleaned output (thinking tags stripped)
-        self.thinking = thinking        # raw thinking block when preserve_thinking=True
-        self.raw = raw                  # unprocessed LLM output
+    content: str                        # cleaned output (thinking tags stripped)
+    thinking: Optional[str] = None      # raw thinking block when preserve_thinking=True
+    raw: str = ""                       # unprocessed LLM output
 
 
 class LLMClient:
     """
-    Unified LLM client backed by Azure OpenAI.  All agent code should use
-    this instead of instantiating AzureChatOpenAI directly.
+    Unified LLM client. All agent code should use this instead of
+    instantiating ChatGroq directly.
 
     Parameters
     ----------
     model : str
-        Azure deployment name (overrides AZURE_DEPLOYMENT env var).
+        Groq model identifier.
     temperature : float
-        Sampling temperature (ignored for o-series reasoning models).
+        Sampling temperature.
     preserve_thinking : bool
         If True, <think> blocks are extracted and returned in
         LLMResponse.thinking rather than discarded.
@@ -67,19 +51,10 @@ class LLMClient:
     def __init__(
         self,
         model: str = DEFAULT_MODEL,
-        temperature: float = 1,
+        temperature: float = 0,
         preserve_thinking: bool = False,
     ):
-        kwargs: dict = dict(
-            azure_deployment=model,
-            azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT", ""),
-            api_key=os.getenv("AZURE_OPENAI_API_KEY", ""),
-            api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview"),
-        )
-        if not _is_o_series(model):
-            kwargs["temperature"] = temperature
-
-        self.llm = AzureChatOpenAI(**kwargs)
+        self.llm = ChatGroq(model=model, temperature=temperature)
         self.preserve_thinking = preserve_thinking
         self._model = model
         self._temperature = temperature
@@ -88,18 +63,18 @@ class LLMClient:
 
     @classmethod
     def fast(cls, model: str = DEFAULT_MODEL) -> "LLMClient":
-        """Deterministic mode for routing and structured output."""
-        return cls(model=model, temperature=1, preserve_thinking=False)
+        """Deterministic, no-thinking mode for routing and structured output."""
+        return cls(model=model, temperature=0, preserve_thinking=False)
 
     @classmethod
     def thinking(cls, model: str = DEFAULT_MODEL) -> "LLMClient":
         """Preserves the model's <think> reasoning for display in the UI."""
-        return cls(model=model, temperature=1, preserve_thinking=True)
+        return cls(model=model, temperature=0, preserve_thinking=True)
 
     @classmethod
     def creative(cls, model: str = DEFAULT_MODEL) -> "LLMClient":
-        """Conversational / insight generation mode."""
-        return cls(model=model, temperature=1, preserve_thinking=False)
+        """Higher temperature for conversational / insight generation."""
+        return cls(model=model, temperature=0.5, preserve_thinking=False)
 
     # ── Core invoke ──────────────────────────────────────────────────────────
 
@@ -117,7 +92,7 @@ class LLMClient:
                 if self._is_rate_limit(exc) and attempt < 4:
                     wait = 5 * (2 ** attempt)
                     logger.warning(
-                        "[%s] Azure OpenAI 429 — backing off %ds (retry %d/4)",
+                        "[%s] Groq 429 — backing off %ds (retry %d/4)",
                         label, wait, attempt + 1,
                     )
                     time.sleep(wait)
@@ -146,4 +121,4 @@ class LLMClient:
 
     def __repr__(self) -> str:
         mode = "thinking" if self.preserve_thinking else "fast"
-        return f"LLMClient(azure:{self._model}, t={self._temperature}, {mode})"
+        return f"LLMClient({self._model}, t={self._temperature}, {mode})"

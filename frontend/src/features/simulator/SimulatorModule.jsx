@@ -27,10 +27,10 @@ export default function SimulatorModule() {
     try {
       setError('');
       const [statusRes, tablesRes, logsRes, qualityRes] = await Promise.all([
-        fetch(`${API_BASE}/labs/simulator/status`),
-        fetch(`${API_BASE}/labs/simulator/tables`),
-        fetch(`${API_BASE}/labs/simulator/logs?limit=20`),
-        fetch(`${API_BASE}/labs/simulator/quality`),
+        fetch(`${API_BASE}/simulator/status`),
+        fetch(`${API_BASE}/simulator/tables`),
+        fetch(`${API_BASE}/simulator/logs?limit=20`),
+        fetch(`${API_BASE}/simulator/quality`),
       ]);
 
       if (!statusRes.ok) throw new Error('Failed to load simulator status');
@@ -70,7 +70,7 @@ export default function SimulatorModule() {
     setLoading(true);
     setError('');
     try {
-      let url = `${API_BASE}/labs/simulator/${action}`;
+      let url = `${API_BASE}/simulator/${action}`;
       if (action === 'start') {
         const params = new URLSearchParams({
           ops_per_batch: String(opsPerBatch),

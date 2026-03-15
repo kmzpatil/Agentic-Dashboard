@@ -13,7 +13,6 @@ Entry point:
 
 import json
 import logging
-import os
 import re
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -23,7 +22,7 @@ from typing import Annotated, Dict, List, Optional, TypedDict
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.tools import tool
-from langchain_openai import AzureChatOpenAI
+from langchain_groq import ChatGroq
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
@@ -231,20 +230,7 @@ You are Frammer AI, an analytics assistant for the Frammer media production plat
 {memory_block}"""
 
 
-_DEPLOYMENT = os.getenv("AZURE_DEPLOYMENT", "o4-mini")
-_O_SERIES = any(_DEPLOYMENT.lower().startswith(p) for p in ("o1", "o3", "o4"))
-
-_llm_kwargs: dict = dict(
-    azure_deployment=_DEPLOYMENT,
-    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT", ""),
-    api_key=os.getenv("AZURE_OPENAI_API_KEY", ""),
-    api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview"),
-    max_retries=3,
-)
-if not _O_SERIES:
-    _llm_kwargs["temperature"] = 0
-
-_llm = AzureChatOpenAI(**_llm_kwargs)
+_llm = ChatGroq(model="qwen/qwen3-32b", temperature=0, max_retries=3)
 _llm_with_tools = _llm.bind_tools(TOOLS)
 
 

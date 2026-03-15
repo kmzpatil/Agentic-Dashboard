@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Chart } from 'react-chartjs-2';
 import { Layers } from 'lucide-react';
 import { useApi } from '../../hooks/useApi';
@@ -7,15 +7,10 @@ import { formatNumber, formatPct } from '../../lib/formatters';
 import KpiCard from '../../components/common/KpiCard';
 import { FunnelSkeleton, Skeleton } from '../../components/common/Skeleton';
 
-export default function FunnelModule({ routeState = {}, onNavigate }) {
-  const [breakdown, setBreakdown] = useState(routeState.breakdown || 'channel');
-  const [zoomFilter, setZoomFilter] = useState({ dimension: routeState.dimension || '', value: routeState.value || '' });
+export default function FunnelModule() {
+  const [breakdown, setBreakdown] = useState('channel');
+  const [zoomFilter, setZoomFilter] = useState({ dimension: '', value: '' });
   const [selectedVideoId, setSelectedVideoId] = useState(null);
-
-  useEffect(() => {
-    setBreakdown(routeState.breakdown || 'channel');
-    setZoomFilter({ dimension: routeState.dimension || '', value: routeState.value || '' });
-  }, [routeState.breakdown, routeState.dimension, routeState.value]);
 
   const funnelQuery = `${API_BASE}/funnel?breakdown=${encodeURIComponent(breakdown)}${zoomFilter.dimension ? `&dimension=${encodeURIComponent(zoomFilter.dimension)}&value=${encodeURIComponent(zoomFilter.value)}` : ''}`;
   const { data, loading, error } = useApi(funnelQuery, [breakdown, zoomFilter.dimension, zoomFilter.value]);
@@ -47,13 +42,9 @@ export default function FunnelModule({ routeState = {}, onNavigate }) {
     if (!link) return;
 
     if (link.to.startsWith('Input: ')) {
-      const next = { dimension: 'input_type', value: link.to.replace('Input: ', '') };
-      setZoomFilter(next);
-      onNavigate?.({ view: 'funnel', breakdown, dimension: next.dimension, value: next.value });
+      setZoomFilter({ dimension: 'input_type', value: link.to.replace('Input: ', '') });
     } else if (link.to.startsWith('Output: ')) {
-      const next = { dimension: 'output_type', value: link.to.replace('Output: ', '') };
-      setZoomFilter(next);
-      onNavigate?.({ view: 'funnel', breakdown, dimension: next.dimension, value: next.value });
+      setZoomFilter({ dimension: 'output_type', value: link.to.replace('Output: ', '') });
     }
   };
 
@@ -68,29 +59,14 @@ export default function FunnelModule({ routeState = {}, onNavigate }) {
       <div className="bg-[#111111] rounded-xl border border-neutral-800 p-4 flex flex-wrap gap-4 items-end">
         <div>
           <label className="block text-xs text-neutral-500 mb-2">BREAKDOWN</label>
-          <select
-            className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-white"
-            value={breakdown}
-            onChange={(e) => {
-              setBreakdown(e.target.value);
-              onNavigate?.({ view: 'funnel', breakdown: e.target.value, dimension: zoomFilter.dimension || null, value: zoomFilter.value || null });
-            }}
-          >
+          <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-white" value={breakdown} onChange={(e) => setBreakdown(e.target.value)}>
             <option value="channel">channel</option>
             <option value="input_type">input_type</option>
             <option value="language">language</option>
             <option value="output_type">output_type</option>
           </select>
         </div>
-        <button
-          onClick={() => {
-            setZoomFilter({ dimension: '', value: '' });
-            onNavigate?.({ view: 'funnel', breakdown, dimension: null, value: null });
-          }}
-          className="px-4 py-2 rounded-full bg-[#1A1A1A] text-neutral-200 text-sm hover:bg-[#2A2A2A]"
-        >
-          Reset zoom
-        </button>
+        <button onClick={() => setZoomFilter({ dimension: '', value: '' })} className="px-4 py-2 rounded-full bg-[#1A1A1A] text-neutral-200 text-sm hover:bg-[#2A2A2A]">Reset zoom</button>
         {zoomFilter.dimension && <div className="text-sm text-neutral-400">Zoomed: {zoomFilter.dimension} = <span className="text-white font-semibold">{zoomFilter.value}</span></div>}
       </div>
 
@@ -145,16 +121,7 @@ export default function FunnelModule({ routeState = {}, onNavigate }) {
                       <td className="py-2 text-right text-neutral-300">{formatNumber(row.published_count)}</td>
                       <td className="py-2 text-right text-neutral-300">{formatPct(row.conversion)}</td>
                       <td className="py-2 text-right">
-                        <button
-                          className="px-3 py-1 rounded-full text-xs bg-[#1A1A1A] text-neutral-200 hover:bg-[#2A2A2A]"
-                          onClick={() => {
-                            const next = { dimension: breakdown, value: row.label };
-                            setZoomFilter(next);
-                            onNavigate?.({ view: 'funnel', breakdown, dimension: next.dimension, value: next.value });
-                          }}
-                        >
-                          zoom
-                        </button>
+                        <button className="px-3 py-1 rounded-full text-xs bg-[#1A1A1A] text-neutral-200 hover:bg-[#2A2A2A]" onClick={() => setZoomFilter({ dimension: breakdown, value: row.label })}>zoom</button>
                       </td>
                     </tr>
                   ))}
