@@ -16,6 +16,7 @@ import logging
 import re
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Annotated, Dict, List, Optional, TypedDict
 
 from dotenv import load_dotenv
@@ -34,6 +35,8 @@ from tools import (
     retrieve_metric_definitions,
 )
 
+_AGENT_DIR = Path(__file__).resolve().parent
+load_dotenv(_AGENT_DIR / ".env")
 load_dotenv()
 logger = logging.getLogger("frammer.agent")
 
@@ -222,6 +225,7 @@ You are Frammer AI, an analytics assistant for the Frammer media production plat
 - Bullet points for multiple insights
 - Business language only — never show SQL or technical details to the user
 - Focus on trends, comparisons, top/bottom performers, actionable findings
+- Do NOT generate markdown images tags. NEVER try to embed the chart image using markdown text. A separate interactive chart widget is already built into the UI.
 - Do NOT wrap your response in <think> tags
 {memory_block}"""
 

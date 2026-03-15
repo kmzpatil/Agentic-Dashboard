@@ -4,6 +4,7 @@ import { Database, Table } from 'lucide-react';
 import { useApi } from '../../hooks/useApi';
 import { API_BASE } from '../../lib/constants';
 import { formatNumber } from '../../lib/formatters';
+import { ExplorerSkeleton, TableSkeleton } from '../../components/common/Skeleton';
 
 export default function ExplorerModule({ authUser }) {
   const canUseRawExplorer = authUser?.role === 'website_admin';
@@ -130,7 +131,7 @@ export default function ExplorerModule({ authUser }) {
           </select>
         </div>
 
-        {multi.loading && <div className="text-neutral-400">Loading multidim data...</div>}
+        {multi.loading && <ExplorerSkeleton />}
         {multi.error   && <div className="text-red-400">{multi.error}</div>}
 
         {!multi.loading && !multi.error && (
@@ -214,7 +215,7 @@ export default function ExplorerModule({ authUser }) {
 
           <div className="bg-[#111111] rounded-xl border border-neutral-800 p-4">
             <h3 className="font-bold text-white mb-4 flex items-center gap-2"><Table size={16} /> TABLE DATA ({tableName || '-'})</h3>
-            {rowsLoading && <div className="text-neutral-400">Loading table...</div>}
+            {rowsLoading && <TableSkeleton rows={6} cols={5} />}
             {rowsError   && <div className="text-red-400">{rowsError}</div>}
             {!rowsLoading && !rowsError && (
               <div className="overflow-auto max-h-[420px]">

@@ -7,6 +7,7 @@ import {
   MessageSquare,
   Sparkles,
   Database,
+  Activity,
 } from 'lucide-react';
 import './lib/chartSetup';
 import { customStyles, API_BASE } from './lib/constants';
@@ -19,6 +20,7 @@ import UsageTrendsModule from './features/usage/UsageTrendsModule';
 import FunnelModule from './features/funnel/FunnelModule';
 import ExplorerModule from './features/explorer/ExplorerModule';
 import TalkToDataModule from './features/talk/TalkToDataModule';
+import SimulatorModule from './features/simulator/SimulatorModule';
 
 function StatusPill({ label, ok, detail }) {
   const tone = ok
@@ -45,7 +47,7 @@ export default function AppShell() {
   const [loginSubmitting, setLoginSubmitting] = useState(false);
 
   const [activeTab, setActiveTab] = useState('Overview');
-  const [isFilterOpen, setIsFilterOpen] = useState(true);
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isAiOpen, setIsAiOpen] = useState(false);
 
   useEffect(() => {
@@ -90,7 +92,7 @@ export default function AppShell() {
         body: JSON.stringify({ username: loginUsername, password: loginPassword }),
       });
       const payload = await res.json();
-      if (!res.ok) throw new Error(payload.error || 'Login failed');
+      if (!res.ok) throw new Error(payload.detail || payload.error || 'Login failed');
       localStorage.setItem('frammer_auth_token', payload.token);
       localStorage.setItem('frammer_auth_user', JSON.stringify(payload.user));
       setAuthToken(payload.token);
@@ -175,6 +177,7 @@ export default function AppShell() {
     { id: 'Usage & Trends',   icon: <BarChart3 size={16} /> },
     { id: 'Funnel',           icon: <Funnel size={16} /> },
     { id: 'Explorer',         icon: <Microscope size={16} /> },
+    { id: 'Simulator',        icon: <Activity size={16} /> },
     { id: 'Talk to Your Data', icon: <Database size={16} /> },
   ];
 
@@ -260,6 +263,7 @@ export default function AppShell() {
           {activeTab === 'Funnel'           && <FunnelModule />}
           {activeTab === 'Explorer'         && <ExplorerModule authUser={authUser} />}
           {activeTab === 'Talk to Your Data' && <TalkToDataModule authToken={authToken} />}
+          {activeTab === 'Simulator'        && <SimulatorModule />}
         </main>
 
         {/* Floating AI button (hidden on Talk to Data tab) */}
@@ -273,7 +277,7 @@ export default function AppShell() {
         )}
 
         {/* AI chat panel (slide-in) */}
-        {!isTalkTab && (
+        {!isTalkTab && isAiOpen && (
           <ChatPanel
             isOpen={isAiOpen}
             onClose={() => setIsAiOpen(false)}
