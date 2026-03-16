@@ -118,6 +118,7 @@ DIMENSION_MAP = {
     "user": 'u."User_Name"',
     "client": 'COALESCE(ch."Client_Name", u."Client_Name")',
     "published_platform": 'pd."Published_Platform"',
+    "Team_Name": 'u."Team_Name"',
 }
 
 MEASURE_MAP = {

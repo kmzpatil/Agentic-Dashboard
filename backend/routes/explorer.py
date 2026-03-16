@@ -36,6 +36,7 @@ def get_dimensions(_auth: AuthContext = Depends(require_auth)):
             {"key": "user", "label": "User"},
             {"key": "client", "label": "Client"},
             {"key": "published_platform", "label": "Published Platform"},
+            {"key": "Team_Name", "label": "Team Name"},
         ],
         "measures": [
             {"key": "uploaded_videos", "label": "Uploaded Videos (distinct)"},
@@ -50,6 +51,20 @@ def get_dimensions(_auth: AuthContext = Depends(require_auth)):
     }
 
 
+@router.get("/channels")
+def get_channels(_auth: AuthContext = Depends(require_auth)):
+    try:
+        result = query("""
+            SELECT DISTINCT "Channel_Name" 
+            FROM channels 
+            WHERE "Channel_Name" IS NOT NULL 
+            ORDER BY "Channel_Name"
+        """)
+        return {"channels": [row["Channel_Name"] for row in result.rows]}
+    except Exception as error:
+        return JSONResponse(status_code=500, content={"error": str(error)})
+
+
 @router.get("/multidim")
 def get_multidim(
     auth: AuthContext = Depends(require_auth),
@@ -59,6 +74,9 @@ def get_multidim(
     timeGrain: str = Query(default="none"),
     dateField: str = Query(default="upload_date"),
     dim1Value: str = Query(default=""),
+    channels: str | None = Query(default=None),
+    startDate: str | None = Query(default=None),
+    endDate: str | None = Query(default=None),
 ):
     safe_dim1 = dim1 if dim1 in DIMENSION_MAP else "channel"
     safe_dim2 = dim2 if dim2 in DIMENSION_MAP else "language"
@@ -79,6 +97,24 @@ def get_multidim(
         if dim1Value:
             matrix_params.append(dim1Value)
             matrix_where.append(f"{dim1_expr}::text = ${len(matrix_params)}")
+
+        # Apply Global Date Filters to Matrix Query
+        if startDate:
+            matrix_params.append(startDate)
+            matrix_where.append(f"{date_expr} >= ${len(matrix_params)}::date")
+        
+        if endDate:
+            matrix_params.append(endDate)
+            matrix_where.append(f"{date_expr} <= ${len(matrix_params)}::date")
+
+        # Add the dynamic IN clause for the Matrix Query (Channels)
+        if channels and channels != "all":
+            selected_channels = channels.split(",")
+            placeholders = []
+            for ch in selected_channels:
+                matrix_params.append(ch)
+                placeholders.append(f"${len(matrix_params)}")
+            matrix_where.append(f'ch."Channel_Name" IN ({", ".join(placeholders)})')
 
         matrix_where_clause = build_where_clause(matrix_where)
         matrix_sql = get_matrix_query(dim1_expr, dim2_expr, measure_expr, matrix_scope["join"], matrix_where_clause)
@@ -101,9 +137,27 @@ def get_multidim(
             ts_params = [safe_time_grain, *ts_scope["params"]]
             ts_where = [*ts_scope["predicates"], f"{date_expr} IS NOT NULL"]
 
+            # Apply Date Filters to Time Series
+            if startDate:
+                ts_params.append(startDate)
+                ts_where.append(f"{date_expr} >= ${len(ts_params)}::date")
+            
+            if endDate:
+                ts_params.append(endDate)
+                ts_where.append(f"{date_expr} <= ${len(ts_params)}::date")
+
             if dim1Value:
                 ts_params.append(dim1Value)
                 ts_where.append(f"{dim1_expr}::text = ${len(ts_params)}")
+            
+            # Apply Channel Filters to Time Series
+            if channels and channels != "all":
+                selected_channels = channels.split(",")
+                placeholders = []
+                for ch in selected_channels:
+                    ts_params.append(ch)
+                    placeholders.append(f"${len(ts_params)}")
+                ts_where.append(f'ch."Channel_Name" IN ({", ".join(placeholders)})')
 
             ts_sql = get_time_series_query(date_expr, dim2_expr, measure_expr, ts_scope["join"], " AND ".join(ts_where))
             time_series_rows = [
