@@ -244,7 +244,7 @@ def get_current_time() -> str:
 
 
 # ── LLM clients ──────────────────────────────────────────────────────────────
-TOOLS = [get_schema, get_metric_definitions, search_relevant_schemas, run_sql_query, build_chart, get_current_time]
+TOOLS = [run_sql_query, build_chart]
 
 # Fast and creative clients used for classify/plan/chat — these also rotate on each .invoke() call
 _fast_client  = LLMClient.fast(provider="groq")
@@ -254,30 +254,31 @@ _creat_client = LLMClient.creative(provider="groq")
 SYSTEM_PROMPT = """\
 You are Frammer AI, an analytics assistant for a media production platform.
 
+## Database Schema
+{schema_block}
+
+## Business Metrics & Join Rules
+{metrics_block}
+
 ## Tools
-1. **get_schema** — Full DB schema. Call FIRST.
-2. **get_metric_definitions** — Business metric formulas & join paths.
-3. **search_relevant_schemas** — Semantic RAG search for relevant tables.
-4. **run_sql_query** — Execute a PostgreSQL SELECT (retry on error).
-5. **build_chart** — Visualise query results.
-6. **get_current_time** — Get current date/time to resolve 'last month', 'today', etc.
+1. **run_sql_query** — Execute a PostgreSQL SELECT (retry on error).
+2. **build_chart** — Visualise query results.
 
 ## Execution Plan
 {plan_block}
 
 ## Workflow
-1. get_schema → understand tables
-2. get_metric_definitions → understand the metric
-3. search_relevant_schemas → find precise tables
-4. run_sql_query → retrieve data (fix and retry on error)
-5. build_chart → visualise
-6. Write a clear business-language markdown summary
+1. Read the provided Schema and Metrics exactly as written.
+2. run_sql_query → retrieve data (fix and retry on error).
+3. build_chart → visualise.
+4. Write a VERY CONCISE business markdown summary (MAX 2-3 SENTENCES). Do not over-explain.
 
 ## Response Rules
+- **Extreme Brevity**: Your final answer MUST be 2-3 sentences maximum. Get straight to the point. No fluff.
 - **Data Integrity**: ONLY use numbers and facts present in the tool output. Never estimate or hallucinate values.
 - **Sample Handling**: If `total_row_count` > provided `data` rows, explicitly state you are summarizing a sample.
+- **Chart Tool**: When calling `build_chart`, you MUST provide BOTH `x_column` and `y_columns` arguments. Never omit `y_columns`.
 - **Formatting**: **Bold** key numbers and terms.
-- **Insight Style**: Use bullet points for multiple insights.
 - **Privacy**: Never expose SQL or internal technical IDs to the user.
 - **No Images**: Do NOT generate markdown image tags.
 - **No Thinking**: Do NOT wrap final responses in <think> tags.
@@ -289,9 +290,14 @@ You are Frammer AI, an analytics assistant for a media production platform.
 - Cast text dates: to_date("Upload_Date", 'YYYY-MM-DD')
 
 ## Common SQL Pitfalls (AVOID)
-- **Join Error**: Joining `published_posts.Asset_ID` directly to `raw_videos.Video_ID` (results in empty or wrong data). Use `created_assets` (ca) as the bridge.
-- **Case Error**: Querying `Input_Type = 'Interview'` (case-sensitive). Use `lower("Input_Type") = 'interview'`.
-- **Date Error**: Comparing strings directly (`'2025-10'`). Use `BETWEEN` with full YYYY-MM-DD strings or `to_date`.
+- **Join Error**: Joining `published_posts.Asset_ID` directly to `raw_videos.Video_ID` (results in empty or wrong data). Use `created_assets` (ca) as the bridge: `pp.Asset_ID = ca.Asset_ID` AND `ca.Video_ID = rv.Video_ID`.
+- **Cartesian Product**: Adding a table like `raw_video_channel` or `channels` without an explicit `ON` join condition linking it to the rest of the query. Every table must be connected in a chain.
+- **Case Error**: Querying `Input_Type = 'Interview'`. Use `lower("Input_Type") = 'interview'`.
+- **Channel Confusion**: For published stats, use `pd."Channel_Name"` from `post_distribution`, NOT `raw_video_channel`.
+
+## Join Integrity Safety Check
+Before executing SQL, ask yourself: "Is every table linked to at least one other table in the chain?" If not, you will produce exaggerated numbers (Cartesian product).
+- Correct Chain: `raw_videos` (rv) → `created_assets` (ca) → `published_posts` (pp) → `post_distribution` (pd)
 {memory_block}"""
 
 # ── LangGraph StateGraph ─────────────────────────────────────────────────────
@@ -348,15 +354,17 @@ _graph = _builder.compile()
 
 # ── Planner ───────────────────────────────────────────────────────────────────
 
-def _generate_plan(question: str) -> str:
+def _generate_plan(question: str, schema_text: str, metrics_text: str) -> str:
     """Fast LLM pass to generate a numbered execution plan before the ReAct loop."""
     logger.info("Planner: Generating plan for: %r", question[:80])
     start = time.time()
 
     prompt = (
-        "You are a data analytics planner. Given the user's question, write a short numbered plan "
+        "You are a data analytics planner. Given the user's question, database schema, and metric definitions, write a short numbered plan "
         "(max 5 steps) describing exactly which database tables to query, which joins to use, "
         "and what type of chart to generate. Be concise and precise — no explanation, just steps.\n\n"
+        f"Schema:\n{schema_text}\n\n"
+        f"Metric Rules:\n{metrics_text}\n\n"
         f"Question: {question}\n\nPlan:"
     )
     try:
@@ -413,13 +421,24 @@ async def run_agent(question: str, working_memory: str = "") -> AgentResult:
     ctx = _new_ctx()
     _ctx.set(ctx)
 
+    # ── Context Injection ──────────────────────────────────────────────────
+    global _schema_cache
+    if not _schema_cache:
+        _schema_cache = get_frammer_schema()
+        
+    from tools.metric_definitions import METRIC_DICTIONARY, retrieve_metric_definitions
+    all_metrics = "\n".join(f"- **{k}**: {v}" for k, v in METRIC_DICTIONARY.items())
+    all_metrics += "\n\n" + retrieve_metric_definitions("XYZ_FAIL_TO_GET_RULES")
+
     # ── Planning phase ────────────────────────────────────────────────────────
-    plan = _generate_plan(question)
+    # OPTIMIZATION: We skip the separate planner API call to save 5-25 seconds of generation time.
+    # The agent already has the schema and metrics in its system prompt, so a pre-plan is redundant.
+    plan = ""
     ctx["plan"] = plan
-    plan_block = f"Your execution plan for this question:\n{plan}" if plan else "(No plan generated)"
+    plan_block = "(Follow the workflow exactly. Generate SQL immediately.)"
     memory_block = f"\n## Conversation Memory\n{working_memory}" if working_memory else ""
 
-    system = SYSTEM_PROMPT.format(plan_block=plan_block, memory_block=memory_block)
+    system = SYSTEM_PROMPT.format(schema_block=_schema_cache, metrics_block=all_metrics, plan_block=plan_block, memory_block=memory_block)
     # Inject current time directly into the first message for immediate context
     system += f"\n\n## System Environment\nCurrent System Time: {now_str}\n"
     

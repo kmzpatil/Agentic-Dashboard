@@ -98,6 +98,29 @@ def main():
             cur = conn.cursor()
             sample = [{"error": str(e)}]
 
+        # 5. Unique values per column
+        for col in columns:
+            col_name = col["name"]
+            try:
+                cur.execute(
+                    sql.SQL("SELECT COUNT(DISTINCT {}) FROM {}").format(
+                        sql.Identifier(col_name), sql.Identifier(table)
+                    )
+                )
+                unique_count = cur.fetchone()[0]
+                col["unique_count"] = unique_count
+
+                if unique_count is not None and 0 < unique_count < 20:
+                    cur.execute(
+                        sql.SQL("SELECT DISTINCT {} FROM {} WHERE {} IS NOT NULL").format(
+                            sql.Identifier(col_name), sql.Identifier(table), sql.Identifier(col_name)
+                        )
+                    )
+                    col["unique_values"] = [r[0] for r in cur.fetchall()]
+            except Exception:
+                conn.rollback()
+                cur = conn.cursor()
+
         output["tables"][table] = {
             "row_count": row_count,
             "columns": columns,

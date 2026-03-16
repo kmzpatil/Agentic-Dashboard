@@ -124,18 +124,18 @@ def retrieve_metric_definitions(search_term: str) -> str:
 
     # Fallback: return full schema summary so the LLM knows what tables to use.
     return (
-        "No specific metric matched. "
-        '## JOIN CHEAT SHEET:\n'
-        '1. raw_videos -> created_assets: JOIN created_assets ca ON ca."Video_ID" = rv."Video_ID"\n'
-        '2. created_assets -> published_posts: JOIN published_posts pp ON pp."Asset_ID" = ca."Asset_ID"\n'
-        '3. published_posts -> post_distribution: JOIN post_distribution pd ON pd."Post_ID" = pp."Post_ID"\n'
-        '4. raw_videos -> raw_video_channel: JOIN raw_video_channel rvc ON rvc."Video_ID" = rv."Video_ID"\n'
-        '\n'
+        "No specific metric matched. \n\n"
+        "## MANDATORY JOIN CHAIN (The 'Golden Path'):\n"
+        "To get PUBLISHED data for a specific RAW VIDEO (e.g. interview/speech counts):\n"
+        '1. raw_videos (rv) JOIN created_assets (ca) ON ca."Video_ID" = rv."Video_ID"\n'
+        '2. created_assets (ca) JOIN published_posts (pp) ON pp."Asset_ID" = ca."Asset_ID"\n'
         '## CATEGORICAL DATA:\n'
         '- rv."Input_Type": interview, speech, news bulletin, press conference (use lower())\n'
-        '- pd."Published_Platform": Youtube, Facebook, Instagram, X, Threads (case-sensitive)\n'
+        "- pd.\"Published_Platform\": 'Youtube' (NOT 'YouTube'), 'Facebook', 'Instagram', 'X', 'Threads' (case-sensitive)\n"
         '\n'
-        '## CRITICAL:\n'
-        '- NEVER join published_posts.Asset_ID directly to raw_videos.Video_ID. Use created_assets in between.\n'
-        '- Use to_date(col, \'YYYY-MM-DD\') for all date comparisons.'
+        '## CRITICAL SQL SAFETY RULES:\n'
+        "- **NO CARTESIAN PRODUCTS**: Every table in your FROM/JOIN clause MUST have a direct ON condition linking it to another table. Never list a table without an ON link.\n"
+        "- **NO SHORTCUTS**: You cannot join `published_posts` directly to `raw_videos`. You MUST go through `created_assets`.\n"
+        "- **CASE SENSITIVITY**: Use `lower(rv.\"Input_Type\") IN ('interview', 'speech')`.\n"
+        "- **CHANNEL DATA**: Use `pd.\"Channel_Name\"` (from post_distribution) for publishing stats, NOT `raw_video_channel`."
     )
