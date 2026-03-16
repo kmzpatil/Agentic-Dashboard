@@ -1,0 +1,117 @@
+--- PROPER JOIN CHECK (Oct 2025) ---
+[
+  {
+    "count": 117
+  }
+]
+
+--- AGENT WRONG JOIN CHECK (Oct 2025) ---
+[
+  {
+    "count": 25
+  }
+]
+
+--- TOP 20 CHANNEL/TYPE COUNTS (Oct 2025) ---
+[
+  {
+    "Channel_Name": "C4_Channel_3",
+    "Input_Type": "speech",
+    "count": 13
+  },
+  {
+    "Channel_Name": "C4_Channel_1",
+    "Input_Type": "speech",
+    "count": 9
+  },
+  {
+    "Channel_Name": "C4_Channel_7",
+    "Input_Type": "speech",
+    "count": 8
+  },
+  {
+    "Channel_Name": "C3_Channel_5",
+    "Input_Type": "interview",
+    "count": 8
+  },
+  {
+    "Channel_Name": "C4_Channel_2",
+    "Input_Type": "speech",
+    "count": 7
+  },
+  {
+    "Channel_Name": "C4_Channel_6",
+    "Input_Type": "speech",
+    "count": 7
+  },
+  {
+    "Channel_Name": "C4_Channel_10",
+    "Input_Type": "speech",
+    "count": 6
+  },
+  {
+    "Channel_Name": "C3_Channel_10",
+    "Input_Type": "interview",
+    "count": 5
+  },
+  {
+    "Channel_Name": "C3_Channel_13",
+    "Input_Type": "interview",
+    "count": 4
+  },
+  {
+    "Channel_Name": "C4_Channel_4",
+    "Input_Type": "speech",
+    "count": 4
+  },
+  {
+    "Channel_Name": "C4_Channel_9",
+    "Input_Type": "speech",
+    "count": 4
+  },
+  {
+    "Channel_Name": "C2_Channel_2",
+    "Input_Type": "interview",
+    "count": 3
+  },
+  {
+    "Channel_Name": "C3_Channel_8",
+    "Input_Type": "interview",
+    "count": 2
+  },
+  {
+    "Channel_Name": "C4_Channel_5",
+    "Input_Type": "speech",
+    "count": 2
+  },
+  {
+    "Channel_Name": "C3_Channel_4",
+    "Input_Type": "interview",
+    "count": 2
+  },
+  {
+    "Channel_Name": "P",
+    "Input_Type": "speech",
+    "count": 2
+  },
+  {
+    "Channel_Name": "Q",
+    "Input_Type": "speech",
+    "count": 2
+  },
+  {
+    "Channel_Name": "C3_Channel_11",
+    "Input_Type": "interview",
+    "count": 2
+  },
+  {
+    "Channel_Name": "C3_Channel_2",
+    "Input_Type": "interview",
+    "count": 1
+  },
+  {
+    "Channel_Name": "C4_Channel_8",
+    "Input_Type": "speech",
+    "count": 1
+  }
+]

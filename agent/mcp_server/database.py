@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import threading
 from functools import cached_property
 from typing import Any
 
@@ -23,6 +24,10 @@ FORBIDDEN_SQL_PATTERN = re.compile(
     re.IGNORECASE,
 )
 ALLOWED_PREFIXES = ("SELECT", "WITH")
+
+# ── Thread-safe shared schema index ──────────────────────────────────────────
+_schema_lock = threading.Lock()
+_shared_schema_index: list | None = None
 
 
 class QueryValidationError(ValueError):
@@ -76,8 +81,15 @@ class DatabaseClient:
             return f"{self._quote_identifier(schema)}.{self._quote_identifier(table_name)}"
         return self._quote_identifier(table_name)
 
+    @staticmethod
+    def _strip_comments(query: str) -> str:
+        """Remove SQL comments to prevent validation bypass and false positives."""
+        query = re.sub(r'--[^\n]*', '', query)
+        query = re.sub(r'/\*.*?\*/', '', query, flags=re.DOTALL)
+        return query.strip()
+
     def _clean_query(self, query: str) -> str:
-        cleaned = query.strip().rstrip(";")
+        cleaned = self._strip_comments(query.strip().rstrip(";"))
         if not cleaned:
             raise QueryValidationError("Query must not be empty.")
         if ";" in cleaned:
@@ -182,35 +194,43 @@ class DatabaseClient:
         }
 
     def build_schema_index(self, schema: str | None = None) -> None:
-        tables = self.list_tables(schema=schema)
-        index = []
-        for tbl in tables:
-            name = tbl["name"]
-            kind = tbl["kind"]
-            try:
-                details = self.describe_table(name, schema)
-                cols_repr = ", ".join(f"{c['name']} ({c['type']})" for c in details.get("columns", []))
-                text_repr = f"{kind.capitalize()} {name}: columns are {cols_repr}."
-                index.append({
-                    "name": name,
-                    "kind": kind,
-                    "text": text_repr,
-                    "details": details
-                })
-            except Exception:
-                continue
+        global _shared_schema_index
+        with _schema_lock:
+            if _shared_schema_index is not None:
+                self._schema_index = _shared_schema_index
+                return
 
-        if not index:
-            self._schema_index = []
-            return
+            tables = self.list_tables(schema=schema)
+            index = []
+            for tbl in tables:
+                name = tbl["name"]
+                kind = tbl["kind"]
+                try:
+                    details = self.describe_table(name, schema)
+                    cols_repr = ", ".join(f"{c['name']} ({c['type']})" for c in details.get("columns", []))
+                    text_repr = f"{kind.capitalize()} {name}: columns are {cols_repr}."
+                    index.append({
+                        "name": name,
+                        "kind": kind,
+                        "text": text_repr,
+                        "details": details
+                    })
+                except Exception:
+                    continue
 
-        texts = [item["text"] for item in index]
-        embeddings = self.embedding_model.encode(texts)
+            if not index:
+                self._schema_index = []
+                _shared_schema_index = []
+                return
 
-        for i, item in enumerate(index):
-            item["embedding"] = embeddings[i]
+            texts = [item["text"] for item in index]
+            embeddings = self.embedding_model.encode(texts)
 
-        self._schema_index = index
+            for i, item in enumerate(index):
+                item["embedding"] = embeddings[i]
+
+            _shared_schema_index = index
+            self._schema_index = index
 
     def search_table_schemas(self, query: str, schema: str | None = None, limit: int = 5) -> list[dict[str, Any]]:
         """Search the table schemas using RAG and sentence-transformers."""
@@ -255,7 +275,7 @@ class DatabaseClient:
     def run_read_only_query(self, query: str, limit: int) -> pd.DataFrame:
         cleaned_query = self._clean_query(query)
         statement = text(
-            f"SELECT * FROM ({cleaned_query}) AS mcp_query_result LIMIT :limit"
+            f"WITH mcp_cte AS ({cleaned_query}) SELECT * FROM mcp_cte LIMIT :limit"
         )
         with self.engine.connect() as connection:
             return pd.read_sql_query(statement, connection, params={"limit": limit})

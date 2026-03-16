@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import re
+import uuid as _uuid
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -55,7 +56,8 @@ _ctx: ContextVar[dict] = ContextVar("agent_ctx")
 
 
 def _new_ctx() -> dict:
-    return {"sql": "", "records": [], "chart_xml": "", "chart_data": {}, "actions": []}
+    return {"sql": "", "records": [], "query_results": {}, "latest_result_id": "",
+            "chart_xml": "", "chart_data": {}, "actions": []}
 
 
 def _get_ctx() -> dict:
@@ -145,9 +147,9 @@ def search_relevant_schemas(query: str) -> str:
 
 
 @tool
-def run_sql_query(sql: str) -> str:
+def run_sql_query(sql: str, limit: int = 200) -> str:
     """Execute a read-only PostgreSQL SELECT query and return results.
-    Returns JSON with row_count, columns, and sample_rows on success.
+    Returns JSON with row_count, columns, result_id, and sample_rows on success.
     Returns an error message on failure — read the error, fix the SQL, and retry.
 
     SQL RULES:
@@ -159,11 +161,12 @@ def run_sql_query(sql: str) -> str:
 
     Args:
         sql: A valid PostgreSQL SELECT statement.
+        limit: Maximum rows to return (default 200, capped by server config).
     """
     ctx = _get_ctx()
     logger.info("[tool] run_sql_query: %s", sql[:200])
 
-    raw = execute_sql_query(sql)
+    raw = execute_sql_query(sql, limit=limit)
     parsed = json.loads(raw)
 
     if "error" in parsed:
@@ -173,8 +176,12 @@ def run_sql_query(sql: str) -> str:
         return f"SQL Error: {error_msg}\n\nFix the query and call run_sql_query again."
 
     records = parsed.get("data", [])
+    result_id = str(_uuid.uuid4())[:8]
+
     ctx["sql"] = sql
     ctx["records"] = records
+    ctx["query_results"][result_id] = records
+    ctx["latest_result_id"] = result_id
     ctx["chart_data"]["query_result"] = records
 
     cols = list(records[0].keys()) if records else []
@@ -185,6 +192,7 @@ def run_sql_query(sql: str) -> str:
 
     return json.dumps({
         "status": "success",
+        "result_id": result_id,
         "row_count": len(records),
         "columns": cols,
         "sample_rows": sample,
@@ -192,8 +200,8 @@ def run_sql_query(sql: str) -> str:
 
 
 @tool
-def build_chart(chart_type: str, x_column: str, y_columns: str, title: str) -> str:
-    """Build a chart from the most recent SQL query results.
+def build_chart(chart_type: str, x_column: str, y_columns: str, title: str, result_id: str = "") -> str:
+    """Build a chart from SQL query results.
     Call this AFTER run_sql_query returns data successfully.
 
     Args:
@@ -202,9 +210,16 @@ def build_chart(chart_type: str, x_column: str, y_columns: str, title: str) -> s
         x_column: Exact column name for the X axis (from query results).
         y_columns: Column name(s) for the Y axis, comma-separated for multi-series.
         title: Short chart title, max 8 words.
+        result_id: Optional result_id from a prior run_sql_query call to chart
+                   a specific dataset. If empty, charts the most recent query.
     """
     ctx = _get_ctx()
-    records = ctx.get("records", [])
+
+    # Resolve which dataset to chart
+    if result_id and result_id in ctx.get("query_results", {}):
+        records = ctx["query_results"][result_id]
+    else:
+        records = ctx.get("records", [])
 
     if not records:
         ctx["actions"].append("Chart skipped — no data")

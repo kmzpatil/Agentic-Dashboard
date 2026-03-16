@@ -1,0 +1,477 @@
+{
+  "database": "frammer_database",
+  "extracted_at": "2026-03-17T00:31:41.097785",
+  "table_count": 11,
+  "tables": {
+    "app_users": {
+      "row_count": 10,
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "default": "nextval('app_users_id_seq'::regclass)"
+        },
+        {
+          "name": "username",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "password_hash",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "role",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "client_name",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "user_id",
+          "type": "integer",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "is_active",
+          "type": "boolean",
+          "nullable": false,
+          "default": "true"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "sample": [
+        {
+          "id": 3,
+          "username": "user_local_1",
+          "password_hash": "$2b$12$IzKgHVh8avrt0vt4DOsI/OgzDgQARaC756XrwEKTku/dlgm6K6saO",
+          "role": "user",
+          "client_name": "Client 1",
+          "user_id": 1,
+          "is_active": true,
+          "created_at": "2026-03-14T02:24:05.047392+05:30",
+          "updated_at": "2026-03-14T02:24:05.047392+05:30"
+        }
+      ]
+    },
+    "channels": {
+      "row_count": 55,
+      "columns": [
+        {
+          "name": "Channel_Name",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "Client_Name",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        }
+      ],
+      "sample": [
+        {
+          "Channel_Name": "A",
+          "Client_Name": "Client 1"
+        }
+      ]
+    },
+    "clients": {
+      "row_count": 4,
+      "columns": [
+        {
+          "name": "Client_Name",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        }
+      ],
+      "sample": [
+        {
+          "Client_Name": "Client 1"
+        }
+      ]
+    },
+    "conversation_messages": {
+      "row_count": 6,
+      "columns": [
+        {
+          "name": "id",
+          "type": "integer",
+          "nullable": false,
+          "default": "nextval('conversation_messages_id_seq'::regclass)"
+        },
+        {
+          "name": "conversation_id",
+          "type": "character varying",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "role",
+          "type": "character varying",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "content",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "metadata_json",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp without time zone",
+          "nullable": true,
+          "default": null
+        }
+      ],
+      "sample": [
+        {
+          "id": 1,
+          "conversation_id": "e75c0492-b507-4faa-b6b0-8d51a4538fa5",
+          "role": "user",
+          "content": "e2qrkn/",
+          "metadata_json": null,
+          "created_at": "2026-03-16T16:42:44.870211"
+        }
+      ]
+    },
+    "conversations": {
+      "row_count": 5,
+      "columns": [
+        {
+          "name": "id",
+          "type": "character varying",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "user_id",
+          "type": "character varying",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "title",
+          "type": "character varying",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "messages_json",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "working_memory",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp without time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp without time zone",
+          "nullable": true,
+          "default": null
+        }
+      ],
+      "sample": [
+        {
+          "id": "e75c0492-b507-4faa-b6b0-8d51a4538fa5",
+          "user_id": "1",
+          "title": "New conversation",
+          "messages_json": "[]",
+          "working_memory": "",
+          "created_at": "2026-03-16T16:42:44.841797",
+          "updated_at": "2026-03-16T16:42:44.862939"
+        }
+      ]
+    },
+    "created_assets": {
+      "row_count": 53669,
+      "columns": [
+        {
+          "name": "Asset_ID",
+          "type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "Video_ID",
+          "type": "integer",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "Output_Type",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "Create_Date",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "Created_Duration",
+          "type": "integer",
+          "nullable": true,
+          "default": null
+        }
+      ],
+      "sample": [
+        {
+          "Asset_ID": 1,
+          "Video_ID": 7491,
+          "Output_Type": "Full package",
+          "Create_Date": "2025-06-22",
+          "Created_Duration": 446
+        }
+      ]
+    },
+    "post_distribution": {
+      "row_count": 2583,
+      "columns": [
+        {
+          "name": "Post_ID",
+          "type": "integer",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "Channel_Name",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "Published_Platform",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "Published_URL",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "Distribution_ID",
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        }
+      ],
+      "sample": [
+        {
+          "Post_ID": 1,
+          "Channel_Name": "C2_Channel_10",
+          "Published_Platform": "Reels",
+          "Published_URL": "https://reels.com/p/1",
+          "Distribution_ID": 1
+        }
+      ]
+    },
+    "published_posts": {
+      "row_count": 1294,
+      "columns": [
+        {
+          "name": "Post_ID",
+          "type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "Asset_ID",
+          "type": "integer",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "Publish_Date",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "Published_Duration",
+          "type": "integer",
+          "nullable": true,
+          "default": null
+        }
+      ],
+      "sample": [
+        {
+          "Post_ID": 1,
+          "Asset_ID": 49046,
+          "Publish_Date": "2025-07-12",
+          "Published_Duration": 163
+        }
+      ]
+    },
+    "raw_video_channel": {
+      "row_count": 21552,
+      "columns": [
+        {
+          "name": "Video_ID",
+          "type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "Channel_Name",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        }
+      ],
+      "sample": [
+        {
+          "Video_ID": 1,
+          "Channel_Name": "L"
+        }
+      ]
+    },
+    "raw_videos": {
+      "row_count": 10683,
+      "columns": [
+        {
+          "name": "Video_ID",
+          "type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "User_ID",
+          "type": "integer",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "Headline",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "Source_URL",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "Upload_Date",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "Input_Type",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "Language",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "Uploaded_Duration",
+          "type": "integer",
+          "nullable": true,
+          "default": null
+        }
+      ],
+      "sample": [
+        {
+          "Video_ID": 1,
+          "User_ID": 5,
+          "Headline": "Headline_1",
+          "Source_URL": "https://objectstorage/video/1",
+          "Upload_Date": "2025-04-20",
+          "Input_Type": "interview",
+          "Language": "hi",
+          "Uploaded_Duration": 769
+        }
+      ]
+    },
+    "users": {
+      "row_count": 145,
+      "columns": [
+        {
+          "name": "User_ID",
+          "type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "User_Name",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "Team_Name",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "Client_Name",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        }
+      ],
+      "sample": [
+        {
+          "User_ID": 1,
+          "User_Name": "Chandan",
+          "Team_Name": "Video Ops Beta",
+          "Client_Name": "Client 1"
+        }
+      ]
+    }
+  }
+}

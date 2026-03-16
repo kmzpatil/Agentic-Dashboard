@@ -21,7 +21,7 @@ from backend.routes.chat import router as chat_router
 from backend.routes.conversations import router as conversations_router
 from backend.routes.health import router as health_router
 from backend.routes.labs import router as labs_router
-from backend.mcp.server import build_mcp_server
+from backend.mcp2.server import build_mcp_server
 from database.simulator.router import router as simulator_router
 
 

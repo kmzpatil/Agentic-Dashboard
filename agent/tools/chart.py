@@ -224,7 +224,11 @@ def generate_plotly_chart(
     if df.empty:
         return json.dumps({"error": "Query returned no rows — nothing to plot."})
 
-    df = df.fillna(0)
+    for col in df.columns:
+        if pd.api.types.is_numeric_dtype(df[col]):
+            df[col] = df[col].fillna(0)
+        else:
+            df[col] = df[col].fillna("")
 
     # ── 2. Resolve chart config ───────────────────────────────────────────────
     x_col = attrs.get("x_axis") or df.columns[0]
