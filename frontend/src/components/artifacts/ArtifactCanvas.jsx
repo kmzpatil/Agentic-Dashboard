@@ -33,15 +33,21 @@ function chartDataFromArtifact(artifact, dataset) {
 
   return {
     labels,
-    datasets: yFields.map((field, index) => ({
-      label: field.replace(/_/g, ' '),
-      data: rows.map((row) => Number(row?.[field] || 0)),
-      backgroundColor: `${SERIES_COLORS[index % SERIES_COLORS.length]}55`,
-      borderColor: SERIES_COLORS[index % SERIES_COLORS.length],
-      tension: 0.28,
-      borderWidth: 2,
-      fill: artifact.spec?.chartType === 'line',
-    })),
+    datasets: yFields.map((field, index) => {
+      const isForecast = field.startsWith('forecast_');
+      const baseColor = isForecast ? '#3b82f6' : SERIES_COLORS[index % SERIES_COLORS.length];
+      
+      return {
+        label: isForecast ? 'AI Forecast' : field.replace(/_/g, ' '),
+        data: rows.map((row) => Number(row?.[field] || 0)),
+        backgroundColor: `${baseColor}55`,
+        borderColor: baseColor,
+        tension: 0.28,
+        borderWidth: 2,
+        fill: artifact.spec?.chartType === 'line' && !isForecast,
+        borderDash: isForecast ? [5, 5] : [],
+      };
+    }),
   };
 }
 
