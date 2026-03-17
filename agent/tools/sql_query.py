@@ -75,3 +75,32 @@ def execute_sql_query(
         return json.dumps({"error": str(exc)})
     except Exception as exc:
         return json.dumps({"error": f"SQL Execution Error: {exc}"})
+
+def execute_exploration_queries(queries_json: str) -> str:
+    """Execute multiple lightweight exploration queries sequentially in one call.
+    Expects a JSON string representing a list of SELECT SQL strings."""
+    try:
+        queries = json.loads(queries_json)
+        if not isinstance(queries, list):
+            return json.dumps({"error": "queries_json must be a JSON list of strings"})
+
+        db = get_db()
+        results = {}
+        for i, q in enumerate(queries):
+            q = q.strip()
+            q = re.sub(r"^```(?:sql)?\s*\n?", "", q, flags=re.IGNORECASE)
+            q = re.sub(r"\n?```\s*$", "", q).strip()
+            if not q.lower().startswith("select"):
+                results[f"query_{i+1}_error"] = "Only SELECT queries are allowed for exploration"
+                continue
+                
+            try:
+                df = db.run_read_only_query(q, limit=5)
+                df = _type_aware_fillna(df)
+                results[f"query_{i+1}"] = df.to_dict(orient="records")
+            except Exception as e:
+                results[f"query_{i+1}_error"] = str(e)
+
+        return json.dumps(results, default=str)
+    except Exception as exc:
+        return json.dumps({"error": f"Failed to run exploration queries: {exc}"})

@@ -9,19 +9,31 @@ API_URL = "http://localhost:4001/api/query"
 
 TEST_CATEGORIES = {
     "A) Usage & Adoption": [
-        "How many videos are being uploaded, processed, and published over time?"
+        "How many videos are being uploaded, processed, and published over time?",
+        "What is total duration processed (daily/weekly/monthly)?",
+        "Which clients / channels / users are driving usage?",
+        "How does usage compare vs previous time periods?"
     ],
     "B) Output Mix & Content Type Trends": [
-        "What is the split by output type (reels, shorts, summaries, chapters, etc.)?"
+        "What is the split by output type (reels, shorts, summaries, chapters, etc.)?",
+        "What is the split by input type (speech, interview, special report, etc.)?",
+        "Which output/input categories are growing or declining?",
+        "Which formats are used most by which channels/users?"
     ],
     "C) Publishing Funnel & Efficiency": [
-        "What is the gap between processed and published content?"
+        "What is the gap between processed and published content?",
+        "Which channels or teams process high volume but publish low?",
+        "What is the publish conversion % by channel / type / user?"
     ],
     "D) Team / User / Language / Platform Insights": [
-        "Which features or platforms are most active?"
+        "Which users or teams contribute most volume?",
+        "Which languages or platforms are most active?",
+        "Are there underperforming channel-language or user-channel combinations?"
     ],
     "E) Data Quality & Governance": [
-        "How much data is missing or marked as 'Unknown'?"
+        "How much data is missing or marked as 'Unknown'?",
+        "Which fields frequently have missing platform / URL / team values?",
+        "How can data quality be monitored over time?"
     ]
 }
 
@@ -71,7 +83,7 @@ def run_tests():
                 print("\n  [AGENT SQL]")
                 print("  " + (sql.replace("\n", "\n  ") if sql else "None"))
                 print("\n  [AGENT RESPONSE (Snippet)]")
-                print("  " + resp[:300].replace("\n", "\n  ") + "...")
+                print("  " + resp.replace("\n", "\n  "))
                 
             except requests.exceptions.RequestException as e:
                 print(f"  ❌ API REQUEST FAILED: {str(e)}")
