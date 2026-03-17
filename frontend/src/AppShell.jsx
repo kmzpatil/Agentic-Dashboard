@@ -277,7 +277,7 @@ export default function AppShell() {
       <main className="flex-1 overflow-hidden">
         {activeView === 'mission-control' && <OverviewModule routeState={routeState} onNavigate={navigate} />}
         {activeView === 'trends' && <UsageTrendsModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
-        {activeView === 'funnel' && <FunnelModule routeState={routeState} onNavigate={navigate} />}
+        {activeView === 'funnel' && <FunnelModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'explorer' && <ExplorerModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'copilot' && <TalkToDataModule authToken={authToken} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'labs' && <LabsModule />}
