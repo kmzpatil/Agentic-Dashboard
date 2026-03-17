@@ -1,73 +1,201 @@
-import React from 'react';
-import { ArrowRight, TrendingUp } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { TrendingUp, Users, PlaySquare, AlertCircle, Plus, X } from "lucide-react";
+import { Line } from 'react-chartjs-2';
 import { useApi } from '../../hooks/useApi';
 import { API_BASE } from '../../lib/constants';
 import { formatHours, formatNumber, formatPct } from '../../lib/formatters';
 import KpiCard from '../../components/common/KpiCard';
 import { OverviewSkeleton } from '../../components/common/Skeleton';
 import InsightCard from '../../components/insights/InsightCard';
-
-function PipelineStage({ stage }) {
-  return (
-    <div className="rounded-3xl border border-neutral-800 bg-[#101010] p-4 min-w-[180px]">
-      <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-500">{stage.label}</div>
-      <div className="mt-2 text-2xl font-black tracking-tight text-white">{formatNumber(stage.count)}</div>
-      <div className="mt-1 text-sm text-neutral-500">{formatHours(stage.duration)}</div>
-    </div>
-  );
-}
+import KpiDetailsModal from './KpiDetailsModal';
+import { KPI_DEFINITIONS } from './kpiDefinitions';
 
 export default function OverviewModule({ onNavigate }) {
   const overview = useApi(`${API_BASE}/overview`, []);
   const insights = useApi(`${API_BASE}/insights?surface=mission-control`, []);
 
-  if (overview.loading) return <OverviewSkeleton />;
-  if (overview.error) return <div className="p-6 text-red-400">{overview.error}</div>;
-
+  const loading = overview.loading || insights.loading;
+  const error = overview.error || insights.error;
   const data = overview.data || {};
+  const [activeExtraKpis, setActiveExtraKpis] = useState([]);
+  const [isSelectionPanelOpen, setIsSelectionPanelOpen] = useState(false);
+  const [selectedKpi, setSelectedKpi] = useState(null);
+  const [activeOutputTab, setActiveOutputTab] = useState(null);
+
+  useEffect(() => {
+    if (data?.outputStats?.length > 0 && !activeOutputTab) {
+      setActiveOutputTab(data.outputStats[0].label);
+    }
+  }, [data?.outputStats, activeOutputTab]);
+
+  if (loading) return <OverviewSkeleton />;
+  if (error) return <div className="p-6 text-red-400">{error}</div>;
+
   const kpis = data.kpis || {};
+
+  const handleAddMore = () => {
+    setIsSelectionPanelOpen(!isSelectionPanelOpen);
+  };
+
+  const handleAddKpi = (id) => {
+    if (!activeExtraKpis.includes(id)) {
+      setActiveExtraKpis([...activeExtraKpis, id]);
+    }
+  };
+
+  const handleRemoveKpi = (id) => {
+    setActiveExtraKpis(prev => prev.filter(k => k !== id));
+  };
+
+  const visibleExtraKpis = KPI_DEFINITIONS.filter(kpi => activeExtraKpis.includes(kpi.id));
+
+  const handleCoreKpiClick = (id) => {
+    const kpi = KPI_DEFINITIONS.find(k => k.id === id);
+    if (kpi) setSelectedKpi(kpi);
+  };
+
+  const sparklines = data?.sparklines || {};
 
   return (
     <div className="h-full overflow-y-auto bg-[#050505] px-6 py-6 space-y-6">
-      <section className="rounded-[30px] border border-neutral-800 bg-[radial-gradient(circle_at_top_left,_rgba(239,68,68,0.2),_transparent_50%),linear-gradient(180deg,#121212,_#080808)] p-6">
-        <div className="flex flex-wrap items-start justify-between gap-6">
-          <div className="max-w-3xl">
-            <div className="text-[11px] font-bold uppercase tracking-[0.24em] text-neutral-500">Mission Control</div>
-            <h2 className="mt-2 text-3xl font-black tracking-tight text-white">Monitor pipeline performance, surface issues early, and move straight into the next action.</h2>
-            <p className="mt-3 text-sm leading-6 text-neutral-400">
-              Track upload volume, creation throughput, publishing performance, and the priorities that need attention
-              across teams, channels, and client scopes.
-            </p>
-          </div>
-          <button
-            onClick={() => onNavigate?.({ view: 'copilot' })}
-            className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-bold text-black transition-colors hover:bg-neutral-200"
-          >
-            Open Copilot
-            <ArrowRight size={16} />
-          </button>
-        </div>
-      </section>
-
       <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
-        <KpiCard title="UPLOADED" value={formatNumber(kpis.uploaded_count)} subtitle={formatHours(kpis.uploaded_duration)} />
-        <KpiCard title="PROCESSED" value={formatNumber(kpis.processed_count)} subtitle="Videos reaching create stage" />
-        <KpiCard title="CREATED" value={formatNumber(kpis.created_count)} subtitle={formatHours(kpis.created_duration)} />
-        <KpiCard title="PUBLISHED" value={formatNumber(kpis.published_count)} subtitle={formatHours(kpis.published_duration)} />
-        <KpiCard title="PUBLISH CONVERSION" value={formatPct(kpis.publish_conversion_rate)} subtitle={`Creation rate ${formatPct(kpis.creation_rate)}`} />
+        <KpiCard 
+          title="UPLOADED" 
+          value={formatNumber(kpis.uploaded_count)} 
+          subtitle={formatHours(kpis.uploaded_duration)} 
+          trendData={sparklines.uploaded}
+          onClick={() => handleCoreKpiClick('uploaded_count')}
+        />
+        <KpiCard 
+          title="PROCESSED" 
+          value={formatNumber(kpis.processed_count)} 
+          subtitle="Videos reaching create stage" 
+          trendData={sparklines.processed}
+          onClick={() => handleCoreKpiClick('processed_count')}
+        />
+        <KpiCard 
+          title="CREATED" 
+          value={formatNumber(kpis.created_count)} 
+          subtitle={formatHours(kpis.created_duration)} 
+          trendData={sparklines.created}
+          onClick={() => handleCoreKpiClick('created_count')}
+        />
+        <KpiCard 
+          title="PUBLISHED" 
+          value={formatNumber(kpis.published_count)} 
+          subtitle={formatHours(kpis.published_duration)} 
+          trendData={sparklines.published}
+          onClick={() => handleCoreKpiClick('published_count')}
+        />
+        
+        {visibleExtraKpis.map(kpi => (
+          <KpiCard 
+            key={kpi.id}
+            title={kpi.title} 
+            value={kpi.getValue(kpis)} 
+            subtitle={kpi.getSubtitle(kpis)} 
+            trendData={kpi.trendData}
+            onRemove={() => handleRemoveKpi(kpi.id)}
+            onClick={() => setSelectedKpi(kpi)}
+          />
+        ))}
+
+        <button 
+          onClick={handleAddMore}
+          className={`flex flex-col items-center justify-center rounded-xl p-5 border border-dashed transition-colors min-h-[140px] ${
+            isSelectionPanelOpen 
+              ? 'bg-[#161616] border-neutral-500 text-white' 
+              : 'bg-[#111111] border-neutral-700 hover:border-neutral-500 hover:bg-[#161616] text-neutral-400 hover:text-white'
+          }`}
+        >
+          <Plus size={24} className={`mb-2 transition-transform duration-300 ${isSelectionPanelOpen ? 'rotate-45' : ''}`} />
+          <span className="text-sm font-bold uppercase tracking-wider">
+            {isSelectionPanelOpen ? 'Close Panel' : 'Add More'}
+          </span>
+        </button>
       </section>
 
-      <section className="rounded-[28px] border border-neutral-800 bg-[#0D0D0D] p-5">
-        <div className="mb-4 flex items-center gap-2 text-sm font-bold uppercase tracking-[0.2em] text-neutral-500">
-          <TrendingUp size={15} />
-          Pipeline Motion
-        </div>
-        <div className="flex gap-4 overflow-auto hide-scrollbar">
-          {(data.pipeline || []).map((stage) => (
-            <PipelineStage key={stage.id} stage={stage} />
-          ))}
-        </div>
-      </section>
+      {/* KPI Selection Panel */}
+      {isSelectionPanelOpen && (
+        <section className="rounded-[28px] border border-neutral-800 bg-[#0D0D0D] p-6 animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.2em] text-neutral-500">
+              <Plus size={15} />
+              Available KPIs
+            </div>
+            <button 
+              onClick={() => setIsSelectionPanelOpen(false)}
+              className="text-neutral-500 hover:text-white transition-colors"
+            >
+              <X size={20} />
+            </button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 max-h-[400px] overflow-y-auto pr-2 hide-scrollbar">
+            {KPI_DEFINITIONS.filter(k => !['uploaded_count', 'processed_count', 'created_count', 'published_count'].includes(k.id)).map(kpi => {
+              const isActive = activeExtraKpis.includes(kpi.id);
+              return (
+                <KpiCard 
+                  key={kpi.id}
+                  title={kpi.title} 
+                  value={kpi.getValue(kpis)} 
+                  subtitle={kpi.getSubtitle(kpis)} 
+                  trendData={kpi.trendData}
+                  onRemove={isActive ? () => handleRemoveKpi(kpi.id) : undefined}
+                  onAdd={!isActive ? () => handleAddKpi(kpi.id) : undefined}
+                  onClick={() => setSelectedKpi(kpi)}
+                />
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {data?.outputStats && data.outputStats.length > 0 && (
+        <section className="rounded-[28px] border border-neutral-800 bg-[#0D0D0D] p-5">
+           <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.2em] text-neutral-500">
+              <TrendingUp size={15} />
+              Output Types Summary
+            </div>
+          </div>
+          <div className="flex border-b border-neutral-800 mb-6">
+            {data.outputStats.map(stat => (
+              <button
+                key={stat.label}
+                onClick={() => setActiveOutputTab(stat.label)}
+                className={`px-4 py-2 font-medium tracking-wide transition-colors ${activeOutputTab === stat.label ? 'text-white border-b-2 border-primary-500' : 'text-neutral-500 hover:text-neutral-300'}`}
+              >
+                {stat.label}
+              </button>
+            ))}
+          </div>
+          
+          {(() => {
+            const activeStat = data?.outputStats?.find(s => s.label === activeOutputTab) || data?.outputStats?.[0];
+            if (!activeStat) return null; // Prevent crash if data hasn't loaded or is completely empty
+            
+            return (
+              <div className="grid grid-cols-3 gap-4">
+                 <div className="rounded-2xl border border-neutral-900 bg-[#121212] p-4 text-center">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-500 mb-2">Uploaded</div>
+                    <div className="text-2xl font-bold text-white mb-1">{formatNumber(activeStat?.total_uploaded_count || 0)}</div>
+                    <div className="text-xs text-neutral-400">{formatHours(activeStat?.total_uploaded_duration || 0)}</div>
+                 </div>
+                 <div className="rounded-2xl border border-neutral-900 bg-[#121212] p-4 text-center">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-500 mb-2">Created</div>
+                    <div className="text-2xl font-bold text-[#10b981] mb-1">{formatNumber(activeStat?.total_created_count || 0)}</div>
+                    <div className="text-xs text-neutral-400">{formatHours(activeStat?.total_created_duration || 0)}</div>
+                 </div>
+                 <div className="rounded-2xl border border-neutral-900 bg-[#121212] p-4 text-center">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-500 mb-2">Published</div>
+                    <div className="text-2xl font-bold text-[#3b82f6] mb-1">{formatNumber(activeStat?.total_published_count || 0)}</div>
+                    <div className="text-xs text-neutral-400">{formatHours(activeStat?.total_published_duration || 0)}</div>
+                 </div>
+              </div>
+            )
+          })()}
+        </section>
+      )}
 
       <section className="grid grid-cols-1 xl:grid-cols-[1.25fr_0.95fr] gap-6">
         <div className="space-y-6">
@@ -123,6 +251,7 @@ export default function OverviewModule({ onNavigate }) {
           </div>
         </div>
       </section>
+      <KpiDetailsModal kpi={selectedKpi} onClose={() => setSelectedKpi(null)} />
     </div>
   );
 }
