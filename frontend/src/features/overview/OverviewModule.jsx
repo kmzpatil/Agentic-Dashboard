@@ -111,7 +111,7 @@ export default function OverviewModule({ onNavigate }) {
               {(data.alerts || []).map((alert) => (
                 <button
                   key={alert.title}
-                  onClick={() => onNavigate?.({ view: 'funnel', breakdown: 'channel', dimension: alert.dimension, value: alert.value })}
+                  onClick={() => onNavigate?.({ view: 'funnel', breakdown: 'channel', [alert.dimension]: alert.value })}
                   className="w-full rounded-2xl border border-red-950/50 bg-[#190f0f] px-4 py-3 text-left transition-colors hover:bg-[#201313]"
                 >
                   <div className="text-sm font-semibold text-white">{alert.title}</div>

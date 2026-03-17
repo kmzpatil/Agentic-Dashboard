@@ -350,49 +350,85 @@ def get_metric_query(metric: str, access_filter: dict[str, Any]) -> str:
     return metric_sql.get(metric, metric_sql["uploaded_count"])
 
 
-def build_funnel_filter(dimension: str | None, value: str | None, start_index: int = 1, auth: Any = None) -> dict[str, Any]:
-    access_filter = build_access_filter(auth, start_index, "rv")
-    params = [*access_filter["params"]]
-    predicates = [*access_filter["predicates"]]
-    join_parts = []
+def build_funnel_filter(filters: dict[str, str] | None = None, start_index: int = 1, auth: Any = None) -> dict[str, Any]:
+  """Build filter clauses from a dict of {dimension: value} pairs.
 
-    if access_filter["join"]:
-        join_parts.append(access_filter["join"])
+  Supports simultaneous filters, e.g. {"client": "X", "input_type": "Interview", "language": "EN"}.
+  Backward-compatible: also accepts legacy (dimension, value) via build_funnel_filter_legacy.
+  """
+  access_filter = build_access_filter(auth, start_index, "rv")
+  params = [*access_filter["params"]]
+  predicates = [*access_filter["predicates"]]
+  join_parts: list[str] = []
 
-    next_index = access_filter["next_index"]
+  if access_filter["join"]:
+    join_parts.append(access_filter["join"])
 
-    if dimension and value:
-        if dimension == "channel":
-            join_parts.append('LEFT JOIN raw_video_channel rvc_filter ON rv."Video_ID" = rvc_filter."Video_ID"')
-            predicates.append(f'rvc_filter."Channel_Name" = ${next_index}')
-            params.append(value)
-            next_index += 1
+  next_index = access_filter["next_index"]
+  needs_user_join = False
+  needs_channel_join = False
 
-        if dimension == "input_type":
-            predicates.append(f'rv."Input_Type" = ${next_index}')
-            params.append(value)
-            next_index += 1
+  if filters:
+    for dimension, value in filters.items():
+      if not value:
+        continue
 
-        if dimension == "language":
-            predicates.append(f'rv."Language" = ${next_index}')
-            params.append(value)
-            next_index += 1
+      if dimension == "channel":
+        if not needs_channel_join:
+          join_parts.append('LEFT JOIN raw_video_channel rvc_filter ON rv."Video_ID" = rvc_filter."Video_ID"')
+          needs_channel_join = True
+        predicates.append(f'rvc_filter."Channel_Name" = ${next_index}')
+        params.append(value)
+        next_index += 1
 
-        if dimension == "user":
-            join_parts.append('LEFT JOIN users u_filter ON rv."User_ID" = u_filter."User_ID"')
-            predicates.append(f'u_filter."User_Name" = ${next_index}')
-            params.append(value)
-            next_index += 1
+      elif dimension == "client":
+        if not needs_user_join:
+          join_parts.append('LEFT JOIN users u_filter ON rv."User_ID" = u_filter."User_ID"')
+          needs_user_join = True
+        if not needs_channel_join:
+          join_parts.append('LEFT JOIN raw_video_channel rvc_filter ON rv."Video_ID" = rvc_filter."Video_ID"')
+          needs_channel_join = True
+        join_parts.append('LEFT JOIN channels ch_filter ON ch_filter."Channel_Name" = rvc_filter."Channel_Name"')
+        predicates.append(f'COALESCE(ch_filter."Client_Name", u_filter."Client_Name") = ${next_index}')
+        params.append(value)
+        next_index += 1
 
-        if dimension == "output_type":
-            join_parts.append('LEFT JOIN created_assets ca_filter ON ca_filter."Video_ID" = rv."Video_ID"')
-            predicates.append(f'ca_filter."Output_Type" = ${next_index}')
-            params.append(value)
-            next_index += 1
+      elif dimension == "input_type":
+        predicates.append(f'rv."Input_Type" = ${next_index}')
+        params.append(value)
+        next_index += 1
 
-    return {
-        "join": "\n".join(join_parts),
-        "where": build_where_clause(predicates),
-        "params": params,
-        "next_index": next_index,
-    }
+      elif dimension == "language":
+        predicates.append(f'rv."Language" = ${next_index}')
+        params.append(value)
+        next_index += 1
+
+      elif dimension == "user":
+        if not needs_user_join:
+          join_parts.append('LEFT JOIN users u_filter ON rv."User_ID" = u_filter."User_ID"')
+          needs_user_join = True
+        predicates.append(f'u_filter."User_Name" = ${next_index}')
+        params.append(value)
+        next_index += 1
+
+      elif dimension == "team":
+        if not needs_user_join:
+          join_parts.append('LEFT JOIN users u_filter ON rv."User_ID" = u_filter."User_ID"')
+          needs_user_join = True
+        predicates.append(f'u_filter."Team_Name" = ${next_index}')
+        params.append(value)
+        next_index += 1
+
+      elif dimension == "output_type":
+        join_parts.append('LEFT JOIN created_assets ca_filter ON ca_filter."Video_ID" = rv."Video_ID"')
+        predicates.append(f'ca_filter."Output_Type" = ${next_index}')
+        params.append(value)
+        next_index += 1
+
+  return {
+    "join": "\n".join(join_parts),
+    "where": build_where_clause(predicates),
+    "predicates": predicates,
+    "params": params,
+    "next_index": next_index,
+  }
