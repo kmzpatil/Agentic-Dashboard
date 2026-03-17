@@ -888,7 +888,6 @@ _MULTIDIM_ANALYSIS_COLS = {
 def get_multi_dim(
     analysis: str = Query(..., description="volume_dynamics | duration_dynamics | success_scores | output_type | input_type_proportion"),
     granularity: str = Query("month", description="day, week, month, or quarter"),
-    client_name: Optional[str] = Query(None, description="Required for output_type and input_type_proportion"),
     company: Optional[List[str]] = Query(None),
     channel: Optional[List[str]] = Query(None),
     user: Optional[List[str]] = Query(None),
@@ -949,10 +948,9 @@ def get_multi_dim(
             )
             merged = assets_df.merge(vids[['Video_ID', 'Client_Name', 'Input_Type']], on='Video_ID', how='left')
 
-            if client_name:
-                merged = merged[merged['Client_Name'] == client_name]
-                if merged.empty:
-                    raise HTTPException(status_code=404, detail=f"No data found for client '{client_name}'")
+
+            if merged.empty:
+                raise HTTPException(status_code=404, detail="No data found for the selected filters")
 
             type_col = 'Output_Type' if analysis == 'output_type' else 'Input_Type'
             if type_col not in merged.columns:
@@ -1051,11 +1049,6 @@ def get_multi_dim(
 
         # Remove current incomplete period
         resampled = _drop_incomplete_tail(resampled, safe_granularity)
-
-        if client_name:
-            resampled = resampled[resampled['Client_Name'] == client_name]
-            if resampled.empty:
-                raise HTTPException(status_code=404, detail=f"Client '{client_name}' not found")
 
         series_keys = _MULTIDIM_ANALYSIS_COLS[analysis]
         agg = (
