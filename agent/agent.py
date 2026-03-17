@@ -1,62 +1,83 @@
 """
 agent.py
---------
-True ReAct Agent using LangGraph StateGraph with native tool-calling.
+-------------
+Frammer Analytics Agent.
 
-The agent autonomously decides which tools to call, observes results,
-self-corrects on errors, and loops until it has enough to answer.
-No fixed pipeline — the LLM drives the entire flow.
-
-Entry point:
-    result = await run_agent(question)
+Architecture:
+  1. Client: Anthropic Claude 3 Haiku via client.py.
+  2. Tools:  Loaded from the local MCP server (AgentToolModule).
+  3. Loop:   LangGraph ReAct StateGraph.
 """
 
 import json
 import logging
-import os
-import re
-from contextvars import ContextVar
+import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Dict, List, Optional, TypedDict
+import re
 
 from dotenv import load_dotenv
+
+# -- Load env: agent dir first, then project root --
+_AGENT_DIR = Path(__file__).resolve().parent
+load_dotenv(_AGENT_DIR / ".env")
+load_dotenv(_AGENT_DIR.parent / ".env")
+load_dotenv()
+
+from logger_setup import setup_logging
+setup_logging()
+
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langchain_core.tools import tool
-from langchain_openai import AzureChatOpenAI
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
+from langchain_core.tools import tool
+import uuid as _uuid
 
 from client import LLMClient
-from tools import (
-    execute_sql_query,
-    generate_plotly_chart,
-    get_db,
-    get_frammer_schema,
-    retrieve_metric_definitions,
-)
 
-_AGENT_DIR = Path(__file__).resolve().parent
-load_dotenv(_AGENT_DIR / ".env")
-load_dotenv()
+# -- MCP-backed tool implementations (still usable as LangChain tools) --
+from mcp_server.config import ServerSettings
+from mcp_server.database import DatabaseClient, QueryValidationError
+from tools.metric_definitions import retrieve_metric_definitions
+from tools.chart import generate_plotly_chart
+from tools import get_frammer_schema, execute_sql_query, get_db
+from tools.sql_query import execute_exploration_queries
+
 logger = logging.getLogger("frammer.agent")
 
-_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
-
+_THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+_THINK_OPEN_RE  = re.compile(r"<think>.*", re.DOTALL)   # unclosed think tag
+_THINK_CLOSE    = "</think>"
 
 def _clean(text: str) -> str:
-    return _THINK_RE.sub("", text).strip()
+    """Strip all <think>...</think> blocks and return the remainder."""
+    return _THINK_BLOCK_RE.sub("", text).strip()
 
+def _extract_response(text: str) -> str:
+    """
+    Extracts the final answer. Claude Haiku rarely uses <think> tags, but kept for compatibility.
+    """
+    if _THINK_CLOSE in text:
+        after = text.split(_THINK_CLOSE, 1)[-1].strip()
+        if after:
+            return after
+        match = re.search(r"<think>(.*?)</think>", text, re.DOTALL)
+        if match:
+            return match.group(1).strip()
+    return _THINK_OPEN_RE.sub("", text).strip() or text.strip()
 
-# ── Per-request context (thread-safe via contextvars) ────────────────────────
-
+# ── Per-request context ──────────────────────────────────────────────────────
+from contextvars import ContextVar
 _ctx: ContextVar[dict] = ContextVar("agent_ctx")
 
-
 def _new_ctx() -> dict:
-    return {"sql": "", "records": [], "chart_xml": "", "chart_data": {}, "actions": []}
-
+    return {
+        "sql": "", "records": [], "query_results": {}, "latest_result_id": "",
+        "chart_xml": "", "chart_data": {}, "actions": [], "plan": "",
+    }
 
 def _get_ctx() -> dict:
     try:
@@ -65,7 +86,6 @@ def _get_ctx() -> dict:
         ctx = _new_ctx()
         _ctx.set(ctx)
         return ctx
-
 
 # ── Result dataclass ─────────────────────────────────────────────────────────
 
@@ -78,134 +98,115 @@ class AgentResult:
     chart_data: Dict = field(default_factory=dict)
     sql: str = ""
     error: str = ""
-
+    plan: str = ""
 
 # ── Schema cache ─────────────────────────────────────────────────────────────
-
 _schema_cache: Optional[str] = None
 
-
-# ── Tool definitions ─────────────────────────────────────────────────────────
-# Each tool is a @tool-decorated function that the LLM invokes via bind_tools.
-# Tools write side-effects into the per-request context (_ctx) so we can
-# extract chart_xml, chart_data, actions, etc. after the loop completes.
+# ── Tool definitions (LangChain-compatible, backed by MCP module logic) ───────
 
 @tool
 def get_schema() -> str:
-    """Retrieve the full database schema — all table names, column names,
-    and column types. ALWAYS call this FIRST before writing any SQL query
-    so you use exact, correct table and column names."""
+    """Retrieve the full database schema — table names, column names and types.
+    ALWAYS call this FIRST before writing any SQL."""
     global _schema_cache
     ctx = _get_ctx()
     if not _schema_cache:
         _schema_cache = get_frammer_schema()
     ctx["actions"].append("Retrieved database schema")
-    logger.info("[tool] get_schema -> %d chars", len(_schema_cache))
+    logger.info("[tool] get_schema → %d chars", len(_schema_cache))
     return _schema_cache
-
 
 @tool
 def get_metric_definitions(query: str) -> str:
-    """Look up business metric definitions, formulas, table names, join paths,
-    and example SQL for metrics like uploads, conversions, durations, channels,
-    clients, etc. Call this to understand how to correctly calculate a metric
-    before writing SQL.
-
+    """Look up business metric definitions, formulas, table names, join paths, and example SQL.
     Args:
-        query: The user's question or a keyword describing the metric.
+        query: Keyword describing the metric (e.g. 'conversion', 'publish', 'duration').
     """
     ctx = _get_ctx()
     result = retrieve_metric_definitions(query)
     ctx["actions"].append("Looked up metric definitions")
-    logger.info("[tool] get_metric_definitions(%r) -> %d chars", query[:50], len(result))
+    logger.info("[tool] get_metric_definitions(%r) → %d chars", query[:40], len(result))
     return result
-
 
 @tool
 def search_relevant_schemas(query: str) -> str:
-    """Semantic search for database tables and columns relevant to a question.
-    Uses CHESS-style RAG with embedding vectors to find the most relevant
-    schema elements. Returns table names, column details, and similarity scores.
-    Call this when you need to discover which tables are relevant for a query.
-
+    """Semantic CHESS-RAG search for relevant tables and columns.
     Args:
-        query: Natural language description of the data you need (e.g. 'interview uploads by channel').
+        query: Natural language description of the data you need.
     """
     ctx = _get_ctx()
     try:
         db = get_db()
         results = db.search_table_schemas(query, limit=5)
-        ctx["actions"].append(f"Searched schemas — {len(results)} matches")
-        logger.info("[tool] search_relevant_schemas(%r) -> %d results", query[:50], len(results))
+        ctx["actions"].append(f"Schema search — {len(results)} match(es)")
+        logger.info("[tool] search_relevant_schemas(%r) → %d results", query[:40], len(results))
         return json.dumps(results, indent=2, default=str)
     except Exception as exc:
         ctx["actions"].append("Schema search failed")
-        logger.warning("[tool] search_relevant_schemas error: %s", exc)
         return f"Schema search error: {exc}. Use get_schema instead."
 
-
 @tool
-def run_sql_query(sql: str) -> str:
-    """Execute a read-only PostgreSQL SELECT query and return results.
-    Returns JSON with row_count, columns, and sample_rows on success.
-    Returns an error message on failure — read the error, fix the SQL, and retry.
+def run_sql_query(sql: str, limit: int = 200) -> str:
+    """Execute a read-only PostgreSQL SELECT. Returns JSON with row_count, columns, result_id, sample_rows.
+    On failure returns an error — fix the SQL and retry.
 
     SQL RULES:
-    - Use ONLY exact table/column names from get_schema()
     - Double-quote mixed-case columns: "Upload_Date", "User_Name"
-    - Alias aggregations: COUNT(*) AS upload_count
     - Cast text dates: to_date("Upload_Date", 'YYYY-MM-DD')
     - Monthly grouping: date_trunc('month', to_date("Upload_Date",'YYYY-MM-DD'))::date AS month
-
     Args:
-        sql: A valid PostgreSQL SELECT statement.
+        sql: Valid PostgreSQL SELECT statement.
+        limit: Max rows to return.
     """
     ctx = _get_ctx()
-    logger.info("[tool] run_sql_query: %s", sql[:200])
-
-    raw = execute_sql_query(sql)
+    logger.info("[tool] run_sql_query: %s…", sql[:120])
+    raw = execute_sql_query(sql, limit=limit)
     parsed = json.loads(raw)
 
     if "error" in parsed:
-        error_msg = parsed["error"]
-        ctx["actions"].append(f"SQL failed — {error_msg[:60]}")
-        logger.warning("[tool] SQL error: %s", error_msg[:200])
-        return f"SQL Error: {error_msg}\n\nFix the query and call run_sql_query again."
+        ctx["actions"].append(f"SQL failed — {parsed['error'][:60]}")
+        logger.warning("[tool] SQL error: %s", parsed["error"][:200])
+        return f"SQL Error: {parsed['error']}\n\nFix the query and retry."
 
     records = parsed.get("data", [])
+    result_id = str(_uuid.uuid4())[:8]
     ctx["sql"] = sql
     ctx["records"] = records
+    ctx["query_results"][result_id] = records
+    ctx["latest_result_id"] = result_id
     ctx["chart_data"]["query_result"] = records
 
     cols = list(records[0].keys()) if records else []
-    sample = records[:5]
-
-    ctx["actions"].append(f"Queried database — {len(records)} rows, {len(cols)} columns")
+    ctx["actions"].append(f"SQL OK — {len(records)} rows, {len(cols)} cols")
     logger.info("[tool] SQL OK: %d rows, cols=%s", len(records), cols)
 
+    sample_size = 50
     return json.dumps({
         "status": "success",
-        "row_count": len(records),
+        "result_id": result_id,
+        "total_row_count": len(records),
         "columns": cols,
-        "sample_rows": sample,
+        "data": records[:sample_size],
+        "note": f"Showing first {sample_size} rows only." if len(records) > sample_size else "Showing all rows."
     }, default=str)
 
-
 @tool
-def build_chart(chart_type: str, x_column: str, y_columns: str, title: str) -> str:
-    """Build a chart from the most recent SQL query results.
-    Call this AFTER run_sql_query returns data successfully.
-
+def build_chart(chart_type: str, x_column: str, y_columns: str, title: str, result_id: str = "") -> str:
+    """Build a chart from SQL query results. Call AFTER run_sql_query.
     Args:
         chart_type: 'bar', 'line', or 'pie'.
-                    line = time-series, pie = proportions (<=6 cats), bar = comparisons.
-        x_column: Exact column name for the X axis (from query results).
-        y_columns: Column name(s) for the Y axis, comma-separated for multi-series.
+        x_column: Exact column name for X axis.
+        y_columns: Column name(s) for Y axis (comma-separated for multi-series).
         title: Short chart title, max 8 words.
+        result_id: Optional result_id from a prior run_sql_query. Uses latest if empty.
     """
     ctx = _get_ctx()
-    records = ctx.get("records", [])
-
+    records = (
+        ctx["query_results"].get(result_id)
+        if result_id
+        else ctx.get("records", [])
+    )
     if not records:
         ctx["actions"].append("Chart skipped — no data")
         return "No data available. Run a SQL query first."
@@ -215,73 +216,157 @@ def build_chart(chart_type: str, x_column: str, y_columns: str, title: str) -> s
 
     if xml and xml.startswith("<?xml"):
         ctx["chart_xml"] = xml
-        ctx["actions"].append(f"Generated {chart_type} chart: {title}")
-        logger.info("[tool] build_chart -> OK (%d chars)", len(xml))
-        return f"Chart created: {title} ({chart_type}, {len(records)} data points)"
+        ctx["actions"].append(f"Chart: {chart_type} — {title}")
+        logger.info("[tool] build_chart OK (%d chars)", len(xml))
+        return f"Chart created: {title} ({chart_type}, {len(records)} points)"
 
-    error = xml if xml else "Unknown error"
     ctx["actions"].append("Chart generation failed")
-    logger.warning("[tool] build_chart failed: %s", str(error)[:120])
-    return f"Chart failed: {error}. Try different columns or chart_type."
+    logger.warning("[tool] build_chart failed: %s", str(xml)[:100])
+    return f"Chart failed: {xml or 'Unknown error'}"
 
+@tool
+def get_current_time() -> str:
+    """Return the current local date and time.
+    ALWAYS call this if the user uses relative time terms like 'today', 'yesterday', 'last week', or 'last month'
+    to calculate the exact date range for SQL."""
+    from datetime import datetime
+    now = datetime.now()
+    ctx = _get_ctx()
+    ctx["actions"].append("Checked current time")
+    return now.strftime("%Y-%m-%d %H:%M:%S")
 
-# ── LangGraph ReAct graph ────────────────────────────────────────────────────
+@tool
+def execute_exploration_queries_tool(json_queries: str) -> str:
+    """Run multiple simple SELECTs in batch (e.g. check distinct values or min/max dates).
+    Args:
+        json_queries: A JSON array of string SQL queries.
+    """
+    import json as json_lib
+    ctx = _get_ctx()
+    try:
+        queries = json_lib.loads(json_queries)
+        if not isinstance(queries, list):
+            return "Expected a JSON list of strings."
+        results = []
+        for q in queries:
+            try:
+                res = json_lib.loads(execute_sql_query(q, 5))
+                if "error" in res:
+                    results.append({"query": q, "error": res["error"]})
+                else:
+                    results.append({"query": q, "data": res.get("data", [])})
+            except Exception as ex:
+                results.append({"query": q, "error": str(ex)})
+        ctx["actions"].append(f"Ran {len(queries)} exploration queries")
+        return json.dumps(results, default=str)
+    except Exception as e:
+        return f"failed to parse json_queries: {e}"
 
-TOOLS = [get_schema, get_metric_definitions, search_relevant_schemas, run_sql_query, build_chart]
+# ── LLM clients ──────────────────────────────────────────────────────────────
+TOOLS = [get_schema, get_metric_definitions, search_relevant_schemas, execute_exploration_queries_tool, run_sql_query, build_chart, get_current_time]
 
+_fast_client  = LLMClient.fast()
+_creat_client = LLMClient.creative()
+_loop_client  = LLMClient()
+_llm_with_tools = _loop_client.llm.bind_tools(TOOLS)
+
+# ── System prompt ─────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = """\
-You are Frammer AI, an analytics assistant for the Frammer media production platform.
+You are Frammer AI, an analytics assistant for a media production platform.
+
+## Database Schema
+{schema_block}
+
+## Business Metrics & Join Rules
+{metrics_block}
+
+## Dataset Overview
+The dataset tracks a media content pipeline:
+1. **Upload Phase** (`raw_videos`): Raw footage is uploaded. Each record has a `Language`, `Input_Type` (e.g., 'speech', 'interview'), and `Uploaded_Duration`.
+2. **Processing Phase** (`created_assets`): AI-generated assets (clips, summaries, chapters) are created from raw videos. One video can produce multiple assets of different `Output_Type` values.
+3. **Publication Phase** (`published_posts`): Assets are distributed to platforms. An asset is 'published' only if it appears in this table.
+4. **Distribution context** (`post_distribution`): Tracks where a post was published (`Published_Platform`).
+5. **Ownership context** (`raw_video_channel`, `users`, `channels`, `clients`): Videos are mapped to specific channels and users.
+
+## Dataset Statistics (Estimated from seed data)
+- **raw_videos**: ~10,683 rows. Sample: `{{"Video_ID": 1, "User_ID": 5, "Upload_Date": "2025-04-20", "Input_Type": "interview", "Language": "hi"}}`
+- **created_assets**: ~53,669 rows. Sample: `{{"Asset_ID": 1, "Video_ID": 7491, "Output_Type": "Full package", "Create_Date": "2025-06-22"}}`
+- **published_posts**: ~1,294 rows. Sample: `{{"Post_ID": 1, "Asset_ID": 49046, "Publish_Date": "2025-07-12"}}`
+- **Note**: Only ~2.4% of created assets are currently documented as published in the `published_posts` table.
 
 ## Tools
-1. **get_schema** — Full database schema (tables + columns). Call FIRST.
-2. **get_metric_definitions** — How business metrics are calculated.
-3. **search_relevant_schemas** — Semantic search for relevant tables/columns using CHESS RAG.
-4. **run_sql_query** — Execute a PostgreSQL SELECT query.
-5. **build_chart** — Visualize query results as a chart.
+1. **execute_exploration_queries_tool** — Evaluate distinct categories or data availability early.
+2. **run_sql_query** — Execute a PostgreSQL SELECT (retry on error).
+3. **build_chart** — Visualise query results.
 
-## Workflow for data questions
-1. get_schema → see available tables
-2. get_metric_definitions → understand the metric
-3. search_relevant_schemas → find the most relevant tables for your question
-4. run_sql_query → get data (retry on error — fix SQL based on the error message)
-5. build_chart → visualize results
-6. Write a clear, concise markdown summary
+## Execution Plan
+{plan_block}
 
-## Response rules
-- **Bold** key numbers and terms
-- Bullet points for multiple insights
-- Business language only — never show SQL or technical details to the user
-- Focus on trends, comparisons, top/bottom performers, actionable findings
-- Do NOT generate markdown images tags. NEVER try to embed the chart image using markdown text. A separate interactive chart widget is already built into the UI.
-- Do NOT wrap your response in <think> tags
+## Workflow
+1. Read the provided Schema and Metrics exactly as written.
+2. run_sql_query → retrieve data (fix and retry on error).
+3. build_chart → visualise.
+4. Write a VERY CONCISE business markdown summary (MAX 2-3 SENTENCES). Do not over-explain.
+
+## Response Rules
+- **Extreme Brevity**: Your final answer MUST be 2-3 sentences maximum. Get straight to the point. No fluff.
+- **Data Integrity**: ONLY use numbers and facts present in the tool output. Never estimate or hallucinate values.
+- **Sample Handling**: If `total_row_count` > provided `data` rows, explicitly state you are summarizing a sample.
+- **Chart Tool**: When calling `build_chart`, you MUST provide BOTH `x_column` and `y_columns` arguments. Never omit `y_columns`.
+- **Formatting**: **Bold** key numbers and terms.
+- **Privacy**: Never expose SQL or internal technical IDs to the user.
+- **No Images**: Do NOT generate markdown image tags.
+- **No Thinking**: Do NOT wrap final responses in <think> tags.
+
+## Critical SQL Rules
+- ALWAYS double-quote mixed-case column names: pp."Post_ID", rv."Input_Type", pd."Channel_Name"
+- ALWAYS double-quote mixed-case table aliases too when referencing columns
+- Keep SQL concise — avoid unnecessary subqueries
+- Cast text dates: to_date("Upload_Date", 'YYYY-MM-DD')
+
+## Common SQL Pitfalls (AVOID)
+- **Join Error**: Joining `published_posts.Asset_ID` directly to `raw_videos.Video_ID` (results in empty or wrong data). Use `created_assets` (ca) as the bridge: `pp.Asset_ID = ca.Asset_ID` AND `ca.Video_ID = rv.Video_ID`.
+- **Cartesian Product**: Adding a table like `raw_video_channel` or `channels` without an explicit `ON` join condition linking it to the rest of the query. Every table must be connected in a chain.
+- **Case Error**: Querying `Input_Type = 'Interview'`. Use `lower("Input_Type") = 'interview'`.
+- **Channel Confusion**: For published stats, use `pd."Channel_Name"` from `post_distribution`, NOT `raw_video_channel`.
+
+## Join Integrity Safety Check
+Before executing SQL, ask yourself: "Is every table linked to at least one other table in the chain?" If not, you will produce exaggerated numbers (Cartesian product).
+- Correct Chain: `raw_videos` (rv) → `created_assets` (ca) → `published_posts` (pp) → `post_distribution` (pd)
 {memory_block}"""
 
-
-_DEPLOYMENT = os.getenv("AZURE_DEPLOYMENT", "o4-mini")
-_O_SERIES = any(_DEPLOYMENT.lower().startswith(p) for p in ("o1", "o3", "o4"))
-
-_llm_kwargs: dict = dict(
-    azure_deployment=_DEPLOYMENT,
-    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT", ""),
-    api_key=os.getenv("AZURE_OPENAI_API_KEY", ""),
-    api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview"),
-    max_retries=3,
-)
-if not _O_SERIES:
-    _llm_kwargs["temperature"] = 0
-
-_llm = AzureChatOpenAI(**_llm_kwargs)
-_llm_with_tools = _llm.bind_tools(TOOLS)
-
+# ── LangGraph StateGraph ─────────────────────────────────────────────────────
 
 class _AgentState(TypedDict):
     messages: Annotated[list, add_messages]
 
-
 def _call_model(state: _AgentState):
-    resp = _llm_with_tools.invoke(state["messages"])
-    return {"messages": [resp]}
+    msg_count = len(state["messages"])
+    logger.info("--- LOOP ITER: Calling LLM (Context: %d messages) ---", msg_count)
+    start = time.time()
 
+    try:
+        resp = _llm_with_tools.invoke(state["messages"])
+        duration = time.time() - start
+        tool_count = len(getattr(resp, "tool_calls", []))
+        if tool_count:
+            for tc in resp.tool_calls:
+                args_preview = json.dumps(tc.get("args", {}))[:200]
+                logger.info(
+                    "--- TOOL CALL: [%s]\n  Args: %s",
+                    tc.get("name", "?"), args_preview,
+                )
+            logger.info("--- LOOP: %d tool call(s) in %.2fs ---", tool_count, duration)
+        else:
+            final_text = _clean(resp.content)[:400]
+            logger.info(
+                "--- LOOP FINAL ANSWER (%.2fs)\n%s\n--- END ---",
+                duration, final_text,
+            )
+        return {"messages": [resp]}
+    except Exception as e:
+        logger.error("--- LOOP ERROR: %s ---", e)
+        raise
 
 def _should_continue(state: _AgentState) -> str:
     last = state["messages"][-1]
@@ -289,9 +374,7 @@ def _should_continue(state: _AgentState) -> str:
         return "tools"
     return END
 
-
 _tool_node = ToolNode(TOOLS)
-
 _builder = StateGraph(_AgentState)
 _builder.add_node("agent", _call_model)
 _builder.add_node("tools", _tool_node)
@@ -300,89 +383,120 @@ _builder.add_conditional_edges("agent", _should_continue, {"tools": "tools", END
 _builder.add_edge("tools", "agent")
 _graph = _builder.compile()
 
+# ── Planner ───────────────────────────────────────────────────────────────────
 
-# ── Intent classification (fast, single LLM call) ───────────────────────────
+def _generate_plan(question: str, schema_text: str, metrics_text: str) -> str:
+    """Fast LLM pass to generate a numbered execution plan before the ReAct loop."""
+    logger.info("Planner: Generating plan for: %r", question[:80])
+    start = time.time()
 
-_fast = LLMClient.fast()
-_creative = LLMClient.creative()
+    prompt = (
+        "You are a data analytics planner. Given the user's question, database schema, and metric definitions, write a short numbered plan "
+        "(max 5 steps) describing exactly which database tables to query, which joins to use, "
+        "and what type of chart to generate. Be concise and precise — no explanation, just steps.\n\n"
+        f"Schema:\n{schema_text}\n\n"
+        f"Metric Rules:\n{metrics_text}\n\n"
+        f"Question: {question}\n\nPlan:"
+    )
+    try:
+        resp = _fast_client.invoke(prompt, label="planner")
+        plan = _clean(resp.content).strip()
+        duration = time.time() - start
+        steps = [l for l in plan.splitlines() if l.strip()]
+        logger.info("Planner: Done in %.2fs. Plan (%d steps):\n%s",
+                    duration, len(steps), plan)
+        return plan
+    except Exception as exc:
+        logger.warning("Planner: Failed (%s). Proceeding without plan.", exc)
+        return ""
 
+# ── Intent classifier ─────────────────────────────────────────────────────────
 
 def _classify(question: str) -> str:
-    logger.info("=== [classify] %r", question[:100])
+    logger.info("Classify: %r", question[:80])
     prompt = (
         "Reply with ONLY 'analytics' or 'conversational'.\n\n"
-        "'analytics' if the message asks about data, metrics, trends, counts, "
-        "comparisons, uploads, channels, clients, users, or anything needing "
-        "a database query.\n\n"
-        "'conversational' for greetings, small talk, how-to, thanks, or "
-        "non-data questions.\n\n"
+        "'analytics' = data, metrics, trends, counts, charts, uploads, channels, time, date, SQL needed.\n"
+        "'conversational' = greetings, thanks, how-to, small talk.\n\n"
         f"Message: {question}\n\nOne word:"
     )
-    raw = _fast.invoke(prompt, label="classify").content.lower()
-    intent = "analytics" if raw.strip().startswith("analytics") else "conversational"
-    logger.info("  -> %s", intent.upper())
+    raw = _fast_client.invoke(prompt, label="classify").content.lower().strip()
+    intent = "analytics" if raw.startswith("analytics") else "conversational"
+    logger.info("Intent → %s", intent.upper())
     return intent
 
-
-def _conversational_reply(question: str, memory: str = "") -> AgentResult:
+def _conversational_reply(question: str, memory: str = "", current_time: str = "") -> AgentResult:
     mem = f"\nConversation context:\n{memory}\n" if memory else ""
+    time_ctx = f"\nCurrent System Time: {current_time}\n" if current_time else ""
     prompt = (
-        "You are Frammer AI, an analytics assistant for a media production platform.\n"
-        f"{mem}\nUser: {question}\n\n"
-        "Respond helpfully in markdown. Do NOT use <think> tags."
+        "You are Frammer AI, an analytics assistant.\n"
+        f"{time_ctx}{mem}\nUser: {question}\n\nRespond in markdown. No <think> tags."
     )
-    resp = _creative.invoke(prompt, label="chat")
+    resp = _creat_client.invoke(prompt, label="chat")
     return AgentResult(
         intent="conversational",
-        response=_clean(resp.content),
-        actions=["Conversational response"],
+        response=_extract_response(resp.content),
+        actions=["Conversational reply"],
     )
 
-
-# ── Entry point ──────────────────────────────────────────────────────────────
+# ── Main entry point ──────────────────────────────────────────────────────────
 
 async def run_agent(question: str, working_memory: str = "") -> AgentResult:
-    """
-    Run the ReAct agent.
-
-    1. Classify intent (conversational → direct reply, analytics → tool loop).
-    2. For analytics: build a LangGraph message list with system prompt and
-       user question, then run the StateGraph loop until the LLM stops
-       calling tools and produces a final answer.
-    3. Extract chart_xml, chart_data, actions from per-request context.
-    """
-
+    from datetime import datetime
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
     intent = _classify(question)
     if intent == "conversational":
-        return _conversational_reply(question, working_memory)
+        return _conversational_reply(question, working_memory, current_time=now_str)
 
     ctx = _new_ctx()
     _ctx.set(ctx)
 
-    memory_block = f"\n## Conversation Memory\n{working_memory}" if working_memory else ""
-    system = SYSTEM_PROMPT.format(memory_block=memory_block)
+    # ── Context Injection ──────────────────────────────────────────────────
+    global _schema_cache
+    if not _schema_cache:
+        _schema_cache = get_frammer_schema()
+        
+    from tools.metric_definitions import METRIC_DICTIONARY, retrieve_metric_definitions
+    all_metrics = "\n".join(f"- **{k}**: {v}" for k, v in METRIC_DICTIONARY.items())
+    all_metrics += "\n\n" + retrieve_metric_definitions("XYZ_FAIL_TO_GET_RULES")
 
+    # ── Planning phase ────────────────────────────────────────────────────────
+    plan = ""
+    ctx["plan"] = plan
+    plan_block = "(Follow the workflow exactly. Generate SQL immediately.)"
+    memory_block = f"\n## Conversation Memory\n{working_memory}" if working_memory else ""
+
+    system = SYSTEM_PROMPT.format(schema_block=_schema_cache, metrics_block=all_metrics, plan_block=plan_block, memory_block=memory_block)
+    # Inject current time directly into the first message for immediate context
+    system += f"\n\n## System Environment\nCurrent System Time: {now_str}\n"
+    
     messages = [SystemMessage(content=system), HumanMessage(content=question)]
 
     try:
-        logger.info("=== [react] Starting for: %r", question[:100])
-
-        state = await _graph.ainvoke(
-            {"messages": messages},
-            config={"recursion_limit": 30},
-        )
+        logger.info("=== ReAct loop start ===")
+        state = await _graph.ainvoke({"messages": messages}, config={"recursion_limit": 30})
 
         response = ""
         for msg in reversed(state.get("messages", [])):
             if isinstance(msg, AIMessage) and not getattr(msg, "tool_calls", None):
-                response = _clean(msg.content)
+                response = _extract_response(msg.content)
                 break
 
         if not response:
             response = "I analyzed your query but couldn't produce a summary. Try rephrasing."
 
-        logger.info("=== Done. actions=%d chart=%s sql=%d chars",
-                     len(ctx["actions"]), bool(ctx["chart_xml"]), len(ctx["sql"]))
+        logger.info(
+            "=== AGENT DONE ===\n"
+            "  Actions  : %s\n"
+            "  Has chart: %s\n"
+            "  SQL len  : %d chars\n"
+            "  Response :\n%s",
+            ctx["actions"],
+            bool(ctx["chart_xml"]),
+            len(ctx["sql"]),
+            response[:600],
+        )
 
         return AgentResult(
             intent="analytics",
@@ -391,38 +505,19 @@ async def run_agent(question: str, working_memory: str = "") -> AgentResult:
             chart_xml=ctx["chart_xml"],
             chart_data=ctx["chart_data"],
             sql=ctx["sql"],
+            plan=plan,
         )
 
     except Exception as exc:
         err = str(exc)
-        logger.error("=== Agent error: %s", err, exc_info=True)
-
-        if "recursion" in err.lower() or "limit" in err.lower():
-            return AgentResult(
-                intent="analytics",
-                response="I reached the maximum analysis steps. Here's what I found so far.",
-                actions=ctx["actions"] + ["Reached step limit"],
-                chart_xml=ctx["chart_xml"],
-                chart_data=ctx["chart_data"],
-                sql=ctx["sql"],
-                error="Max iterations reached",
-            )
-
-        return AgentResult(
-            intent="analytics",
-            response=f"Sorry, an error occurred: {err}",
-            actions=ctx["actions"],
-            error=err,
-        )
-
-
-# ── CLI for testing ──────────────────────────────────────────────────────────
+        logger.error("=== Agent error: %s ===", err, exc_info=True)
+        return AgentResult(intent="analytics", response=f"Error: {err}", actions=ctx["actions"], error=err, plan=plan)
 
 if __name__ == "__main__":
     import asyncio
 
     async def _cli():
-        print("-- Frammer AI Agent CLI --\nType 'quit' to exit.\n")
+        print("-- Frammer AI (Anthropic Edition) --\nType 'quit' to exit.\n")
         loop = asyncio.get_event_loop()
         while True:
             q = (await loop.run_in_executor(None, input, "You: ")).strip()
@@ -431,9 +526,12 @@ if __name__ == "__main__":
             if not q:
                 continue
             r = await run_agent(q)
-            print(f"\n[{r.intent}] {r.response}")
+            print(f"\n[{r.intent}]")
+            if r.plan:
+                print(f"PLAN:\n{r.plan}\n")
+            print(f"RESPONSE:\n{r.response}")
             if r.actions:
-                print(f"  Actions: {r.actions}")
+                print(f"ACTIONS: {r.actions}")
             print()
 
     asyncio.run(_cli())

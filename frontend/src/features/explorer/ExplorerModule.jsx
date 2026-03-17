@@ -5,6 +5,64 @@ import { useApi } from '../../hooks/useApi';
 import { API_BASE } from '../../lib/constants';
 import { formatNumber } from '../../lib/formatters';
 
+function DualDateSlider({ startDate, endDate, onStartChange, onEndChange }) {
+  const now = new Date();
+  const SLIDER_MAX_DATE = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const SLIDER_MIN_DATE = new Date('2023-01-01').getTime();
+  const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+  const minVal = startDate ? new Date(startDate).getTime() : SLIDER_MIN_DATE;
+  const maxVal = endDate ? new Date(endDate).getTime() : SLIDER_MAX_DATE;
+
+  const getPercent = (val) => Math.max(0, Math.min(100, ((val - SLIDER_MIN_DATE) / (SLIDER_MAX_DATE - SLIDER_MIN_DATE)) * 100));
+
+  const handleMinChange = (e) => {
+    const val = Math.min(Number(e.target.value), maxVal - MS_PER_DAY);
+    const dateObj = new Date(val);
+    const yyyy = dateObj.getFullYear();
+    const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const dd = String(dateObj.getDate()).padStart(2, '0');
+    onStartChange(`${yyyy}-${mm}-${dd}`);
+  };
+
+  const handleMaxChange = (e) => {
+    const val = Math.max(Number(e.target.value), minVal + MS_PER_DAY);
+    const dateObj = new Date(val);
+    const yyyy = dateObj.getFullYear();
+    const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const dd = String(dateObj.getDate()).padStart(2, '0');
+    onEndChange(`${yyyy}-${mm}-${dd}`);
+  };
+
+  return (
+    <div className="relative w-full h-[38px] flex items-center">
+      <div className="absolute w-full h-1.5 bg-neutral-800 rounded-full"></div>
+      <div
+        className="absolute h-1.5 bg-orange-500 rounded-full"
+        style={{ left: `${getPercent(minVal)}%`, width: `${getPercent(maxVal) - getPercent(minVal)}%` }}
+      ></div>
+      <input
+        type="range"
+        min={SLIDER_MIN_DATE}
+        max={SLIDER_MAX_DATE}
+        step={MS_PER_DAY}
+        value={minVal}
+        onChange={handleMinChange}
+        className="absolute w-full appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border-[3px] [&::-webkit-slider-thumb]:border-orange-500 [&::-webkit-slider-thumb]:appearance-none z-20 cursor-pointer"
+      />
+      <input
+        type="range"
+        min={SLIDER_MIN_DATE}
+        max={SLIDER_MAX_DATE}
+        step={MS_PER_DAY}
+        value={maxVal}
+        onChange={handleMaxChange}
+        className="absolute w-full appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border-[3px] [&::-webkit-slider-thumb]:border-orange-500 [&::-webkit-slider-thumb]:appearance-none z-20 cursor-pointer"
+      />
+    </div>
+  );
+}
+
 export default function ExplorerModule({ authUser }) {
   const canUseRawExplorer = authUser?.role === 'website_admin';
 
@@ -27,8 +85,8 @@ export default function ExplorerModule({ authUser }) {
 
   // State Management
   const [tableName, setTableName] = useState('');
-  const [dim1, setDim1] = useState('channel');
-  const [dim2, setDim2] = useState('language');
+  const [dim1, setDim1] = useState('output_type');
+  const [dim2, setDim2] = useState('input_type');
   const [measure, setMeasure] = useState('uploaded_videos');
   const [timeGrain, setTimeGrain] = useState('none');
   const [dateField, setDateField] = useState('upload_date');
@@ -44,6 +102,7 @@ export default function ExplorerModule({ authUser }) {
   const [selectedDim2Values, setSelectedDim2Values] = useState(['all']);
   const [isDim2DropdownOpen, setIsDim2DropdownOpen] = useState(false);
   const [dim2SearchTerm, setDim2SearchTerm] = useState('');
+  const [hasPreselectedDim2, setHasPreselectedDim2] = useState(false);
 
   // States for Date Filtering
   const [startDate, setStartDate] = useState('');
@@ -56,6 +115,9 @@ export default function ExplorerModule({ authUser }) {
   const [rowLimit, setRowLimit] = useState(120);
   const [columnFilters, setColumnFilters] = useState({});
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'default' }); // 'asc', 'desc', 'default'
+
+  // Dimension Analysis Table Upgrades
+  const [dimTableSort, setDimTableSort] = useState({ key: null, direction: 'default' });
 
   // Default table selection - filter out app_users
   const safeTables = useMemo(() => {
@@ -71,7 +133,8 @@ export default function ExplorerModule({ authUser }) {
     const val = e.target.value;
     setDim1(val);
     if (val === dim2) {
-      setDim2('none');
+      const availableDim2 = (dimsData?.dimensions || []).find(d => d.key !== val && d.key !== 'channel');
+      setDim2(availableDim2 ? availableDim2.key : '');
       setSelectedDim2Values(['all']);
     }
   };
@@ -79,6 +142,7 @@ export default function ExplorerModule({ authUser }) {
   const handleDim2Change = (e) => {
     setDim2(e.target.value);
     setSelectedDim2Values(['all']); // Reset the dim2 filter when the dimension changes
+    setHasPreselectedDim2(false); // Enable pre-selection for the new dimension
   };
 
   // Custom Dropdown Toggles
@@ -98,14 +162,15 @@ export default function ExplorerModule({ authUser }) {
   };
 
   const toggleDim2Value = (val) => {
-    if (val === 'all') {
+    const strVal = String(val);
+    if (strVal === 'all') {
       setSelectedDim2Values(['all']);
     } else {
       let newSelection = selectedDim2Values.filter(v => v !== 'all');
-      if (newSelection.includes(val)) {
-        newSelection = newSelection.filter(v => v !== val);
+      if (newSelection.includes(strVal)) {
+        newSelection = newSelection.filter(v => v !== strVal);
       } else {
-        newSelection.push(val);
+        newSelection.push(strVal);
       }
       if (newSelection.length === 0) newSelection = ['all'];
       setSelectedDim2Values(newSelection);
@@ -178,55 +243,178 @@ export default function ExplorerModule({ authUser }) {
 
   const multi = useApi(multiQuery, [dim1, dim2, measure, effectiveTimeGrain, dateField, dim1Value, channelsParam, startDate, endDate]);
 
+  // Pre-select first 4 values for Dim2 when data loads
+  useEffect(() => {
+    if (!hasPreselectedDim2 && multi.dataUrl === multiQuery && multi.data?.dim2Values?.length > 0) {
+      const firstFour = multi.data.dim2Values.slice(0, 4).map(String);
+      setSelectedDim2Values(firstFour);
+      setHasPreselectedDim2(true);
+    }
+  }, [multi.data?.dim2Values, multi.dataUrl, multiQuery, hasPreselectedDim2]);
+
+  // Helper for persistent colors
+  const getStringColor = (str) => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const hue = Math.abs(hash) % 360;
+    return {
+      bg: `hsla(${hue}, 70%, 55%, 0.6)`,
+      border: `hsla(${hue}, 70%, 55%, 1)`
+    };
+  };
+
   // Data Formatting
   const matrixChartData = useMemo(() => {
     let rows = multi.data?.matrixRows || [];
 
     // Apply Frontend Dim2 Filter
     if (!selectedDim2Values.includes('all')) {
-      rows = rows.filter(r => selectedDim2Values.includes(r.dim2));
+      rows = rows.filter(r => selectedDim2Values.includes(String(r.dim2)));
     }
 
     const dim1Vals = [...new Set(rows.map((r) => r.dim1))];
+
+    if (dim2 === 'none') {
+      const lookup = new Map();
+      rows.forEach(r => {
+        lookup.set(r.dim1, (lookup.get(r.dim1) || 0) + Number(r.value || 0));
+      });
+      return {
+        labels: dim1Vals,
+        datasets: [{
+          label: 'Total',
+          data: dim1Vals.map((d1) => lookup.get(d1) || 0),
+          backgroundColor: '#3b82f6',
+          borderColor: '#2563eb',
+          borderWidth: 1,
+        }]
+      };
+    }
+
     const dim2Vals = [...new Set(rows.map((r) => r.dim2))];
     const lookup = new Map(rows.map((r) => [`${r.dim1}|||${r.dim2}`, Number(r.value || 0)]));
 
     return {
       labels: dim1Vals,
-      datasets: dim2Vals.map((d2, idx) => ({
-        label: d2,
-        data: dim1Vals.map((d1) => lookup.get(`${d1}|||${d2}`) || 0),
-        backgroundColor: `hsla(${(idx * 47) % 360}, 70%, 55%, 0.6)`,
-        borderColor: `hsla(${(idx * 47) % 360}, 70%, 55%, 1)`,
-        borderWidth: 1,
-      })),
+      datasets: dim2Vals.map((d2) => {
+        const colors = getStringColor(String(d2));
+        return {
+          label: d2,
+          data: dim1Vals.map((d1) => lookup.get(`${d1}|||${d2}`) || 0),
+          backgroundColor: colors.bg,
+          borderColor: colors.border,
+          borderWidth: 1,
+        }
+      }),
     };
-  }, [multi.data, selectedDim2Values]);
+  }, [multi.data, selectedDim2Values, dim2]);
 
   const timeSeriesChartData = useMemo(() => {
     let rows = multi.data?.timeSeriesRows || [];
 
     // Apply Frontend Dim2 Filter
     if (!selectedDim2Values.includes('all')) {
-      rows = rows.filter(r => selectedDim2Values.includes(r.dim2));
+      rows = rows.filter(r => selectedDim2Values.includes(String(r.dim2)));
     }
 
     const periods = [...new Set(rows.map((r) => String(r.period).slice(0, 10)))];
+
+    if (dim2 === 'none') {
+      const lookup = new Map();
+      rows.forEach(r => {
+        const p = String(r.period).slice(0, 10);
+        lookup.set(p, (lookup.get(p) || 0) + Number(r.value || 0));
+      });
+      return {
+        labels: periods,
+        datasets: [{
+          label: 'Total',
+          data: periods.map((p) => lookup.get(p) || 0),
+          backgroundColor: '#3b82f6',
+          borderColor: '#2563eb',
+          borderWidth: 1,
+          stack: 'stacked',
+        }]
+      };
+    }
+
     const dim2Vals = [...new Set(rows.map((r) => r.dim2))];
     const lookup = new Map(rows.map((r) => [`${String(r.period).slice(0, 10)}|||${r.dim2}`, Number(r.value || 0)]));
 
     return {
       labels: periods,
-      datasets: dim2Vals.map((d2, idx) => ({
-        label: d2,
-        data: periods.map((p) => lookup.get(`${p}|||${d2}`) || 0),
-        backgroundColor: `hsla(${(idx * 47) % 360}, 70%, 55%, 0.55)`,
-        borderColor: `hsla(${(idx * 47) % 360}, 70%, 55%, 1)`,
-        borderWidth: 1,
-        stack: 'stacked',
-      })),
+      datasets: dim2Vals.map((d2) => {
+        const colors = getStringColor(String(d2));
+        return {
+          label: d2,
+          data: periods.map((p) => lookup.get(`${p}|||${d2}`) || 0),
+          backgroundColor: colors.bg,
+          borderColor: colors.border,
+          borderWidth: 1,
+          stack: 'stacked',
+        }
+      }),
     };
-  }, [multi.data, selectedDim2Values]);
+  }, [multi.data, selectedDim2Values, dim2]);
+
+  const filteredTotalRecords = useMemo(() => {
+    if (effectiveTimeGrain === 'none') {
+      const rows = multi.data?.matrixRows || [];
+      if (selectedDim2Values.includes('all')) return rows.length;
+      return rows.filter(r => selectedDim2Values.includes(String(r.dim2))).length;
+    } else {
+      const rows = multi.data?.timeSeriesRows || [];
+      if (selectedDim2Values.includes('all')) return rows.length;
+      return rows.filter(r => selectedDim2Values.includes(String(r.dim2))).length;
+    }
+  }, [multi.data, selectedDim2Values, effectiveTimeGrain]);
+
+  // Sorted Dimension Data Analysis Table Data
+  const sortedDimensionRows = useMemo(() => {
+    let baseRows = [];
+    if (effectiveTimeGrain === 'none') {
+      baseRows = multi.data?.matrixRows || [];
+    } else {
+      baseRows = multi.data?.timeSeriesRows || [];
+    }
+
+    // 1. Apply frontend dim2 filter
+    if (!selectedDim2Values.includes('all')) {
+      baseRows = baseRows.filter(r => selectedDim2Values.includes(String(r.dim2)));
+    }
+
+    // 2. Apply Sorting
+    if (!dimTableSort.key || dimTableSort.direction === 'default') return baseRows;
+
+    return [...baseRows].sort((a, b) => {
+      let valA = a[dimTableSort.key];
+      let valB = b[dimTableSort.key];
+
+      // Special formatting/parsing for period dates if sorting by period
+      if (dimTableSort.key === 'period') {
+        valA = valA ? String(valA).slice(0, 10) : '';
+        valB = valB ? String(valB).slice(0, 10) : '';
+      }
+
+      if (valA == null) return 1;
+      if (valB == null) return -1;
+
+      const numA = Number(valA);
+      const numB = Number(valB);
+
+      const isNumericSort = !isNaN(numA) && !isNaN(numB) && valA !== '' && valB !== '';
+      const isDateSort = !isNumericSort && !isNaN(Date.parse(valA)) && !isNaN(Date.parse(valB));
+
+      let comp = 0;
+      if (isNumericSort) comp = numA - numB;
+      else if (isDateSort) comp = new Date(valA) - new Date(valB);
+      else comp = String(valA).localeCompare(String(valB));
+
+      return dimTableSort.direction === 'asc' ? comp : -comp;
+    });
+  }, [multi.data, selectedDim2Values, effectiveTimeGrain, dimTableSort]);
 
   // Filtered Raw Data
   const filteredRowsData = useMemo(() => {
@@ -338,10 +526,10 @@ export default function ExplorerModule({ authUser }) {
           {viewTab === 'multi' && (
             <>
               {/* Row 1: Main Dropdowns */}
-              <div className="flex flex-row gap-4 items-end flex-wrap relative">
+              <div className="flex flex-row gap-4 items-end flex-wrap relative w-full">
 
                 {/* Time Analysis Toggle */}
-                <div className="flex flex-col gap-2 shrink-0 justify-center">
+                <div className="flex flex-col gap-2 flex-1 min-w-[100px] max-w-[120px] justify-center">
                   <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold mb-1 cursor-pointer select-none" onClick={handleTimeAnalysisToggle}>Time Analysis</label>
                   <button
                     onClick={handleTimeAnalysisToggle}
@@ -352,12 +540,12 @@ export default function ExplorerModule({ authUser }) {
                 </div>
 
                 {/* Channel Filter */}
-                <div className="flex flex-col gap-1 relative shrink-0">
+                <div className="flex flex-col gap-1 relative flex-1 min-w-[140px]">
                   <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">Filter Channels</label>
 
                   <div
                     onClick={() => setIsChannelDropdownOpen(!isChannelDropdownOpen)}
-                    className={`bg-[#0A0A0A] border rounded px-3 py-2 text-xs text-white min-w-[140px] max-w-[180px] flex items-center justify-between cursor-pointer select-none transition-colors ${isChannelDropdownOpen ? 'border-neutral-500' : 'border-neutral-700 hover:border-neutral-600'}`}
+                    className={`w-full bg-[#0A0A0A] border rounded px-3 py-2 text-xs text-white max-w-none flex items-center justify-between cursor-pointer select-none transition-colors ${isChannelDropdownOpen ? 'border-neutral-500' : 'border-neutral-700 hover:border-neutral-600'}`}
                   >
                     <span className="truncate pr-2">{getChannelButtonLabel()}</span>
                     <ChevronDown size={14} className={`text-neutral-500 transition-transform ${isChannelDropdownOpen ? 'rotate-180' : ''}`} />
@@ -366,7 +554,7 @@ export default function ExplorerModule({ authUser }) {
                   {isChannelDropdownOpen && (
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setIsChannelDropdownOpen(false)} />
-                      <div className={`absolute top-[100%] left-0 mt-1 w-[220px] bg-[#111111] border border-neutral-700 rounded-lg shadow-2xl z-50 max-h-[280px] overflow-y-auto overflow-x-hidden ${darkScrollbar} py-1 flex flex-col`}>
+                      <div className={`absolute top-[100%] left-0 mt-1 w-[220px] bg-[#111111] border border-neutral-700 rounded-lg shadow-2xl z-50 max-h-[280px] overflow-y-auto overflow-x-hidden ${darkScrollbar} pb-1 flex flex-col`}>
                         <div className="sticky top-0 bg-[#111111] z-10 px-2 py-2 border-b border-neutral-800">
                           <div className="relative">
                             <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-500" />
@@ -407,29 +595,29 @@ export default function ExplorerModule({ authUser }) {
                   )}
                 </div>
 
-                <div className="flex flex-col gap-1 shrink-0 min-w-[120px]">
-                  <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">Dimension 1</label>
+                <div className="flex flex-col gap-1 flex-1 min-w-[120px]">
+                  <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">Analyze By (X-Axis)</label>
                   <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-xs text-white w-full outline-none" value={dim1} onChange={handleDim1Change}>
                     {(dimsData?.dimensions || []).map((d) => <option key={`d1-${d.key}`} value={d.key}>{d.label}</option>)}
                   </select>
                 </div>
 
-                <div className="flex flex-col gap-1 shrink-0 min-w-[120px]">
-                  <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">{isTimeAnalysisOn ? 'Breakdown By' : 'Dimension 2'}</label>
+                <div className="flex flex-col gap-1 flex-1 min-w-[120px]">
+                  <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">{isTimeAnalysisOn ? 'Split By (legend)' : 'Segment By (legend)'}</label>
                   <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-xs text-white w-full outline-none" value={dim2} onChange={handleDim2Change}>
-                    <option value="none">None</option>
+                    <option value="none">None (Overall Data)</option>
                     {(dimsData?.dimensions || []).filter(d => d.key !== dim1 && d.key !== 'channel').map((d) => <option key={`d2-${d.key}`} value={d.key}>{d.label}</option>)}
                   </select>
                 </div>
 
                 {/* Dim 2 Dynamic Filter automatically placed strictly next to Dimension 2 selection */}
                 {dim2 !== 'none' && (
-                  <div className="flex flex-col gap-1 relative shrink-0">
-                    <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">Filter {isTimeAnalysisOn ? 'Breakdown' : activeDim2Label}</label>
+                  <div className="flex flex-col gap-1 relative flex-1 min-w-[140px]">
+                    <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">{isTimeAnalysisOn ? 'Breakdown' : activeDim2Label}</label>
 
                     <div
                       onClick={() => setIsDim2DropdownOpen(!isDim2DropdownOpen)}
-                      className={`bg-[#0A0A0A] border rounded px-3 py-2 text-xs text-white min-w-[140px] max-w-[180px] flex items-center justify-between cursor-pointer select-none transition-colors ${isDim2DropdownOpen ? 'border-neutral-500' : 'border-neutral-700 hover:border-neutral-600'}`}
+                      className={`w-full bg-[#0A0A0A] border rounded px-3 py-2 text-xs text-white max-w-none flex items-center justify-between cursor-pointer select-none transition-colors ${isDim2DropdownOpen ? 'border-neutral-500' : 'border-neutral-700 hover:border-neutral-600'}`}
                     >
                       <span className="truncate pr-2">{getDim2ButtonLabel()}</span>
                       <ChevronDown size={14} className={`text-neutral-500 transition-transform ${isDim2DropdownOpen ? 'rotate-180' : ''}`} />
@@ -438,7 +626,7 @@ export default function ExplorerModule({ authUser }) {
                     {isDim2DropdownOpen && (
                       <>
                         <div className="fixed inset-0 z-40" onClick={() => setIsDim2DropdownOpen(false)} />
-                        <div className={`absolute top-[100%] left-0 mt-1 w-[220px] bg-[#111111] border border-neutral-700 rounded-lg shadow-2xl z-50 max-h-[280px] overflow-y-auto overflow-x-hidden ${darkScrollbar} py-1 flex flex-col`}>
+                        <div className={`absolute top-[100%] left-0 mt-1 w-[220px] bg-[#111111] border border-neutral-700 rounded-lg shadow-2xl z-50 max-h-[280px] overflow-y-auto overflow-x-hidden ${darkScrollbar} pb-1 flex flex-col`}>
                           <div className="sticky top-0 bg-[#111111] z-10 px-2 py-2 border-b border-neutral-800">
                             <div className="relative">
                               <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-500" />
@@ -464,7 +652,7 @@ export default function ExplorerModule({ authUser }) {
                           {(multi.data?.dim2Values || [])
                             .filter(val => String(val).toLowerCase().includes(dim2SearchTerm.toLowerCase()))
                             .map((val) => {
-                              const isSelected = selectedDim2Values.includes(val);
+                              const isSelected = selectedDim2Values.includes(String(val));
                               return (
                                 <div key={`filter-dim2-${val}`} onClick={() => toggleDim2Value(val)} className="flex items-center px-3 py-2 text-xs cursor-pointer hover:bg-neutral-800 transition-colors shrink-0">
                                   <div className={`w-4 h-4 rounded border mr-2 flex items-center justify-center shrink-0 ${isSelected ? 'bg-orange-500 border-orange-500' : 'border-neutral-600 bg-[#0A0A0A]'}`}>
@@ -483,9 +671,10 @@ export default function ExplorerModule({ authUser }) {
                   </div>
                 )}
 
+
                 {!isTimeAnalysisOn && (
-                  <div className="flex flex-col gap-1 shrink-0 min-w-[140px]">
-                    <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">Measure</label>
+                  <div className="flex flex-col gap-1 flex-1 min-w-[140px]">
+                    <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">Measure (Y-Axis)</label>
                     <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-xs text-white w-full outline-none" value={measure} onChange={(e) => setMeasure(e.target.value)}>
                       {(dimsData?.measures || []).map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
                     </select>
@@ -494,7 +683,7 @@ export default function ExplorerModule({ authUser }) {
 
                 {/* Time Grain: Hidden when Time Analysis is OFF */}
                 {isTimeAnalysisOn && (
-                  <div className="flex flex-col gap-1 shrink-0 min-w-[100px]">
+                  <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
                     <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">Time Grain</label>
                     <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-xs text-white w-full outline-none" value={timeGrain} onChange={(e) => setTimeGrain(e.target.value)}>
                       <option value="day">By day</option>
@@ -506,9 +695,9 @@ export default function ExplorerModule({ authUser }) {
               </div>
 
               {/* Row 2: Date Pickers Now Always Visible */}
-              <div className="flex flex-row gap-4 items-end pt-4 border-t border-neutral-800/50 mt-2">
+              <div className="flex flex-row gap-4 items-end pt-4 border-t border-neutral-800/50 mt-2 w-full flex-wrap">
                 {isTimeAnalysisOn && (
-                  <div className="flex flex-col gap-1 shrink-0 min-w-[140px]">
+                  <div className="flex flex-col gap-1 flex-1 min-w-[140px]">
                     <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">Date Field</label>
                     <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-1.5 text-xs text-white w-full outline-none" value={dateField} onChange={(e) => setDateField(e.target.value)}>
                       <option value="upload_date">Upload Date</option>
@@ -517,21 +706,44 @@ export default function ExplorerModule({ authUser }) {
                     </select>
                   </div>
                 )}
-                <div className="flex flex-col gap-1 shrink-0 min-w-[120px]">
-                  <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">Start Date</label>
+                <div
+                  className="flex flex-col gap-1 flex-1 min-w-[120px] cursor-pointer"
+                  onClick={(e) => {
+                    const input = e.currentTarget.querySelector('input');
+                    if (input && e.target.tagName !== 'INPUT') {
+                      try { input.showPicker(); } catch (err) { }
+                    }
+                  }}
+                >
+                  <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold cursor-pointer">Date Range from</label>
                   <input
                     type="date"
-                    className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-1.5 text-xs text-neutral-300 w-full outline-none focus:border-orange-500 transition-colors [&::-webkit-calendar-picker-indicator]:invert-[0.8]"
+                    className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-1.5 text-xs text-neutral-300 w-full outline-none focus:border-orange-500 transition-colors [&::-webkit-calendar-picker-indicator]:invert-[0.8] cursor-pointer"
                     style={{ colorScheme: 'dark' }}
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
                   />
                 </div>
-                <div className="flex flex-col gap-1 shrink-0 min-w-[120px]">
-                  <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">End Date</label>
+
+                {/* Visual Range Slider */}
+                <div className="flex flex-col gap-1 flex-[2] min-w-[200px] justify-center px-2">
+                  <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold invisible">Timeline</label>
+                  <DualDateSlider startDate={startDate} endDate={endDate} onStartChange={setStartDate} onEndChange={setEndDate} />
+                </div>
+
+                <div
+                  className="flex flex-col gap-1 flex-1 min-w-[120px] cursor-pointer"
+                  onClick={(e) => {
+                    const input = e.currentTarget.querySelector('input');
+                    if (input && e.target.tagName !== 'INPUT') {
+                      try { input.showPicker(); } catch (err) { }
+                    }
+                  }}
+                >
+                  <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold cursor-pointer">to</label>
                   <input
                     type="date"
-                    className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-1.5 text-xs text-neutral-300 w-full outline-none focus:border-orange-500 transition-colors [&::-webkit-calendar-picker-indicator]:invert-[0.8]"
+                    className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-1.5 text-xs text-neutral-300 w-full outline-none focus:border-orange-500 transition-colors [&::-webkit-calendar-picker-indicator]:invert-[0.8] cursor-pointer"
                     style={{ colorScheme: 'dark' }}
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
@@ -586,83 +798,217 @@ export default function ExplorerModule({ authUser }) {
         {/* Dynamic Views */}
         {viewTab === 'multi' && (
           <div className="space-y-6 pb-8">
-            {/* Chart Area */}
-            <div className="bg-[#111111] border border-neutral-800 rounded-xl p-4">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-300 mb-4 flex items-center gap-2">
-                <Activity size={16} className="text-blue-500" /> Visual Analysis
-              </h3>
-              {multi.loading && <div className="text-neutral-500 text-sm py-10 text-center">Loading data...</div>}
-              {multi.error && <div className="text-red-400 text-sm py-10 text-center">{multi.error}</div>}
-              {!multi.loading && !multi.error && (
-                <div className="flex flex-col w-full h-full relative">
-                  {/* Pinned custom legend */}
-                  <div className="flex flex-wrap items-center justify-center gap-4 mb-4 z-10 sticky left-0 w-full px-4">
-                    {(effectiveTimeGrain === 'none' ? matrixChartData.datasets : timeSeriesChartData.datasets).map((ds, idx) => (
-                      <div key={idx} className="flex items-center gap-1.5 text-xs text-neutral-300">
-                        <span className="w-3 h-3 rounded-full" style={{ backgroundColor: ds.borderColor }}></span>
-                        <span>{ds.label}</span>
-                      </div>
-                    ))}
+            {/* Top Row: Visual Analysis & Metrics */}
+            <div className="flex flex-col lg:flex-row gap-6">
+              {/* Chart Area */}
+              <div className="flex-1 bg-[#111111] border border-neutral-800 rounded-xl p-4 min-w-0">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-300 mb-4 flex items-center gap-2">
+                  <Activity size={16} className="text-blue-500" /> Visual Analysis
+                </h3>
+                {multi.loading ? (
+                  <div className="flex flex-col items-center justify-center h-[360px] w-full bg-[#0A0A0A] border-2 border-dashed border-neutral-800 rounded-xl animate-pulse">
+                    <div className="w-8 h-8 border-4 border-neutral-700 border-t-orange-500 rounded-full animate-spin mb-4"></div>
+                    <span className="text-xs text-neutral-500">Loading new data...</span>
                   </div>
+                ) : multi.error ? (
+                  <div className="text-red-400 text-sm py-10 text-center">{multi.error}</div>
+                ) : (
+                  <div className="flex flex-col w-full h-full relative">
+                    {/* Pinned custom legend */}
+                    {dim2 !== 'none' && (
+                      <div className="flex flex-wrap items-center justify-center gap-4 mb-4 z-10 sticky left-0 w-full px-4">
+                        {(effectiveTimeGrain === 'none' ? matrixChartData.datasets : timeSeriesChartData.datasets).map((ds, idx) => (
+                          <div key={idx} className="flex items-center gap-1.5 text-xs text-neutral-300">
+                            <span className="w-3 h-3 rounded-full" style={{ backgroundColor: ds.borderColor }}></span>
+                            <span>{ds.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
 
-                  {/* Scrollable Chart Area or Empty State */}
-                  {(effectiveTimeGrain === 'none' ? matrixChartData.labels.length === 0 : timeSeriesChartData.labels.length === 0) ? (
-                    <div className="flex flex-col items-center justify-center h-[360px] w-full text-neutral-500 bg-[#0A0A0A] border-2 border-dashed border-neutral-800 rounded-xl">
-                      <Table size={24} className="mb-2 text-neutral-600" />
-                      <span className="text-xs">No data available for the selected filters</span>
+                    {/* Scrollable Chart Area or Empty State */}
+                    {(effectiveTimeGrain === 'none' ? matrixChartData.labels.length === 0 : timeSeriesChartData.labels.length === 0) ? (
+                      <div className="flex flex-col items-center justify-center h-[360px] w-full text-neutral-500 bg-[#0A0A0A] border-2 border-dashed border-neutral-800 rounded-xl">
+                        <Table size={24} className="mb-2 text-neutral-600" />
+                        <span className="text-xs">No data available for the selected filters</span>
+                      </div>
+                    ) : (
+                      <div className={`w-full overflow-x-auto overflow-y-hidden ${darkScrollbar}`}>
+                        <div
+                          style={{
+                            minWidth: Math.max(100, (effectiveTimeGrain === 'none' ? matrixChartData.labels.length : timeSeriesChartData.labels.length) * 40) + 'px',
+                            height: '360px',
+                            position: 'relative'
+                          }}
+                        >
+                          {effectiveTimeGrain === 'none'
+                            ? <Bar data={matrixChartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }} />
+                            : <Line data={timeSeriesChartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { stacked: true }, y: { stacked: true } } }} />
+                          }
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Relocated Metrics Sidebar */}
+              <div className="w-full lg:w-[280px] shrink-0">
+                <div className="bg-[#111111] border border-neutral-800 rounded-xl p-4 flex flex-col gap-4 h-full">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-400 mb-2">Metrics</h3>
+                  {multi.loading ? (
+                    <div className="flex flex-col gap-4 animate-pulse">
+                      {[1, 2, 3, 4].map(i => (
+                        <div key={i} className="bg-[#0A0A0A] border border-neutral-800 rounded-lg p-4 h-[76px]">
+                          <div className="w-20 h-2 bg-neutral-800 rounded mb-3"></div>
+                          <div className="w-16 h-5 bg-neutral-800 rounded"></div>
+                        </div>
+                      ))}
                     </div>
                   ) : (
-                    <div className={`w-full overflow-x-auto overflow-y-hidden ${darkScrollbar}`}>
-                      <div
-                        style={{
-                          minWidth: Math.max(100, (effectiveTimeGrain === 'none' ? matrixChartData.labels.length : timeSeriesChartData.labels.length) * 40) + 'px',
-                          height: '360px',
-                          position: 'relative'
-                        }}
-                      >
-                        {effectiveTimeGrain === 'none'
-                          ? <Bar data={matrixChartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }} />
-                          : <Line data={timeSeriesChartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { stacked: true }, y: { stacked: true } } }} />
-                        }
+                    <div className="grid grid-cols-2 lg:grid-cols-1 gap-4">
+                      <div className="bg-[#0A0A0A] border border-neutral-800 border-l-4 border-l-orange-500 rounded-lg p-4">
+                        <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold mb-1">Total Records</div>
+                        <div className="text-2xl font-bold">{filteredTotalRecords}</div>
+                      </div>
+                      <div className="bg-[#0A0A0A] border border-neutral-800 border-l-4 border-l-green-500 rounded-lg p-4">
+                        <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold mb-1">Active Measure</div>
+                        <div className="text-lg font-bold text-neutral-200 capitalize">{measure.replace('_', ' ')}</div>
+                      </div>
+                      <div className="bg-[#0A0A0A] border border-neutral-800 border-l-4 border-l-blue-500 rounded-lg p-4">
+                        <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold mb-1">Primary Dim</div>
+                        <div className="text-lg font-bold text-neutral-200 capitalize">{dim1}</div>
+                      </div>
+                      <div className="bg-[#0A0A0A] border border-neutral-800 border-l-4 border-l-purple-500 rounded-lg p-4">
+                        <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold mb-1">{isTimeAnalysisOn ? 'Split By' : 'Secondary Dim'}</div>
+                        <div className="text-lg font-bold text-neutral-200 capitalize">{dim2}</div>
                       </div>
                     </div>
                   )}
                 </div>
-              )}
+              </div>
             </div>
 
             {/* Dimension Analysis Data Table */}
-            <div className="bg-[#111111] border border-neutral-800 rounded-xl overflow-hidden mt-6">
+            <div className="bg-[#111111] border border-neutral-800 rounded-xl overflow-hidden">
               <div className="p-4 border-b border-neutral-800">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-300 flex items-center gap-2">
                   <Table size={16} className="text-orange-500" /> Dimension Analysis Data
                 </h3>
               </div>
-              {!multi.loading && !multi.error && (
+              {multi.loading ? (
+                <div className="p-4 flex flex-col gap-3 animate-pulse">
+                  {[...Array(5)].map((_, i) => (
+                    <div key={i} className="h-8 bg-neutral-800/50 rounded w-full"></div>
+                  ))}
+                </div>
+              ) : multi.error ? (
+                <div className="text-red-400 text-sm py-10 text-center">{multi.error}</div>
+              ) : (
                 <div className={`overflow-x-auto max-h-[420px] ${darkScrollbar}`}>
                   <table className="min-w-full text-xs text-left border-collapse whitespace-nowrap">
                     <thead className="bg-[#0A0A0A] sticky top-0 z-10">
                       <tr>
                         {effectiveTimeGrain === 'none' ? (
                           <>
-                            <th className="px-4 py-3 font-semibold text-neutral-400 uppercase border-b border-neutral-800">{dim1}</th>
-                            {dim2 !== 'none' && <th className="px-4 py-3 font-semibold text-neutral-400 uppercase border-b border-neutral-800">{dim2}</th>}
-                            <th className="px-4 py-3 font-semibold text-neutral-400 uppercase border-b border-neutral-800 text-right">Value</th>
+                            <th className="px-4 py-3 font-semibold text-neutral-400 uppercase border-b border-neutral-800">
+                              <div
+                                className="flex items-center gap-2 cursor-pointer hover:text-white transition-colors"
+                                onClick={() => setDimTableSort(p => ({
+                                  key: 'dim1',
+                                  direction: p.key === 'dim1' ? (p.direction === 'asc' ? 'desc' : (p.direction === 'desc' ? 'default' : 'asc')) : 'asc'
+                                }))}
+                              >
+                                {dim1}
+                                {dimTableSort.key === 'dim1' ? (dimTableSort.direction === 'asc' ? <ArrowUp size={12} className="text-orange-500" /> : <ArrowDown size={12} className="text-orange-500" />) : <ArrowUpDown size={12} />}
+                              </div>
+                            </th>
+                            {dim2 !== 'none' && (
+                              <th className="px-4 py-3 font-semibold text-neutral-400 uppercase border-b border-neutral-800">
+                                <div
+                                  className="flex items-center gap-2 cursor-pointer hover:text-white transition-colors"
+                                  onClick={() => setDimTableSort(p => ({
+                                    key: 'dim2',
+                                    direction: p.key === 'dim2' ? (p.direction === 'asc' ? 'desc' : (p.direction === 'desc' ? 'default' : 'asc')) : 'asc'
+                                  }))}
+                                >
+                                  {dim2}
+                                  {dimTableSort.key === 'dim2' ? (dimTableSort.direction === 'asc' ? <ArrowUp size={12} className="text-orange-500" /> : <ArrowDown size={12} className="text-orange-500" />) : <ArrowUpDown size={12} />}
+                                </div>
+                              </th>
+                            )}
+                            <th className="px-4 py-3 font-semibold text-neutral-400 uppercase border-b border-neutral-800 text-right">
+                              <div
+                                className="flex items-center justify-end gap-2 cursor-pointer hover:text-white transition-colors"
+                                onClick={() => setDimTableSort(p => ({
+                                  key: 'value',
+                                  direction: p.key === 'value' ? (p.direction === 'asc' ? 'desc' : (p.direction === 'desc' ? 'default' : 'asc')) : 'asc'
+                                }))}
+                              >
+                                Value
+                                {dimTableSort.key === 'value' ? (dimTableSort.direction === 'asc' ? <ArrowUp size={12} className="text-orange-500" /> : <ArrowDown size={12} className="text-orange-500" />) : <ArrowUpDown size={12} />}
+                              </div>
+                            </th>
                           </>
                         ) : (
                           <>
-                            <th className="px-4 py-3 font-semibold text-neutral-400 uppercase border-b border-neutral-800">Period</th>
-                            <th className="px-4 py-3 font-semibold text-neutral-400 uppercase border-b border-neutral-800">{dim1}</th>
-                            {dim2 !== 'none' && <th className="px-4 py-3 font-semibold text-neutral-400 uppercase border-b border-neutral-800">{isTimeAnalysisOn ? 'Breakdown' : dim2}</th>}
-                            <th className="px-4 py-3 font-semibold text-neutral-400 uppercase border-b border-neutral-800 text-right">Value</th>
+                            <th className="px-4 py-3 font-semibold text-neutral-400 uppercase border-b border-neutral-800">
+                              <div
+                                className="flex items-center gap-2 cursor-pointer hover:text-white transition-colors"
+                                onClick={() => setDimTableSort(p => ({
+                                  key: 'period',
+                                  direction: p.key === 'period' ? (p.direction === 'asc' ? 'desc' : (p.direction === 'desc' ? 'default' : 'asc')) : 'asc'
+                                }))}
+                              >
+                                Period
+                                {dimTableSort.key === 'period' ? (dimTableSort.direction === 'asc' ? <ArrowUp size={12} className="text-orange-500" /> : <ArrowDown size={12} className="text-orange-500" />) : <ArrowUpDown size={12} />}
+                              </div>
+                            </th>
+                            <th className="px-4 py-3 font-semibold text-neutral-400 uppercase border-b border-neutral-800">
+                              <div
+                                className="flex items-center gap-2 cursor-pointer hover:text-white transition-colors"
+                                onClick={() => setDimTableSort(p => ({
+                                  key: 'dim1',
+                                  direction: p.key === 'dim1' ? (p.direction === 'asc' ? 'desc' : (p.direction === 'desc' ? 'default' : 'asc')) : 'asc'
+                                }))}
+                              >
+                                {dim1}
+                                {dimTableSort.key === 'dim1' ? (dimTableSort.direction === 'asc' ? <ArrowUp size={12} className="text-orange-500" /> : <ArrowDown size={12} className="text-orange-500" />) : <ArrowUpDown size={12} />}
+                              </div>
+                            </th>
+                            {dim2 !== 'none' && (
+                              <th className="px-4 py-3 font-semibold text-neutral-400 uppercase border-b border-neutral-800">
+                                <div
+                                  className="flex items-center gap-2 cursor-pointer hover:text-white transition-colors"
+                                  onClick={() => setDimTableSort(p => ({
+                                    key: 'dim2',
+                                    direction: p.key === 'dim2' ? (p.direction === 'asc' ? 'desc' : (p.direction === 'desc' ? 'default' : 'asc')) : 'asc'
+                                  }))}
+                                >
+                                  {isTimeAnalysisOn ? 'Breakdown' : dim2}
+                                  {dimTableSort.key === 'dim2' ? (dimTableSort.direction === 'asc' ? <ArrowUp size={12} className="text-orange-500" /> : <ArrowDown size={12} className="text-orange-500" />) : <ArrowUpDown size={12} />}
+                                </div>
+                              </th>
+                            )}
+                            <th className="px-4 py-3 font-semibold text-neutral-400 uppercase border-b border-neutral-800 text-right">
+                              <div
+                                className="flex items-center justify-end gap-2 cursor-pointer hover:text-white transition-colors"
+                                onClick={() => setDimTableSort(p => ({
+                                  key: 'value',
+                                  direction: p.key === 'value' ? (p.direction === 'asc' ? 'desc' : (p.direction === 'desc' ? 'default' : 'asc')) : 'asc'
+                                }))}
+                              >
+                                Value
+                                {dimTableSort.key === 'value' ? (dimTableSort.direction === 'asc' ? <ArrowUp size={12} className="text-orange-500" /> : <ArrowDown size={12} className="text-orange-500" />) : <ArrowUpDown size={12} />}
+                              </div>
+                            </th>
                           </>
                         )}
                       </tr>
                     </thead>
                     <tbody>
                       {effectiveTimeGrain === 'none' ? (
-                        (multi.data?.matrixRows || []).map((r, idx) => {
-                          if (!selectedDim2Values.includes('all') && !selectedDim2Values.includes(r.dim2)) return null;
+                        sortedDimensionRows.map((r, idx) => {
                           return (
                             <tr key={`matrix-${idx}`} className="border-b border-neutral-900 hover:bg-neutral-800/50 transition-colors">
                               <td className="px-4 py-2 text-neutral-200">{r.dim1}</td>
@@ -672,8 +1018,7 @@ export default function ExplorerModule({ authUser }) {
                           );
                         })
                       ) : (
-                        (multi.data?.timeSeriesRows || []).map((r, idx) => {
-                          if (!selectedDim2Values.includes('all') && !selectedDim2Values.includes(r.dim2)) return null;
+                        sortedDimensionRows.map((r, idx) => {
                           return (
                             <tr key={`ts-${idx}`} className="border-b border-neutral-900 hover:bg-neutral-800/50 transition-colors">
                               <td className="px-4 py-2 text-neutral-200">{String(r.period).slice(0, 10)}</td>
@@ -911,29 +1256,6 @@ export default function ExplorerModule({ authUser }) {
           </div>
         )}
       </div>
-
-      {/* RIGHT SIDEBAR: Stats Column - Hidden completely in RAW view */}
-      {viewTab === 'multi' && (
-        <div className={`w-72 shrink-0 bg-[#050505] border-l border-neutral-800 p-6 flex flex-col gap-4 overflow-y-auto min-h-0 ${darkScrollbar}`}>
-          <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-400 mb-2">Metrics</h3>
-          <div className="bg-[#111111] border border-neutral-800 border-l-4 border-l-orange-500 rounded-lg p-4">
-            <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold mb-1">Total Records</div>
-            <div className="text-2xl font-bold">{effectiveTimeGrain === 'none' ? (multi.data?.matrixRows?.length || 0) : (multi.data?.timeSeriesRows?.length || 0)}</div>
-          </div>
-          <div className="bg-[#111111] border border-neutral-800 border-l-4 border-l-green-500 rounded-lg p-4">
-            <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold mb-1">Active Measure</div>
-            <div className="text-lg font-bold text-neutral-200 capitalize">{measure.replace('_', ' ')}</div>
-          </div>
-          <div className="bg-[#111111] border border-neutral-800 border-l-4 border-l-blue-500 rounded-lg p-4">
-            <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold mb-1">Primary Dim</div>
-            <div className="text-lg font-bold text-neutral-200 capitalize">{dim1}</div>
-          </div>
-          <div className="bg-[#111111] border border-neutral-800 border-l-4 border-l-purple-500 rounded-lg p-4">
-            <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold mb-1">{isTimeAnalysisOn ? 'Split By' : 'Secondary Dim'}</div>
-            <div className="text-lg font-bold text-neutral-200 capitalize">{dim2}</div>
-          </div>
-        </div>
-      )}
 
     </div>
   );
