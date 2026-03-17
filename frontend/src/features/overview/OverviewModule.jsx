@@ -18,6 +18,7 @@ export default function OverviewModule({ onNavigate }) {
   const error = overview.error || insights.error;
   const data = overview.data || {};
   const [activeExtraKpis, setActiveExtraKpis] = useState([]);
+  const [stagedKpis, setStagedKpis] = useState([]);
   const [isSelectionPanelOpen, setIsSelectionPanelOpen] = useState(false);
   const [selectedKpi, setSelectedKpi] = useState(null);
   const [activeOutputTab, setActiveOutputTab] = useState(null);
@@ -38,9 +39,24 @@ export default function OverviewModule({ onNavigate }) {
   };
 
   const handleAddKpi = (id) => {
-    if (!activeExtraKpis.includes(id)) {
-      setActiveExtraKpis([...activeExtraKpis, id]);
+    if (!activeExtraKpis.includes(id) && !stagedKpis.includes(id)) {
+      setStagedKpis([...stagedKpis, id]);
     }
+  };
+
+  const handleStageKpi = (id) => {
+    if (!activeExtraKpis.includes(id) && !stagedKpis.includes(id)) {
+      setStagedKpis([...stagedKpis, id]);
+    }
+  };
+
+  const handleUnstageKpi = (id) => {
+    setStagedKpis(prev => prev.filter(k => k !== id));
+  };
+
+  const handlePromoteKpis = () => {
+    setActiveExtraKpis([...activeExtraKpis, ...stagedKpis]);
+    setStagedKpis([]);
   };
 
   const handleRemoveKpi = (id) => {
@@ -99,7 +115,7 @@ export default function OverviewModule({ onNavigate }) {
             onClick={() => setSelectedKpi(kpi)}
           />
         ))}
-
+        
         <button 
           onClick={handleAddMore}
           className={`flex flex-col items-center justify-center rounded-xl p-5 border border-dashed transition-colors min-h-[140px] ${
@@ -110,10 +126,41 @@ export default function OverviewModule({ onNavigate }) {
         >
           <Plus size={24} className={`mb-2 transition-transform duration-300 ${isSelectionPanelOpen ? 'rotate-45' : ''}`} />
           <span className="text-sm font-bold uppercase tracking-wider">
-            {isSelectionPanelOpen ? 'Close Panel' : 'Add More'}
+            {isSelectionPanelOpen ? 'Close Selection' : 'Add More'}
           </span>
         </button>
       </section>
+
+      {/* Staging Panel */}
+      {stagedKpis.length > 0 && (
+        <section className="rounded-[28px] border-2 border-dashed border-primary-500/30 bg-primary-500/5 p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.2em] text-primary-400">
+              <TrendingUp size={15} />
+              Staged for Deployment ({stagedKpis.length})
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+            {KPI_DEFINITIONS.filter(k => stagedKpis.includes(k.id)).map(kpi => (
+              <KpiCard 
+                key={kpi.id}
+                title={kpi.title} 
+                value={kpi.getValue(kpis)} 
+                subtitle={kpi.getSubtitle(kpis)} 
+                trendData={kpi.trendData}
+                onRemove={() => handleUnstageKpi(kpi.id)}
+              />
+            ))}
+            <button 
+              onClick={handlePromoteKpis}
+              className="flex flex-col items-center justify-center rounded-xl p-5 border-2 border-primary-500 bg-primary-500/10 hover:bg-primary-500/20 text-primary-400 hover:text-primary-300 transition-all font-black text-lg min-h-[140px]"
+            >
+              <Plus size={32} className="mb-2" />
+              <span>ADD TO DASHBOARD</span>
+            </button>
+          </div>
+        </section>
+      )}
 
       {/* KPI Selection Panel */}
       {isSelectionPanelOpen && (
@@ -131,8 +178,8 @@ export default function OverviewModule({ onNavigate }) {
             </button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 max-h-[400px] overflow-y-auto pr-2 hide-scrollbar">
-            {KPI_DEFINITIONS.filter(k => !['uploaded_count', 'processed_count', 'created_count', 'published_count'].includes(k.id)).map(kpi => {
-              const isActive = activeExtraKpis.includes(kpi.id);
+            {KPI_DEFINITIONS.filter(k => !['uploaded_count', 'processed_count', 'created_count', 'published_count'].includes(k.id) && !activeExtraKpis.includes(k.id)).map(kpi => {
+              const isStaged = stagedKpis.includes(kpi.id);
               return (
                 <KpiCard 
                   key={kpi.id}
@@ -140,9 +187,9 @@ export default function OverviewModule({ onNavigate }) {
                   value={kpi.getValue(kpis)} 
                   subtitle={kpi.getSubtitle(kpis)} 
                   trendData={kpi.trendData}
-                  onRemove={isActive ? () => handleRemoveKpi(kpi.id) : undefined}
-                  onAdd={!isActive ? () => handleAddKpi(kpi.id) : undefined}
-                  onClick={() => setSelectedKpi(kpi)}
+                  onRemove={isStaged ? () => handleUnstageKpi(kpi.id) : undefined}
+                  onAdd={!isStaged ? () => handleStageKpi(kpi.id) : undefined}
+                  onClick={() => handleStageKpi(kpi.id)}
                 />
               );
             })}
