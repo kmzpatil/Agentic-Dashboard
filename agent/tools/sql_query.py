@@ -28,6 +28,7 @@ def execute_sql_query(
     query: str,
     chart_attributes: Optional[Dict[str, Any]] = None,
     limit: int | None = None,
+    auth: Any = None,
 ) -> str:
     """
     Execute a SELECT SQL query and bundle the results with chart attributes.
@@ -61,7 +62,7 @@ def execute_sql_query(
     try:
         db = get_db()
         effective_limit = min(limit or DEFAULT_QUERY_LIMIT, MAX_QUERY_LIMIT)
-        df = db.run_read_only_query(query, limit=effective_limit)
+        df = db.run_read_only_query(query, limit=effective_limit, auth=auth)
 
         df = _type_aware_fillna(df)
 

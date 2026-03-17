@@ -28,8 +28,11 @@ def _legacy_modules():
     if str(AGENT_DIR) not in sys.path:
         sys.path.insert(0, str(AGENT_DIR))
 
+    agent = importlib.import_module("agent")
+    importlib.reload(agent)
+    
     return {
-        "agent": importlib.import_module("agent"),
+        "agent": agent,
         "conversations": importlib.import_module("conversations"),
         "memory": importlib.import_module("memory"),
     }
@@ -137,7 +140,7 @@ async def chat(
     conversation_api.append_message(conversation_id, "user", message)
 
     scoped_prompt = f"{_normalise_filter_prompt(filters)}{message}"
-    result = await agent_api.run_agent(scoped_prompt, working_memory=working_memory)
+    result = await agent_api.run_agent(scoped_prompt, auth=auth, working_memory=working_memory)
 
     rows = _extract_rows(getattr(result, "chart_data", {}) or {})
     datasets, artifacts = build_assistant_artifacts(

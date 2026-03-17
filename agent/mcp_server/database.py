@@ -20,7 +20,7 @@ except ImportError:
 
 FORBIDDEN_SQL_PATTERN = re.compile(
     r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|GRANT|REVOKE|MERGE|"
-    r"CALL|EXECUTE|VACUUM|ANALYZE|COPY|COMMENT|ATTACH|DETACH)\b",
+    r"CALL|EXECUTE|VACUUM|ANALYZE|COPY|COMMENT|ATTACH|DETACH|app_users)\b",
     re.IGNORECASE,
 )
 ALLOWED_PREFIXES = ("SELECT", "WITH")
@@ -272,10 +272,85 @@ class DatabaseClient:
         with self.engine.connect() as connection:
             return pd.read_sql_query(statement, connection, params={"limit": limit})
 
-    def run_read_only_query(self, query: str, limit: int) -> pd.DataFrame:
-        cleaned_query = self._clean_query(query)
+    def run_read_only_query(self, query: str, limit: int, auth: Any = None) -> pd.DataFrame:
+        cleaned_query = self._strip_comments(query.strip().rstrip(";"))
+        
+        # Determine enforcement needs
+        role = getattr(auth, "role", "website_admin")
+        client_name = getattr(auth, "client_name", None)
+        user_id = getattr(auth, "user_id", None)
+
+        if role != "website_admin" and (client_name or user_id):
+            # PROACTIVE SCOPING: We inject CTEs for core tables that are pre-filtered
+            # by the user's client or user ID. This ensures that even if the agent
+            # generates "SELECT * FROM raw_videos", it only sees allowed rows.
+            
+            scoping_ctes = []
+            
+            if client_name:
+                # Filter for client_admin or restricted role by client_name
+                client_filter = f"'{client_name}'"
+                
+                # Scope raw_videos
+                scoping_ctes.append(f"""
+                scoped_videos AS (
+                    SELECT rv.* FROM raw_videos rv
+                    LEFT JOIN users u ON u."User_ID" = rv."User_ID"
+                    LEFT JOIN raw_video_channel rvc ON rvc."Video_ID" = rv."Video_ID"
+                    LEFT JOIN channels ch ON ch."Channel_Name" = rvc."Channel_Name"
+                    WHERE COALESCE(ch."Client_Name", u."Client_Name") = {client_filter}
+                )""")
+                
+                # Scope channels
+                scoping_ctes.append(f"scoped_channels AS (SELECT * FROM channels WHERE \"Client_Name\" = {client_filter})")
+                
+                # Scope users
+                scoping_ctes.append(f"scoped_users AS (SELECT * FROM users WHERE \"Client_Name\" = {client_filter})")
+                
+            elif role == "user" and user_id:
+                # Filter for individual user
+                scoping_ctes.append(f"scoped_videos AS (SELECT * FROM raw_videos WHERE \"User_ID\" = {user_id})")
+                scoping_ctes.append(f"scoped_users AS (SELECT * FROM users WHERE \"User_ID\" = {user_id})")
+
+            if scoping_ctes:
+                # We rename the original tables in the user's query to use our scoped CTEs
+                # This is done by adding more CTEs that alias the original names.
+                # Note: DuckDB allows "with raw_videos as (...)" to override the physical table.
+                
+                final_scoping = ",\n".join(scoping_ctes)
+                
+                # We add aliases to override the physical tables with our scoped versions
+                aliases = []
+                if "scoped_videos" in final_scoping:
+                    aliases.append("raw_videos AS (SELECT * FROM scoped_videos)")
+                    aliases.append("created_assets AS (SELECT ca.* FROM created_assets ca JOIN scoped_videos sv ON sv.\"Video_ID\" = ca.\"Video_ID\")")
+                    # FIX: Correct join for published_posts (pp does not have Video_ID, bridge via ca)
+                    aliases.append("published_posts AS (SELECT pp.* FROM published_posts pp JOIN created_assets ca ON ca.\"Asset_ID\" = pp.\"Asset_ID\" JOIN scoped_videos sv ON sv.\"Video_ID\" = ca.\"Video_ID\")")
+                    # NEW: Scope post_distribution and raw_video_channel
+                    aliases.append("post_distribution AS (SELECT pd.* FROM post_distribution pd JOIN published_posts pp ON pp.\"Post_ID\" = pd.\"Post_ID\")")
+                    aliases.append("raw_video_channel AS (SELECT rvc.* FROM raw_video_channel rvc JOIN scoped_videos sv ON sv.\"Video_ID\" = rvc.\"Video_ID\")")
+                if "scoped_channels" in final_scoping:
+                    aliases.append("channels AS (SELECT * FROM scoped_channels)")
+                if "scoped_users" in final_scoping:
+                    aliases.append("users AS (SELECT * FROM scoped_users)")
+                
+                full_cte_block = "WITH " + final_scoping + ",\n" + ",\n".join(aliases)
+                
+                # Now we wrap the user query. We need to handle if the user query 
+                # ALREADY starts with WITH.
+                if cleaned_query.upper().startswith("WITH"):
+                    # We merge the WITH blocks
+                    # "WITH user_cte as (...) SELECT ..." -> "WITH scoped_ctes..., user_cte as (...) SELECT ..."
+                    # We strip the "WITH " from the user query
+                    user_query_no_with = cleaned_query[4:].strip()
+                    query = f"{full_cte_block},\n{user_query_no_with}"
+                else:
+                    query = f"{full_cte_block}\n{cleaned_query}"
+
+        # Final validation and execution
+        validated_query = self._clean_query(query)
         statement = text(
-            f"WITH mcp_cte AS ({cleaned_query}) SELECT * FROM mcp_cte LIMIT :limit"
+            f"WITH mcp_cte AS ({validated_query}) SELECT * FROM mcp_cte LIMIT :limit"
         )
         with self.engine.connect() as connection:
             return pd.read_sql_query(statement, connection, params={"limit": limit})
