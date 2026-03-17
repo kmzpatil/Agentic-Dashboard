@@ -1,0 +1,10 @@
+
+created_assets: Asset_ID, Video_ID, Output_Type, Create_Date, Created_Duration
+
+published_posts: Post_ID, Asset_ID, Publish_Date, Published_Duration
+
+raw_videos: Video_ID, User_ID, Headline, Source_URL, Upload_Date, Input_Type, Language, Uploaded_Duration
+
+raw_video_channel: Video_ID, Channel_Name
+
+users: User_ID, User_Name, Team_Name, Client_Name

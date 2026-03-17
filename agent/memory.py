@@ -19,7 +19,7 @@ logger = logging.getLogger("frammer.memory")
 
 _compactor = LLMClient.fast()
 
-MAX_MEMORY_CHARS = 3000
+MAX_MEMORY_CHARS = 2000
 
 
 def build_memory_update(
@@ -34,7 +34,7 @@ def build_memory_update(
     Returns the updated memory string. If it exceeds the threshold,
     triggers compaction.
     """
-    actions_summary = " | ".join(agent_actions[:5]) if agent_actions else ""
+    actions_summary = " | ".join(agent_actions) if agent_actions else ""
     response_snippet = agent_response[:300] if agent_response else ""
 
     new_block = (
@@ -62,7 +62,7 @@ def _compact_memory(memory: str) -> str:
         "- Important data findings and insights mentioned\n"
         "- Any context needed for follow-up questions\n\n"
         "Drop redundant details, repeated queries, and verbose explanations.\n"
-        "Keep the summary under 800 characters.\n\n"
+        "Keep the summary under 1500 characters.\n\n"
         f"Memory to compact:\n{memory}\n\n"
         "Compacted memory:"
     )

@@ -1,0 +1,211 @@
+C:\Users\kmzpa\.pyenv\pyenv-win\versions\3.14.2\Lib\site-packages\langchain_core\_api\deprecation.py:25: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
+  from pydantic.v1.fields import FieldInfo as FieldInfoV1
+04:00:12 [INFO] client2: Groq key pool loaded: 5 key(s) available.
+04:00:17 [INFO] client2: Key Rotation: Using key #4 from pool of 5.
+04:00:18 [INFO] client2: Key Rotation: Using key #2 from pool of 5.
+INFO:     Started server process [10816]
+INFO:     Waiting for application startup.
+04:00:22 [INFO] conversations: Conversations tables ready.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:4001 (Press CTRL+C to quit)
+INFO:     127.0.0.1:51604 - "POST /api/data HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51604 - "POST /api/data HTTP/1.1" 200 OK
+04:01:34 [INFO] agent.groq: Classify: 'How many videos were processed vs published?'
+04:01:34 [INFO] client2: Key Rotation: Using key #2 from pool of 5.
+04:01:35 [INFO] client2: [classify] Calling GROQ (model: qwen/qwen3-32b, attempt 1)...
+04:01:36 [INFO] client2: [classify] GROQ responded in 1.95s.
+04:01:36 [INFO] agent.groq: Intent \u2192 ANALYTICS
+04:01:37 [INFO] agent.groq: === ReAct loop start ===
+04:01:37 [INFO] agent.groq: --- LOOP ITER: Calling LLM (Context: 2 messages) ---
+04:01:37 [INFO] client2: Key Rotation: Using key #5 from pool of 5.
+04:01:38 [INFO] agent.groq: --- TOOL CALL: [run_sql_query]
+  Args: {"limit": 200, "sql": "SELECT COUNT(DISTINCT rv.\"Video_ID\") AS videos_processed, COUNT(DISTINCT pd.\"Post_ID\") AS videos_published FROM \"raw_videos\" rv JOIN \"created_assets\" ca ON ca.\"Video_ID
+04:01:38 [INFO] agent.groq: --- LOOP: 1 tool call(s) in 1.69s ---
+04:01:38 [INFO] agent.groq: [tool] run_sql_query: SELECT COUNT(DISTINCT rv."Video_ID") AS videos_processed, COUNT(DISTINCT pd."Post_ID") AS videos_published FROM "raw_vidà
+04:01:39 [INFO] agent.groq: [tool] SQL OK: 1 rows, cols=['videos_processed', 'videos_published']
+04:01:39 [INFO] agent.groq: --- LOOP ITER: Calling LLM (Context: 4 messages) ---
+04:01:39 [INFO] client2: Key Rotation: Using key #3 from pool of 5.
+04:01:40 [INFO] agent.groq: --- LOOP FINAL ANSWER (1.71s)
+**10,657 videos** were processed, while **1,294 videos** were published.
+--- END ---
+04:01:40 [INFO] agent.groq: === AGENT DONE ===
+  Actions  : ['SQL OK ù 1 rows, 2 cols']
+  Has chart: False
+  SQL len  : 314 chars
+  Response :
+**10,657 videos** were processed, while **1,294 videos** were published.
+INFO:     127.0.0.1:57872 - "POST /api/query HTTP/1.1" 200 OK
+04:02:35 [INFO] agent.groq: Classify: 'What is the split by output type?'
+04:02:35 [INFO] client2: Key Rotation: Using key #5 from pool of 5.
+04:02:36 [INFO] client2: [classify] Calling GROQ (model: qwen/qwen3-32b, attempt 1)...
+04:02:36 [INFO] client2: [classify] GROQ responded in 1.87s.
+04:02:36 [INFO] agent.groq: Intent \u2192 ANALYTICS
+04:02:36 [INFO] agent.groq: === ReAct loop start ===
+04:02:36 [INFO] agent.groq: --- LOOP ITER: Calling LLM (Context: 2 messages) ---
+04:02:36 [INFO] client2: Key Rotation: Using key #1 from pool of 5.
+04:02:38 [INFO] agent.groq: --- TOOL CALL: [run_sql_query]
+  Args: {"limit": 1000, "sql": "SELECT ca.\"Output_Type\", COUNT(*) AS asset_count FROM created_assets ca GROUP BY ca.\"Output_Type\";"}
+04:02:38 [INFO] agent.groq: --- LOOP: 1 tool call(s) in 1.58s ---
+04:02:38 [INFO] agent.groq: [tool] run_sql_query: SELECT ca."Output_Type", COUNT(*) AS asset_count FROM created_assets ca GROUP BY ca."Output_Type";à
+04:02:38 [INFO] agent.groq: [tool] SQL OK: 5 rows, cols=['Output_Type', 'asset_count']
+04:02:38 [INFO] agent.groq: --- LOOP ITER: Calling LLM (Context: 4 messages) ---
+04:02:38 [INFO] client2: Key Rotation: Using key #4 from pool of 5.
+04:02:40 [INFO] agent.groq: --- LOOP FINAL ANSWER (1.62s)
+The split by output type is as follows: **10,674** for **My Key moments**, **10,885** for **Full package**, **10,720** for **Key moments**, **10,662** for **Chapters**, and **10,728** for **Summary**.
+--- END ---
+04:02:40 [INFO] agent.groq: === AGENT DONE ===
+  Actions  : ['SQL OK ù 5 rows, 2 cols']
+  Has chart: False
+  SQL len  : 98 chars
+  Response :
+The split by output type is as follows: **10,674** for **My Key moments**, **10,885** for **Full package**, **10,720** for **Key moments**, **10,662** for **Chapters**, and **10,728** for **Summary**.
+INFO:     127.0.0.1:51897 - "POST /api/query HTTP/1.1" 200 OK
+04:03:26 [INFO] agent.groq: Classify: 'How many videos are being uploaded, processed, and published over time?'
+04:03:26 [INFO] client2: Key Rotation: Using key #5 from pool of 5.
+04:03:27 [INFO] client2: [classify] Calling GROQ (model: qwen/qwen3-32b, attempt 1)...
+04:03:27 [INFO] client2: [classify] GROQ responded in 1.82s.
+04:03:27 [INFO] agent.groq: Intent \u2192 ANALYTICS
+04:03:27 [INFO] agent.groq: === ReAct loop start ===
+04:03:27 [INFO] agent.groq: --- LOOP ITER: Calling LLM (Context: 2 messages) ---
+04:03:27 [INFO] client2: Key Rotation: Using key #4 from pool of 5.
+04:03:29 [INFO] agent.groq: --- TOOL CALL: [run_sql_query]
+  Args: {"limit": 200, "sql": "SELECT \n    date_trunc('month', to_date(rv.\"Upload_Date\", 'YYYY-MM-DD'))::date AS upload_period,\n    COUNT(DISTINCT rv.\"Video_ID\") AS uploaded_videos,\n    COUNT(DISTINCT 
+04:03:29 [INFO] agent.groq: --- LOOP: 1 tool call(s) in 2.00s ---
+04:03:29 [INFO] agent.groq: [tool] run_sql_query: SELECT 
+    date_trunc('month', to_date(rv."Upload_Date", 'YYYY-MM-DD'))::date AS upload_period,
+    COUNT(DISTINCT rv."à
+04:03:30 [INFO] agent.groq: [tool] SQL OK: 12 rows, cols=['upload_period', 'uploaded_videos', 'processed_assets', 'published_posts']
+04:03:30 [INFO] agent.groq: --- LOOP ITER: Calling LLM (Context: 4 messages) ---
+04:03:30 [INFO] client2: Key Rotation: Using key #1 from pool of 5.
+04:03:32 [INFO] agent.groq: --- TOOL CALL: [build_chart]
+  Args: {"chart_type": "line", "result_id": "c593e83b", "title": "Upload, Process, and Publish Trend", "x_column": "upload_period", "y_columns": "uploaded_videos,processed_assets,published_posts"}
+04:03:32 [INFO] agent.groq: --- LOOP: 1 tool call(s) in 2.04s ---
+04:03:32 [INFO] agent.groq: [tool] build_chart OK (710 chars)
+04:03:32 [INFO] agent.groq: --- LOOP ITER: Calling LLM (Context: 6 messages) ---
+04:03:32 [INFO] client2: Key Rotation: Using key #4 from pool of 5.
+04:03:38 [INFO] agent.groq: --- LOOP FINAL ANSWER (6.04s)
+The platform has seen a consistent range of **800û972 uploads**, **4,176û4,807 assets processed**, and **82û143 posts published** monthly. Published posts show the highest fluctuations compared to processing and uploading.
+--- END ---
+04:03:38 [INFO] agent.groq: === AGENT DONE ===
+  Actions  : ['SQL OK ù 12 rows, 4 cols', 'Chart: line ù Upload, Process, and Publish Trend']
+  Has chart: True
+  SQL len  : 440 chars
+  Response :
+The platform has seen a consistent range of **800û972 uploads**, **4,176û4,807 assets processed**, and **82û143 posts published** monthly. Published posts show the highest fluctuations compared to processing and uploading.
+INFO:     127.0.0.1:58085 - "POST /api/query HTTP/1.1" 200 OK
+04:03:40 [INFO] agent.groq: Classify: 'What is the split by output type (reels, shorts, summaries, chapters, etc.)?'
+04:03:40 [INFO] client2: Key Rotation: Using key #3 from pool of 5.
+04:03:41 [INFO] client2: [classify] Calling GROQ (model: qwen/qwen3-32b, attempt 1)...
+04:03:42 [INFO] client2: [classify] GROQ responded in 1.60s.
+04:03:42 [INFO] agent.groq: Intent \u2192 ANALYTICS
+04:03:42 [INFO] agent.groq: === ReAct loop start ===
+04:03:42 [INFO] agent.groq: --- LOOP ITER: Calling LLM (Context: 2 messages) ---
+04:03:42 [INFO] client2: Key Rotation: Using key #1 from pool of 5.
+04:03:43 [INFO] agent.groq: --- TOOL CALL: [run_sql_query]
+  Args: {"limit": 200, "sql": "SELECT ca.\"Output_Type\", COUNT(*) AS type_count FROM created_assets ca GROUP BY ca.\"Output_Type\""}
+04:03:43 [INFO] agent.groq: --- LOOP: 1 tool call(s) in 1.45s ---
+04:03:43 [INFO] agent.groq: [tool] run_sql_query: SELECT ca."Output_Type", COUNT(*) AS type_count FROM created_assets ca GROUP BY ca."Output_Type"à
+04:03:43 [INFO] agent.groq: [tool] SQL OK: 5 rows, cols=['Output_Type', 'type_count']
+04:03:43 [INFO] agent.groq: --- LOOP ITER: Calling LLM (Context: 4 messages) ---
+04:03:43 [INFO] client2: Key Rotation: Using key #1 from pool of 5.
+04:03:56 [INFO] agent.groq: --- LOOP FINAL ANSWER (12.75s)
+The split by output type is as follows:
+- **Full package**: 10,885
+- **My Key moments**: 10,674
+- **Key moments**: 10,720
+- **Chapters**: 10,662
+- **Summary**: 10,728
+--- END ---
+04:03:56 [INFO] agent.groq: === AGENT DONE ===
+  Actions  : ['SQL OK ù 5 rows, 2 cols']
+  Has chart: False
+  SQL len  : 96 chars
+  Response :
+The split by output type is as follows:
+- **Full package**: 10,885
+- **My Key moments**: 10,674
+- **Key moments**: 10,720
+- **Chapters**: 10,662
+- **Summary**: 10,728
+INFO:     127.0.0.1:55156 - "POST /api/query HTTP/1.1" 200 OK
+04:03:58 [INFO] agent.groq: Classify: 'What is the gap between processed and published content?'
+04:03:58 [INFO] client2: Key Rotation: Using key #2 from pool of 5.
+04:03:59 [INFO] client2: [classify] Calling GROQ (model: qwen/qwen3-32b, attempt 1)...
+04:04:00 [INFO] client2: [classify] GROQ responded in 1.70s.
+04:04:00 [INFO] agent.groq: Intent \u2192 ANALYTICS
+04:04:00 [INFO] agent.groq: === ReAct loop start ===
+04:04:00 [INFO] agent.groq: --- LOOP ITER: Calling LLM (Context: 2 messages) ---
+04:04:00 [INFO] client2: Key Rotation: Using key #3 from pool of 5.
+04:04:02 [INFO] agent.groq: --- TOOL CALL: [run_sql_query]
+  Args: {"limit": 10000, "sql": "SELECT COUNT(DISTINCT ca.\"Asset_ID\") AS processed_content, COUNT(DISTINCT pp.\"Post_ID\") AS published_content, (COUNT(DISTINCT ca.\"Asset_ID\") - COUNT(DISTINCT pp.\"Post_I
+04:04:02 [INFO] agent.groq: --- LOOP: 1 tool call(s) in 1.76s ---
+04:04:02 [INFO] agent.groq: [tool] run_sql_query: SELECT COUNT(DISTINCT ca."Asset_ID") AS processed_content, COUNT(DISTINCT pp."Post_ID") AS published_content, (COUNT(DISà
+04:04:02 [INFO] agent.groq: [tool] SQL OK: 1 rows, cols=['processed_content', 'published_content', 'gap']
+04:04:02 [INFO] agent.groq: --- LOOP ITER: Calling LLM (Context: 4 messages) ---
+04:04:02 [INFO] client2: Key Rotation: Using key #4 from pool of 5.
+04:04:05 [INFO] agent.groq: --- LOOP FINAL ANSWER (3.84s)
+The gap between processed and published content is **52,375**. Out of **53,669** processed assets, only **1,294** have been published.
+--- END ---
+04:04:05 [INFO] agent.groq: === AGENT DONE ===
+  Actions  : ['SQL OK ù 1 rows, 3 cols']
+  Has chart: False
+  SQL len  : 269 chars
+  Response :
+The gap between processed and published content is **52,375**. Out of **53,669** processed assets, only **1,294** have been published.
+INFO:     127.0.0.1:50213 - "POST /api/query HTTP/1.1" 200 OK
+04:04:07 [INFO] agent.groq: Classify: 'Which features or platforms are most active?'
+04:04:07 [INFO] client2: Key Rotation: Using key #3 from pool of 5.
+04:04:08 [INFO] client2: [classify] Calling GROQ (model: qwen/qwen3-32b, attempt 1)...
+04:04:09 [INFO] client2: [classify] GROQ responded in 1.85s.
+04:04:09 [INFO] agent.groq: Intent \u2192 ANALYTICS
+04:04:09 [INFO] agent.groq: === ReAct loop start ===
+04:04:09 [INFO] agent.groq: --- LOOP ITER: Calling LLM (Context: 2 messages) ---
+04:04:09 [INFO] client2: Key Rotation: Using key #5 from pool of 5.
+04:04:11 [INFO] agent.groq: --- TOOL CALL: [run_sql_query]
+  Args: {"limit": 200, "sql": "SELECT pd.\"Published_Platform\", COUNT(*) AS posts_count FROM published_posts pp JOIN post_distribution pd ON pd.\"Post_ID\" = pp.\"Post_ID\" GROUP BY pd.\"Published_Platform\"
+04:04:11 [INFO] agent.groq: --- LOOP: 1 tool call(s) in 1.63s ---
+04:04:11 [INFO] agent.groq: [tool] run_sql_query: SELECT pd."Published_Platform", COUNT(*) AS posts_count FROM published_posts pp JOIN post_distribution pd ON pd."Post_IDà
+04:04:11 [INFO] agent.groq: [tool] SQL OK: 8 rows, cols=['Published_Platform', 'posts_count']
+04:04:11 [INFO] agent.groq: --- LOOP ITER: Calling LLM (Context: 4 messages) ---
+04:04:11 [INFO] client2: Key Rotation: Using key #4 from pool of 5.
+04:04:38 [INFO] agent.groq: --- TOOL CALL: [build_chart]
+  Args: {"chart_type": "bar", "result_id": "811e6193", "title": "Platform Activity Comparison", "x_column": "Published_Platform", "y_columns": "posts_count"}
+04:04:38 [INFO] agent.groq: --- LOOP: 1 tool call(s) in 27.09s ---
+04:04:38 [INFO] agent.groq: [tool] build_chart OK (636 chars)
+04:04:38 [INFO] agent.groq: --- LOOP ITER: Calling LLM (Context: 6 messages) ---
+04:04:38 [INFO] client2: Key Rotation: Using key #1 from pool of 5.
+04:04:40 [INFO] agent.groq: --- LOOP FINAL ANSWER (1.63s)
+The most active platforms are **Youtube** with **769 posts**, followed by **Facebook** with **471 posts**, and **Linkedin** with **460 posts**.
+--- END ---
+04:04:40 [INFO] agent.groq: === AGENT DONE ===
+  Actions  : ['SQL OK ù 8 rows, 2 cols', 'Chart: bar ù Platform Activity Comparison']
+  Has chart: True
+  SQL len  : 205 chars
+  Response :
+The most active platforms are **Youtube** with **769 posts**, followed by **Facebook** with **471 posts**, and **Linkedin** with **460 posts**.
+INFO:     127.0.0.1:58840 - "POST /api/query HTTP/1.1" 200 OK
+04:04:42 [INFO] agent.groq: Classify: "How much data is missing or marked as 'Unknown'?"
+04:04:42 [INFO] client2: Key Rotation: Using key #1 from pool of 5.
+04:04:43 [INFO] client2: [classify] Calling GROQ (model: qwen/qwen3-32b, attempt 1)...
+04:04:44 [INFO] client2: [classify] GROQ responded in 1.84s.
+04:04:44 [INFO] agent.groq: Intent \u2192 ANALYTICS
+04:04:44 [INFO] agent.groq: === ReAct loop start ===
+04:04:44 [INFO] agent.groq: --- LOOP ITER: Calling LLM (Context: 2 messages) ---
+04:04:44 [INFO] client2: Key Rotation: Using key #3 from pool of 5.
+04:04:46 [INFO] agent.groq: --- TOOL CALL: [run_sql_query]
+  Args: {"limit": 1000, "sql": "SELECT \"Input_Type\", COUNT(*) AS count FROM raw_videos WHERE \"Input_Type\" ILIKE 'unknown' GROUP BY 1"}
+04:04:46 [INFO] agent.groq: --- LOOP: 1 tool call(s) in 1.93s ---
+04:04:46 [INFO] agent.groq: [tool] run_sql_query: SELECT "Input_Type", COUNT(*) AS count FROM raw_videos WHERE "Input_Type" ILIKE 'unknown' GROUP BY 1à
+04:04:46 [INFO] agent.groq: [tool] SQL OK: 0 rows, cols=[]
+04:04:46 [INFO] agent.groq: --- LOOP ITER: Calling LLM (Context: 4 messages) ---
+04:04:46 [INFO] client2: Key Rotation: Using key #3 from pool of 5.
+04:04:47 [INFO] agent.groq: --- LOOP FINAL ANSWER (1.41s)
+No raw video entries have been marked with an 'Unknown' input type.
+--- END ---
+04:04:47 [INFO] agent.groq: === AGENT DONE ===
+  Actions  : ['SQL OK ù 0 rows, 0 cols']
+  Has chart: False
+  SQL len  : 100 chars
+  Response :
+No raw video entries have been marked with an 'Unknown' input type.
+INFO:     127.0.0.1:61888 - "POST /api/query HTTP/1.1" 200 OK
