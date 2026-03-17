@@ -1652,10 +1652,7 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
             <div className="mt-8 pt-8 border-t border-neutral-800/40">
 
               <div className="relative min-h-[420px] rounded-[36px] bg-neutral-900/20 border border-neutral-800/30 p-8 shadow-inner overflow-hidden">
-                <div className="absolute top-0 right-0 p-6 opacity-10">
-                  <BarChart2 size={120} className="text-neutral-500" />
-                </div>
-
+                
                 {multiDimLoading && (
                   <div className="absolute inset-0 flex items-center justify-center bg-[#101010]/60 backdrop-blur-md z-10">
                     <div className="w-full px-10">
