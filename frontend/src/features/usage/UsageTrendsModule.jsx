@@ -67,6 +67,7 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
     minWidth = "240px",
     themeColor = "red",
     disabled = false,
+    multiSelect = false,
   }) {
     const [open, setOpen] = useState(false);
     const ref = useRef(null);
@@ -80,21 +81,51 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
       return () => document.removeEventListener("mousedown", handler);
     }, [open]);
 
-    useEffect(() => {
-      if (disabled && open) setOpen(false);
-    }, [disabled, open]);
-
     const getLabel = (val) => {
+      if (multiSelect && Array.isArray(val)) {
+        if (val.length === 0 || val.includes("All")) return "All";
+        if (val.length === 1) return val[0];
+        return `${val.length} selected`;
+      }
       if (isGroups) {
         for (const group of options) {
           const opt = group.options.find((o) => o.value === val);
           if (opt) return opt.label;
         }
       } else {
-        const opt = options.find((o) => o.value === val);
+        const opt = options.find((o) => o.value === (Array.isArray(val) ? val[0] : val));
         if (opt) return opt.label;
       }
-      return val;
+      return Array.isArray(val) ? val[0] : val;
+    };
+
+    const handleSelect = (itemValue) => {
+      if (!multiSelect) {
+        onChange(itemValue);
+        setOpen(false);
+        return;
+      }
+
+      const current = Array.isArray(value) ? value : [value];
+      let next;
+
+      if (itemValue === "All") {
+        next = ["All"];
+      } else {
+        const withoutAll = current.filter((v) => v !== "All");
+        if (withoutAll.includes(itemValue)) {
+          next = withoutAll.filter((v) => v !== itemValue);
+          if (next.length === 0) next = ["All"];
+        } else {
+          next = [...withoutAll, itemValue];
+        }
+      }
+      onChange(next);
+    };
+
+    const isOptionActive = (optValue) => {
+      if (Array.isArray(value)) return value.includes(optValue);
+      return value === optValue;
     };
 
     const themeClasses =
@@ -130,19 +161,28 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
                   </div>
                   <div className="p-1">
                     {group.options.map((opt) => {
-                      const active = opt.value === value;
+                      const active = isOptionActive(opt.value);
                       return (
                         <button
                           key={opt.value}
-                          onClick={() => { onChange(opt.value); setOpen(false); }}
+                          onClick={() => handleSelect(opt.value)}
                           className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all flex items-center justify-between group/item ${
                             active
                               ? "bg-red-500/10 text-red-500 font-bold"
                               : "text-neutral-400 hover:bg-neutral-800 hover:text-white"
                           }`}
                         >
-                          <span>{opt.label}</span>
-                          {active && (
+                          <span className="flex items-center gap-2">
+                            {multiSelect && (
+                              <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-all ${
+                                active ? "bg-red-500 border-red-500" : "border-neutral-700 bg-neutral-900"
+                              }`}>
+                                {active && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                              </div>
+                            )}
+                            {opt.label}
+                          </span>
+                          {active && !multiSelect && (
                             <div className={`w-1.5 h-1.5 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.6)] ${dotColor}`} />
                           )}
                         </button>
@@ -154,19 +194,28 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
             ) : (
               <div className="p-1">
                 {options.map((opt) => {
-                  const active = opt.value === value;
+                  const active = isOptionActive(opt.value);
                   return (
                     <button
                       key={opt.value}
-                      onClick={() => { onChange(opt.value); setOpen(false); }}
+                      onClick={() => handleSelect(opt.value)}
                       className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all flex items-center justify-between group/item ${
                         active
                           ? "bg-red-500/10 text-red-500 font-bold"
                           : "text-neutral-400 hover:bg-neutral-800 hover:text-white"
                       }`}
                     >
-                      <span>{opt.label}</span>
-                      {active && (
+                      <span className="flex items-center gap-2">
+                        {multiSelect && (
+                          <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-all ${
+                            active ? "bg-red-500 border-red-500" : "border-neutral-700 bg-neutral-900"
+                          }`}>
+                            {active && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                          </div>
+                        )}
+                        {opt.label}
+                      </span>
+                      {active && !multiSelect && (
                         <div className={`w-1.5 h-1.5 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.6)] ${dotColor}`} />
                       )}
                     </button>
@@ -350,7 +399,6 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
   }
 
   const MULTI_DIM_OPTIONS = [
-    { value: "none", label: "None" },
     { value: "output_type", label: "Output Type" },
     { value: "input_type_proportion", label: "Input Type Proportion" },
     { value: "volume_dynamics", label: "Volume Dynamics" },
@@ -398,28 +446,40 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
 
   function buildFilterParams(filters) {
     const params = new URLSearchParams();
-    if (filters.company && filters.company !== "All") params.set("company", filters.company);
-    if (filters.channel && filters.channel !== "All") params.set("channel", filters.channel);
-    if (filters.user && filters.user !== "All") params.set("user", filters.user);
-    if (filters.language && filters.language !== "All") params.set("language", filters.language);
-    if (filters.inputType && filters.inputType !== "All") params.set("input_type", filters.inputType);
-    if (filters.outputType && filters.outputType !== "All") params.set("output_type", filters.outputType);
+    
+    const appendMulti = (key, value) => {
+      if (Array.isArray(value)) {
+        value.forEach(v => {
+          if (v !== "All") params.append(key, v);
+        });
+      } else if (value && value !== "All") {
+        params.append(key, value);
+      }
+    };
+
+    appendMulti("company", filters.company);
+    appendMulti("channel", filters.channel);
+    appendMulti("user", filters.user);
+    appendMulti("language", filters.language);
+    appendMulti("input_type", filters.inputType);
+    appendMulti("output_type", filters.outputType);
+
     if (filters.dateFrom) params.set("date_from", filters.dateFrom);
     if (filters.dateTo) params.set("date_to", filters.dateTo);
     return params.toString();
   }
 
   // ─── Main Component ───────────────────────────────────────────────────────────
-  export default function UsageTrendsModule({ routeState, onNavigate }) {
+  export default function UsageTrendsModule({ authUser, routeState, onNavigate }) {
     const defaultMetric =
       routeState.metric && routeState.metric !== "future_forecast"
         ? routeState.metric
         : "uploaded_count";
 
     const [metric, setMetric] = useState(defaultMetric);
-    const [granularity, setGranularity] = useState(routeState.granularity || "week");
+    const [granularity, setGranularity] = useState(routeState?.granularity || "week");
     const [isPredicting, setIsPredicting] = useState(
-      Boolean(routeState.isPredicting) || routeState.metric === "future_forecast",
+      Boolean(routeState?.isPredicting) || routeState?.metric === "future_forecast",
     );
     const [predictionLength, setPredictionLength] = useState(7);
     /**
@@ -429,18 +489,19 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
      * latest available data point.
      */
     const [cutoffDate, setCutoffDate] = useState("");
-    const [multiDim, setMultiDim] = useState("none");
+    const [multiDim, setMultiDim] = useState("output_type");
     const [clientFilter, setClientFilter] = useState("");
     const [filters, setFilters] = useState({
-      company: "All",
-      channel: "All",
-      user: "All",
-      language: "All",
-      inputType: "All",
-      outputType: "All",
+      company: authUser?.role === "client_admin" ? [authUser.clientName] : ["All"],
+      channel: ["All"],
+      user: ["All"],
+      language: ["All"],
+      inputType: ["All"],
+      outputType: ["All"],
       dateFrom: "",
       dateTo: "",
     });
+    const [appliedFilters, setAppliedFilters] = useState(filters);
 
     const [isMaximized, setIsMaximized] = useState(false);
     const [isFiltersOpen, setIsFiltersOpen] = useState(true);
@@ -482,9 +543,15 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
 
     const resolvedMetric = metric === "turnaround_time" ? "turnaround_time" : metric;
 
-    const filtersQuery = useMemo(() => buildFilterParams(filters), [filters]);
-    const filtersQuerySuffix = filtersQuery ? `&${filtersQuery}` : "";
-    const effectiveCompany = filters.company && filters.company !== "All" ? filters.company : "";
+    // workingFiltersQuery used for real-time validation and dynamic options
+    const workingFiltersQuery = useMemo(() => buildFilterParams(filters), [filters]);
+    const workingFiltersQuerySuffix = workingFiltersQuery ? `&${workingFiltersQuery}` : "";
+
+    // appliedFiltersQuery used for charts, metrics, and trends
+    const appliedFiltersQuery = useMemo(() => buildFilterParams(appliedFilters), [appliedFilters]);
+    const appliedFiltersQuerySuffix = appliedFiltersQuery ? `&${appliedFiltersQuery}` : "";
+
+    const effectiveCompany = filters.company && filters.company.length > 0 && filters.company[0] !== "All" ? filters.company[0] : "";
 
     const filterOptionsUrl = `${API_BASE}/usage-trends/v1/filters/options${effectiveCompany ? `?company=${encodeURIComponent(effectiveCompany)}` : ""}`;
     const { data: filterOptionsData, loading: filterOptionsLoading, error: filterOptionsError } = useApi(
@@ -495,11 +562,11 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
     const dateRangeUrl = `${API_BASE}/usage-trends/v1/filters/date-range`;
     const { data: dateRangeData } = useApi(dateRangeUrl, [dateRangeUrl]);
 
-    const validateUrl = filtersQuery ? `${API_BASE}/usage-trends/v1/filters/validate?${filtersQuery}` : null;
+    const validateUrl = workingFiltersQuery ? `${API_BASE}/usage-trends/v1/filters/validate?${workingFiltersQuery}` : null;
     const { data: validateData } = useApi(validateUrl, [validateUrl]);
 
     // ── API URLs ──────────────────────────────────────────────────────────────
-    const metricsUrl = `${API_BASE}/usage-trends/v1/pipeline-metrics?granularity=${encodeURIComponent(granularity)}${filtersQuerySuffix}`;
+    const metricsUrl = `${API_BASE}/usage-trends/v1/pipeline-metrics?granularity=${encodeURIComponent(granularity)}${appliedFiltersQuerySuffix}`;
     const { data: metricsData, loading: metricsLoading, error: metricsError } = useApi(metricsUrl, [metricsUrl]);
 
     const forecastMetric = resolvedMetric === "turnaround_time" ? "uploaded_count" : resolvedMetric;
@@ -509,23 +576,23 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
         `${API_BASE}/usage-trends/v1/forecast/all-clients` +
         `?metric=${encodeURIComponent(forecastMetric)}` +
         `&granularity=${encodeURIComponent(granularity)}` +
-        `&prediction_length=${predictionLength}${filtersQuerySuffix}`;
+        `&prediction_length=${predictionLength}${appliedFiltersQuerySuffix}`;
       if (cutoffDate) url += `&cutoff_date=${encodeURIComponent(cutoffDate)}`;
       return url;
-    }, [isPredicting, forecastMetric, granularity, predictionLength, cutoffDate, filtersQuerySuffix]);
+    }, [isPredicting, forecastMetric, granularity, predictionLength, cutoffDate, appliedFiltersQuerySuffix]);
 
     const prediction = useApi(predictionUrl, [predictionUrl]);
 
     const multiDimUrl =
       multiDim !== "none"
-        ? `${API_BASE}/usage-trends/v1/multi-dim?analysis=${encodeURIComponent(multiDim)}&granularity=${encodeURIComponent(granularity)}${clientFilter ? `&client_name=${encodeURIComponent(clientFilter)}` : ""}${filtersQuerySuffix}`
+        ? `${API_BASE}/usage-trends/v1/multi-dim?analysis=${encodeURIComponent(multiDim)}&granularity=${encodeURIComponent(granularity)}${clientFilter ? `&client_name=${encodeURIComponent(clientFilter)}` : ""}${appliedFiltersQuerySuffix}`
         : null;
     const { data: multiDimData, loading: multiDimLoading, error: multiDimError } = useApi(multiDimUrl, [multiDimUrl]);
 
-    const trendsUrl = `${API_BASE}/trends?metric=${encodeURIComponent(resolvedMetric)}&granularity=${encodeURIComponent(granularity)}${filtersQuerySuffix}`;
+    const trendsUrl = `${API_BASE}/trends?metric=${encodeURIComponent(resolvedMetric)}&granularity=${encodeURIComponent(granularity)}${appliedFiltersQuerySuffix}`;
     const trends = useApi(trendsUrl, [trendsUrl]);
 
-    const insightsUrl = `${API_BASE}/insights?surface=trends${filtersQuerySuffix}`;
+    const insightsUrl = `${API_BASE}/insights?surface=trends${appliedFiltersQuerySuffix}`;
     const insights = useApi(insightsUrl, [insightsUrl]);
 
     const filterOptions = useMemo(() => {
@@ -565,6 +632,10 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
     const activeFilterCount = useMemo(() => (
       Object.entries(filters).reduce((count, [key, value]) => {
         if (key === "dateFrom" || key === "dateTo") return value ? count + 1 : count;
+        if (Array.isArray(value)) {
+          const actualFilters = value.filter(v => v !== "All");
+          return count + actualFilters.length;
+        }
         return value && value !== "All" ? count + 1 : count;
       }, 0)
     ), [filters]);
@@ -1151,37 +1222,42 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
                   <div className="flex-1 overflow-y-auto frammer-scrollbar min-h-0">
                     <div className="space-y-3 p-3">
                       <div className="group">
-                        <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">Company</label>
+                        <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">Client</label>
                         <FloatingDropdown
                           value={filters.company}
                           onChange={(value) => setFilters((prev) => ({
                             ...prev, company: value,
-                            channel: "All", user: "All", language: "All",
-                            inputType: "All", outputType: "All",
+                            channel: ["All"], user: ["All"], language: ["All"],
+                            inputType: ["All"], outputType: ["All"],
                           }))}
-                          options={toOptionList(filterOptions.company)}
+                          options={toOptionList(
+                            authUser?.role === "client_admin"
+                              ? filterOptions.company.filter(c => c !== "All")
+                              : filterOptions.company
+                          )}
                           minWidth="100%"
+                          multiSelect={authUser?.role !== "client_admin"}
                         />
                       </div>
                       <div className="group">
                         <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">Channel</label>
-                        <FloatingDropdown value={filters.channel} onChange={(v) => setFilters((p) => ({ ...p, channel: v }))} options={toOptionList(filterOptions.channel)} minWidth="100%" />
+                        <FloatingDropdown value={filters.channel} onChange={(v) => setFilters((p) => ({ ...p, channel: v }))} options={toOptionList(filterOptions.channel)} minWidth="100%" multiSelect={true} />
                       </div>
                       <div className="group">
                         <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">User</label>
-                        <FloatingDropdown value={filters.user} onChange={(v) => setFilters((p) => ({ ...p, user: v }))} options={toOptionList(filterOptions.user)} minWidth="100%" />
+                        <FloatingDropdown value={filters.user} onChange={(v) => setFilters((p) => ({ ...p, user: v }))} options={toOptionList(filterOptions.user)} minWidth="100%" multiSelect={true} />
                       </div>
                       <div className="group">
                         <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">Language</label>
-                        <FloatingDropdown value={filters.language} onChange={(v) => setFilters((p) => ({ ...p, language: v }))} options={toOptionList(filterOptions.language)} minWidth="100%" />
+                        <FloatingDropdown value={filters.language} onChange={(v) => setFilters((p) => ({ ...p, language: v }))} options={toOptionList(filterOptions.language)} minWidth="100%" multiSelect={true} />
                       </div>
                       <div className="group">
                         <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">Input Type</label>
-                        <FloatingDropdown value={filters.inputType} onChange={(v) => setFilters((p) => ({ ...p, inputType: v }))} options={toOptionList(filterOptions.input_type)} minWidth="100%" />
+                        <FloatingDropdown value={filters.inputType} onChange={(v) => setFilters((p) => ({ ...p, inputType: v }))} options={toOptionList(filterOptions.input_type)} minWidth="100%" multiSelect={true} />
                       </div>
                       <div className="group">
                         <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">Output Type</label>
-                        <FloatingDropdown value={filters.outputType} onChange={(v) => setFilters((p) => ({ ...p, outputType: v }))} options={toOptionList(filterOptions.output_type)} minWidth="100%" />
+                        <FloatingDropdown value={filters.outputType} onChange={(v) => setFilters((p) => ({ ...p, outputType: v }))} options={toOptionList(filterOptions.output_type)} minWidth="100%" multiSelect={true} />
                       </div>
 
                       <DateRangeSlider
@@ -1195,13 +1271,13 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
                       <div className="rounded-xl border border-neutral-800 bg-[#0a0a0a] px-3 py-2 text-[10px]">
                         {filterOptionsLoading && <span className="text-neutral-600">Loading options…</span>}
                         {filterOptionsError && <span className="text-amber-400">Failed to load options.</span>}
-                        {!filterOptionsLoading && filtersQuery && hasDataForFilters === false && (
+                        {!filterOptionsLoading && workingFiltersQuery && hasDataForFilters === false && (
                           <span className="text-red-400">No data for this combination.</span>
                         )}
-                        {!filterOptionsLoading && filtersQuery && hasDataForFilters === true && (
+                        {!filterOptionsLoading && workingFiltersQuery && hasDataForFilters === true && (
                           <span className="text-emerald-400">Filters validated.</span>
                         )}
-                        {!filterOptionsLoading && !filtersQuery && (
+                        {!filterOptionsLoading && !workingFiltersQuery && (
                           <span className="text-neutral-600">Using full dataset.</span>
                         )}
                       </div>
@@ -1212,14 +1288,27 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
                   <div className="flex-shrink-0 border-t border-neutral-800/60 p-3 space-y-2">
                     <button
                       type="button"
-                      onClick={() => setFilters({ ...filters })}
+                      onClick={() => setAppliedFilters(filters)}
                       className="w-full rounded-xl bg-red-500 px-3 py-2.5 text-[11px] font-bold uppercase tracking-[0.15em] text-white transition-all hover:bg-red-400 shadow-lg shadow-red-500/20"
                     >
                       Apply Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
                     </button>
                     <button
                       type="button"
-                      onClick={() => setFilters({ company: "All", channel: "All", user: "All", language: "All", inputType: "All", outputType: "All", dateFrom: "", dateTo: "" })}
+                      onClick={() => {
+                        const resetVal = {
+                          company: authUser?.role === "client_admin" ? [authUser.clientName] : ["All"],
+                          channel: ["All"],
+                          user: ["All"],
+                          language: ["All"],
+                          inputType: ["All"],
+                          outputType: ["All"],
+                          dateFrom: "",
+                          dateTo: "",
+                        };
+                        setFilters(resetVal);
+                        setAppliedFilters(resetVal);
+                      }}
                       className="w-full rounded-xl border border-neutral-800 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.15em] text-neutral-500 transition-all hover:border-red-500/30 hover:text-red-400"
                     >
                       Reset
@@ -1356,28 +1445,31 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
                   <label className="mb-2 block text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-500 group-hover:text-neutral-300 transition-colors">
                     Client Filter <span className="text-neutral-600 lowercase">(optional)</span>
                   </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Acme Corp"
-                    className="rounded-xl border border-neutral-700 bg-[#0f0f0f] px-4 py-3 text-sm font-semibold text-white shadow-inner focus:ring-2 focus:ring-red-500/50 focus:outline-none transition-all w-48"
-                    value={clientFilter}
-                    onChange={(e) => setClientFilter(e.target.value)}
+                  <FloatingDropdown 
+                    value={clientFilter || (authUser?.role === "client_admin" ? authUser.clientName : "All Companies")} 
+                    onChange={(val) => setClientFilter(val === "All Companies" ? "" : val)} 
+                    options={
+                      authUser?.role === "client_admin"
+                        ? [{ value: authUser.clientName, label: authUser.clientName }]
+                        : [{ value: "All Companies", label: "All Companies" }, ...toOptionList(filterOptions.company.filter(c => c !== "All"))]
+                    }
+                    minWidth="200px"
+                    disabled={authUser?.role === "client_admin"}
                   />
                 </div>
               )}
             </div>
 
-            {multiDim !== "none" && (
-              <div className="mt-4 border-t border-neutral-800/60 pt-6">
-                <h3 className="font-bold text-white mb-1 flex items-center gap-2">
-                  <BarChart2 size={16} className="text-emerald-400" />
-                  MULTI-DIM — {MULTI_DIM_OPTIONS.find((o) => o.value === multiDim)?.label}
-                </h3>
-                {needsClientFilter && !clientFilter && (
-                  <div className="text-neutral-500 text-sm mb-3">
-                    Showing all clients. Enter a client name to filter this view.
-                  </div>
-                )}
+            <div className="mt-4 border-t border-neutral-800/60 pt-6">
+              <h3 className="font-bold text-white mb-1 flex items-center gap-2">
+                <BarChart2 size={16} className="text-emerald-400" />
+                MULTI-DIM — {MULTI_DIM_OPTIONS.find((o) => o.value === multiDim)?.label}
+              </h3>
+              {needsClientFilter && !clientFilter && (
+                <div className="text-neutral-500 text-sm mb-3">
+                  Showing all clients. Select a client to filter this view.
+                </div>
+              )}
                 {multiDimLoading && <ChartSkeleton height={320} />}
                 {multiDimError && (
                   <div className="text-red-400 font-medium text-sm mt-4">
@@ -1395,7 +1487,6 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
                   </div>
                 )}
               </div>
-            )}
           </section>
         )}
       </div>

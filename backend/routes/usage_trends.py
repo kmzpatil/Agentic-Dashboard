@@ -292,26 +292,35 @@ def _apply_usage_filters(
     date_to: Optional[str] = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, Optional[pd.DataFrame]]:
     """Apply filter parameters consistently across usage-trends datasets."""
-    def _is_all(value: Optional[str]) -> bool:
+    def _is_all(value: Optional[str | List[str]]) -> bool:
         if value is None:
             return True
+        if isinstance(value, list):
+            return not value or any(v.strip().lower() in {"all", ""} for v in value)
         return value.strip().lower() in {"all", ""}
 
+    def _to_list(value: str | List[str]) -> List[str]:
+        if isinstance(value, list):
+            return value
+        return [value]
+
     if company and not _is_all(company):
-        company_user_ids = users.loc[users["Client_Name"] == company, "User_ID"]
+        company_list = _to_list(company)
+        company_user_ids = users.loc[users["Client_Name"].isin(company_list), "User_ID"]
         videos = videos[videos["User_ID"].isin(company_user_ids)]
-        users = users[users["Client_Name"] == company]
+        users = users[users["Client_Name"].isin(company_list)]
 
     if user and not _is_all(user):
         name_col = "User_Name" if "User_Name" in users.columns else "User_ID"
-        user_ids = users.loc[users[name_col] == user, "User_ID"]
+        user_list = _to_list(user)
+        user_ids = users.loc[users[name_col].isin(user_list), "User_ID"]
         videos = videos[videos["User_ID"].isin(user_ids)]
 
     if language and not _is_all(language):
-        videos = videos[videos["Language"] == language]
+        videos = videos[videos["Language"].isin(_to_list(language))]
 
     if input_type and not _is_all(input_type):
-        videos = videos[videos["Input_Type"] == input_type]
+        videos = videos[videos["Input_Type"].isin(_to_list(input_type))]
 
     if date_from:
         videos = videos[videos["Upload_Date"] >= pd.Timestamp(date_from)]
@@ -319,17 +328,18 @@ def _apply_usage_filters(
         videos = videos[videos["Upload_Date"] <= pd.Timestamp(date_to)]
 
     if channel and not _is_all(channel):
+        channel_list = _to_list(channel)
         if rvc is not None and not rvc.empty and "Channel_Name" in rvc.columns:
-            channel_video_ids = rvc.loc[rvc["Channel_Name"] == channel, "Video_ID"]
+            channel_video_ids = rvc.loc[rvc["Channel_Name"].isin(channel_list), "Video_ID"]
             videos = videos[videos["Video_ID"].isin(channel_video_ids)]
         elif dist is not None and not dist.empty and "Channel_Name" in dist.columns:
-            channel_post_ids = dist.loc[dist["Channel_Name"] == channel, "Post_ID"]
+            channel_post_ids = dist.loc[dist["Channel_Name"].isin(channel_list), "Post_ID"]
             posts = posts[posts["Post_ID"].isin(channel_post_ids)]
 
     assets = assets[assets["Video_ID"].isin(videos["Video_ID"])]
 
     if output_type and not _is_all(output_type):
-        assets = assets[assets["Output_Type"] == output_type]
+        assets = assets[assets["Output_Type"].isin(_to_list(output_type))]
 
     posts = posts[posts["Asset_ID"].isin(assets["Asset_ID"])]
 
@@ -671,14 +681,15 @@ def _resample_client_timeline(df: pd.DataFrame, granularity: str) -> pd.DataFram
 @router.get("/v1/pipeline-metrics")
 def get_pipeline_metrics(
     granularity: str = Query("day", description="day, week, month, or quarter"),
-    company: Optional[str] = Query(None),
-    channel: Optional[str] = Query(None),
-    user: Optional[str] = Query(None),
-    language: Optional[str] = Query(None),
-    input_type: Optional[str] = Query(None),
-    output_type: Optional[str] = Query(None),
+    company: Optional[List[str]] = Query(None),
+    channel: Optional[List[str]] = Query(None),
+    user: Optional[List[str]] = Query(None),
+    language: Optional[List[str]] = Query(None),
+    input_type: Optional[List[str]] = Query(None),
+    output_type: Optional[List[str]] = Query(None),
     date_from: Optional[str] = Query(None, description="YYYY-MM-DD"),
     date_to: Optional[str] = Query(None, description="YYYY-MM-DD"),
+    auth_context: AuthContext = Depends(require_auth),
 ):
     try:
         engine = _get_engine()
@@ -698,6 +709,9 @@ def get_pipeline_metrics(
         videos_df["Upload_Date"] = pd.to_datetime(videos_df["Upload_Date"])
         assets_df["Create_Date"] = pd.to_datetime(assets_df["Create_Date"])
         posts_df["Publish_Date"] = pd.to_datetime(posts_df["Publish_Date"])
+
+        if auth_context.role == "client_admin":
+            company = auth_context.client_name
 
         videos_df, assets_df, posts_df, users_df, dist_df = _apply_usage_filters(
             videos_df,
@@ -737,14 +751,15 @@ def get_pipeline_metrics(
 def get_client_master_timeline_endpoint(
     client_name: str = Query(..., description="Exact client name"),
     granularity: str = Query("day", description="day, week, month, or quarter"),
-    company: Optional[str] = Query(None),
-    channel: Optional[str] = Query(None),
-    user: Optional[str] = Query(None),
-    language: Optional[str] = Query(None),
-    input_type: Optional[str] = Query(None),
-    output_type: Optional[str] = Query(None),
+    company: Optional[List[str]] = Query(None),
+    channel: Optional[List[str]] = Query(None),
+    user: Optional[List[str]] = Query(None),
+    language: Optional[List[str]] = Query(None),
+    input_type: Optional[List[str]] = Query(None),
+    output_type: Optional[List[str]] = Query(None),
     date_from: Optional[str] = Query(None, description="YYYY-MM-DD"),
     date_to: Optional[str] = Query(None, description="YYYY-MM-DD"),
+    auth_context: AuthContext = Depends(require_auth),
 ):
     try:
         safe_granularity = granularity if granularity in {'day', 'week', 'month', 'quarter'} else 'day'
@@ -766,6 +781,10 @@ def get_client_master_timeline_endpoint(
         videos_df["Upload_Date"] = pd.to_datetime(videos_df["Upload_Date"])
         assets_df["Create_Date"] = pd.to_datetime(assets_df["Create_Date"])
         posts_df["Publish_Date"] = pd.to_datetime(posts_df["Publish_Date"])
+
+        if auth_context.role == "client_admin":
+            client_name = auth_context.client_name
+            company = auth_context.client_name
 
         videos_df, assets_df, posts_df, users_df, dist_df = _apply_usage_filters(
             videos_df,

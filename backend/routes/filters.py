@@ -111,9 +111,15 @@ def get_date_range():
 # -- /v1/filters/options/company ----------------------------------------------------
 
 @router.get("/options/company")
-def get_company_options():
+def get_company_options(auth: AuthContext = Depends(require_auth)):
     """All unique company (Client_Name) values."""
     try:
+        if auth.role == "client_admin":
+            return {
+                "status": "success",
+                "filter": "company",
+                "options": ["All", auth.client_name] if auth.client_name else ["All"],
+            }
         df = _read("SELECT DISTINCT \"Client_Name\" FROM \"users\" WHERE \"Client_Name\" IS NOT NULL")
         return {
             "status": "success",
@@ -129,12 +135,16 @@ def get_company_options():
 @router.get("/options/channel")
 def get_channel_options(
     company: Optional[str] = Query(None, description="Scope to a specific company"),
+    auth: AuthContext = Depends(require_auth),
 ):
     """
     All unique channel names.
     Pass ?company=Acme Corp to restrict to that company's posts.
     """
     try:
+        if auth.role == "client_admin":
+            company = auth.client_name
+
         rvc = _read_optional(
             "SELECT \"Video_ID\", \"Channel_Name\" FROM \"raw_video_channel\" WHERE \"Channel_Name\" IS NOT NULL",
             ["Video_ID", "Channel_Name"],
@@ -165,12 +175,16 @@ def get_channel_options(
 def get_user_options(
     company: Optional[str] = Query(None, description="Scope to a specific company"),
     channel: Optional[str] = Query(None, description="Scope to a specific channel"),
+    auth: AuthContext = Depends(require_auth),
 ):
     """
     All unique usernames / user identifiers.
     Pass ?company=Acme Corp to restrict to that company's users.
     """
     try:
+        if auth.role == "client_admin":
+            company = auth.client_name
+
         users = _read("SELECT \"User_ID\", \"User_Name\", \"Client_Name\" FROM \"users\"")
         videos = _read("SELECT \"Video_ID\", \"User_ID\" FROM \"raw_videos\"")
 
@@ -198,12 +212,16 @@ def get_user_options(
 @router.get("/options/language")
 def get_language_options(
     company: Optional[str] = Query(None, description="Scope to a specific company"),
+    auth: AuthContext = Depends(require_auth),
 ):
     """
     All unique languages present in raw_videos.
     Pass ?company=Acme Corp to restrict to that company's uploads.
     """
     try:
+        if auth.role == "client_admin":
+            company = auth.client_name
+
         videos = _read(
             "SELECT \"Video_ID\", \"User_ID\", \"Language\" FROM \"raw_videos\" WHERE \"Language\" IS NOT NULL"
         )
@@ -227,12 +245,16 @@ def get_language_options(
 @router.get("/options/input-type")
 def get_input_type_options(
     company: Optional[str] = Query(None, description="Scope to a specific company"),
+    auth: AuthContext = Depends(require_auth),
 ):
     """
     All unique input types from raw_videos.
     Pass ?company=Acme Corp to restrict results.
     """
     try:
+        if auth.role == "client_admin":
+            company = auth.client_name
+
         videos = _read(
             "SELECT \"Video_ID\", \"User_ID\", \"Input_Type\" FROM \"raw_videos\" WHERE \"Input_Type\" IS NOT NULL"
         )
@@ -256,12 +278,16 @@ def get_input_type_options(
 @router.get("/options/output-type")
 def get_output_type_options(
     company: Optional[str] = Query(None, description="Scope to a specific company"),
+    auth: AuthContext = Depends(require_auth),
 ):
     """
     All unique output types from created_assets.
     Pass ?company=Acme Corp to restrict results.
     """
     try:
+        if auth.role == "client_admin":
+            company = auth.client_name
+
         assets = _read(
             "SELECT \"Asset_ID\", \"Video_ID\", \"Output_Type\" FROM \"created_assets\" WHERE \"Output_Type\" IS NOT NULL"
         )
@@ -288,12 +314,16 @@ def get_output_type_options(
 def get_all_filter_options(
     company: Optional[str] = Query(None, description="Scope all dimension filters to this company"),
     channel: Optional[str] = Query(None, description="Scope all dimension filters to this channel"),
+    auth: AuthContext = Depends(require_auth),
 ):
     """
     Fetches every filter dimension in a single round-trip.
     Equivalent to calling all individual /options/* endpoints at once.
     """
     try:
+        if auth.role == "client_admin":
+            company = auth.client_name
+
         engine = _get_engine()
 
         videos = pd.read_sql(
@@ -338,11 +368,15 @@ def get_all_filter_options(
 
         name_col = "User_Name" if "User_Name" in scoped_users.columns else "User_ID"
 
+        company_options = _sorted_unique(users["Client_Name"])
+        if auth.role == "client_admin":
+            company_options = ["All", auth.client_name] if auth.client_name else ["All"]
+
         return {
             "status": "success",
             "date_range": date_range,
             "filters": {
-                "company": _sorted_unique(users["Client_Name"]),
+                "company": company_options,
                 "channel": _sorted_unique(scoped_rvc["Channel_Name"]),
                 "user": _sorted_unique(scoped_users[name_col]),
                 "language": _sorted_unique(scoped_videos["Language"].dropna()),
@@ -358,21 +392,37 @@ def get_all_filter_options(
 
 @router.get("/validate")
 def validate_filter_combination(
-    company: Optional[str] = Query(None),
-    channel: Optional[str] = Query(None),
-    user: Optional[str] = Query(None),
-    language: Optional[str] = Query(None),
-    input_type: Optional[str] = Query(None),
-    output_type: Optional[str] = Query(None),
+    company: Optional[List[str]] = Query(None),
+    channel: Optional[List[str]] = Query(None),
+    user: Optional[List[str]] = Query(None),
+    language: Optional[List[str]] = Query(None),
+    input_type: Optional[List[str]] = Query(None),
+    output_type: Optional[List[str]] = Query(None),
     date_from: Optional[str] = Query(None, description="YYYY-MM-DD"),
     date_to: Optional[str] = Query(None, description="YYYY-MM-DD"),
+    auth: AuthContext = Depends(require_auth),
 ):
     """
     Validates that the given filter combination returns at least one row.
     Useful for the frontend to warn users about empty result sets before
     triggering expensive downstream queries.
     """
+    def _is_all(value: Optional[str | List[str]]) -> bool:
+        if value is None:
+            return True
+        if isinstance(value, list):
+            return not value or any(v.strip().lower() in {"all", ""} for v in value)
+        return value.strip().lower() in {"all", ""}
+
+    def _to_list(value: str | List[str]) -> List[str]:
+        if isinstance(value, list):
+            return value
+        return [value]
+
     try:
+        if auth.role == "client_admin":
+            company = [auth.client_name]
+
         engine = _get_engine()
         videos = pd.read_sql(
             "SELECT \"Video_ID\", \"User_ID\", \"Input_Type\", \"Language\", \"Upload_Date\" FROM \"raw_videos\"",
@@ -389,19 +439,21 @@ def validate_filter_combination(
         videos["Upload_Date"] = pd.to_datetime(videos["Upload_Date"])
 
         if company and not _is_all(company):
-            company_user_ids = users.loc[users["Client_Name"] == company, "User_ID"]
+            company_list = _to_list(company)
+            company_user_ids = users.loc[users["Client_Name"].isin(company_list), "User_ID"]
             videos = videos[videos["User_ID"].isin(company_user_ids)]
 
         if user and not _is_all(user):
             name_col = "User_Name" if "User_Name" in users.columns else "User_ID"
-            user_ids = users.loc[users[name_col] == user, "User_ID"]
+            user_list = _to_list(user)
+            user_ids = users.loc[users[name_col].isin(user_list), "User_ID"]
             videos = videos[videos["User_ID"].isin(user_ids)]
 
         if language and not _is_all(language):
-            videos = videos[videos["Language"] == language]
+            videos = videos[videos["Language"].isin(_to_list(language))]
 
         if input_type and not _is_all(input_type):
-            videos = videos[videos["Input_Type"] == input_type]
+            videos = videos[videos["Input_Type"].isin(_to_list(input_type))]
 
         if date_from:
             videos = videos[videos["Upload_Date"] >= pd.Timestamp(date_from)]
@@ -410,13 +462,14 @@ def validate_filter_combination(
 
         if channel and not _is_all(channel):
             if not rvc.empty:
-                channel_video_ids = rvc.loc[rvc["Channel_Name"] == channel, "Video_ID"]
+                channel_list = _to_list(channel)
+                channel_video_ids = rvc.loc[rvc["Channel_Name"].isin(channel_list), "Video_ID"]
                 videos = videos[videos["Video_ID"].isin(channel_video_ids)]
 
         scoped_assets = assets[assets["Video_ID"].isin(videos["Video_ID"])]
 
         if output_type and not _is_all(output_type):
-            scoped_assets = scoped_assets[scoped_assets["Output_Type"] == output_type]
+            scoped_assets = scoped_assets[scoped_assets["Output_Type"].isin(_to_list(output_type))]
 
         scoped_posts = posts[posts["Asset_ID"].isin(scoped_assets["Asset_ID"])]
 
