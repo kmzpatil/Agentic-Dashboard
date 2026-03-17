@@ -7,7 +7,7 @@ from typing import List, Optional
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from backend.middleware.auth import require_auth
+from backend.middleware.auth import AuthContext, require_auth
 
 
 router = APIRouter(
@@ -86,18 +86,27 @@ def _filter_videos_by_channel(videos: pd.DataFrame, channel: Optional[str]) -> p
 # -- /v1/filters/date-range ---------------------------------------------------------
 
 @router.get("/date-range")
-def get_date_range():
+def get_date_range(auth: AuthContext = Depends(require_auth)):
     """
     Returns the earliest and latest upload dates available in the dataset.
     The frontend uses this to initialize and constrain the date-range picker.
     """
     try:
-        df = _read(
-            "SELECT MIN(\"Upload_Date\") AS min_date, MAX(\"Upload_Date\") AS max_date FROM \"raw_videos\""
-        )
-        row = df.iloc[0]
-        min_date = pd.Timestamp(row["min_date"])
-        max_date = pd.Timestamp(row["max_date"])
+        videos = _read("SELECT \"Upload_Date\", \"User_ID\" FROM \"raw_videos\"")
+
+        if auth.role in {"client_admin", "user"}:
+            users = _read("SELECT \"User_ID\", \"Client_Name\" FROM \"users\"")
+            if auth.role == "user" and auth.user_id is not None:
+                videos = videos[videos["User_ID"] == auth.user_id]
+            elif auth.client_name:
+                company_user_ids = users.loc[users["Client_Name"] == auth.client_name, "User_ID"]
+                videos = videos[videos["User_ID"].isin(company_user_ids)]
+
+        if videos.empty:
+            raise HTTPException(status_code=404, detail="No data available for date range")
+
+        min_date = pd.Timestamp(videos["Upload_Date"].min())
+        max_date = pd.Timestamp(videos["Upload_Date"].max())
         return {
             "status": "success",
             "min_date": min_date.strftime("%Y-%m-%d"),
@@ -114,7 +123,7 @@ def get_date_range():
 def get_company_options(auth: AuthContext = Depends(require_auth)):
     """All unique company (Client_Name) values."""
     try:
-        if auth.role == "client_admin":
+        if auth.role in {"client_admin", "user"}:
             return {
                 "status": "success",
                 "filter": "company",
@@ -142,7 +151,7 @@ def get_channel_options(
     Pass ?company=Acme Corp to restrict to that company's posts.
     """
     try:
-        if auth.role == "client_admin":
+        if auth.role in {"client_admin", "user"}:
             company = auth.client_name
 
         rvc = _read_optional(
@@ -150,12 +159,17 @@ def get_channel_options(
             ["Video_ID", "Channel_Name"],
         )
 
-        if company and not _is_all(company):
+        if (company and not _is_all(company)) or auth.role == "user":
             videos = _read("SELECT \"Video_ID\", \"User_ID\" FROM \"raw_videos\"")
             users = _read("SELECT \"User_ID\", \"Client_Name\" FROM \"users\"")
 
-            company_user_ids = users.loc[users["Client_Name"] == company, "User_ID"]
-            videos = videos[videos["User_ID"].isin(company_user_ids)]
+            if auth.role == "user" and auth.user_id is not None:
+                videos = videos[videos["User_ID"] == auth.user_id]
+                users = users[users["User_ID"] == auth.user_id]
+
+            if company and not _is_all(company):
+                company_user_ids = users.loc[users["Client_Name"] == company, "User_ID"]
+                videos = videos[videos["User_ID"].isin(company_user_ids)]
 
             if not rvc.empty:
                 rvc = rvc[rvc["Video_ID"].isin(videos["Video_ID"])]
@@ -182,6 +196,12 @@ def get_user_options(
     Pass ?company=Acme Corp to restrict to that company's users.
     """
     try:
+        if auth.role == "user":
+            return {
+                "status": "success",
+                "filter": "user",
+                "options": ["All", auth.username] if auth.username else ["All"],
+            }
         if auth.role == "client_admin":
             company = auth.client_name
 
@@ -219,12 +239,15 @@ def get_language_options(
     Pass ?company=Acme Corp to restrict to that company's uploads.
     """
     try:
-        if auth.role == "client_admin":
+        if auth.role in {"client_admin", "user"}:
             company = auth.client_name
 
         videos = _read(
             "SELECT \"Video_ID\", \"User_ID\", \"Language\" FROM \"raw_videos\" WHERE \"Language\" IS NOT NULL"
         )
+
+        if auth.role == "user" and auth.user_id is not None:
+            videos = videos[videos["User_ID"] == auth.user_id]
 
         if company and not _is_all(company):
             users = _read("SELECT \"User_ID\", \"Client_Name\" FROM \"users\"")
@@ -252,12 +275,15 @@ def get_input_type_options(
     Pass ?company=Acme Corp to restrict results.
     """
     try:
-        if auth.role == "client_admin":
+        if auth.role in {"client_admin", "user"}:
             company = auth.client_name
 
         videos = _read(
             "SELECT \"Video_ID\", \"User_ID\", \"Input_Type\" FROM \"raw_videos\" WHERE \"Input_Type\" IS NOT NULL"
         )
+
+        if auth.role == "user" and auth.user_id is not None:
+            videos = videos[videos["User_ID"] == auth.user_id]
 
         if company and not _is_all(company):
             users = _read("SELECT \"User_ID\", \"Client_Name\" FROM \"users\"")
@@ -285,7 +311,7 @@ def get_output_type_options(
     Pass ?company=Acme Corp to restrict results.
     """
     try:
-        if auth.role == "client_admin":
+        if auth.role in {"client_admin", "user"}:
             company = auth.client_name
 
         assets = _read(
@@ -293,6 +319,9 @@ def get_output_type_options(
         )
         videos = _read("SELECT \"Video_ID\", \"User_ID\" FROM \"raw_videos\"")
         merged = assets.merge(videos, on="Video_ID", how="inner")
+
+        if auth.role == "user" and auth.user_id is not None:
+            merged = merged[merged["User_ID"] == auth.user_id]
 
         if company and not _is_all(company):
             users = _read("SELECT \"User_ID\", \"Client_Name\" FROM \"users\"")
@@ -321,7 +350,7 @@ def get_all_filter_options(
     Equivalent to calling all individual /options/* endpoints at once.
     """
     try:
-        if auth.role == "client_admin":
+        if auth.role in {"client_admin", "user"}:
             company = auth.client_name
 
         engine = _get_engine()
@@ -351,10 +380,14 @@ def get_all_filter_options(
         scoped_videos = videos.copy()
         scoped_users = users.copy()
 
+        if auth.role == "user" and auth.user_id is not None:
+            scoped_videos = videos[videos["User_ID"] == auth.user_id]
+            scoped_users = users[users["User_ID"] == auth.user_id]
+
         if company and not _is_all(company):
-            company_user_ids = users.loc[users["Client_Name"] == company, "User_ID"]
-            scoped_videos = videos[videos["User_ID"].isin(company_user_ids)]
-            scoped_users = users[users["Client_Name"] == company]
+            company_user_ids = scoped_users.loc[scoped_users["Client_Name"] == company, "User_ID"]
+            scoped_videos = scoped_videos[scoped_videos["User_ID"].isin(company_user_ids)]
+            scoped_users = scoped_users[scoped_users["Client_Name"] == company]
 
         if channel and not _is_all(channel):
             scoped_videos = _filter_videos_by_channel(scoped_videos, channel)
@@ -369,8 +402,13 @@ def get_all_filter_options(
         name_col = "User_Name" if "User_Name" in scoped_users.columns else "User_ID"
 
         company_options = _sorted_unique(users["Client_Name"])
-        if auth.role == "client_admin":
+        if auth.role in {"client_admin", "user"}:
             company_options = ["All", auth.client_name] if auth.client_name else ["All"]
+
+        user_options = _sorted_unique(scoped_users[name_col])
+        # [FIX] For user role, user_options should already contain just their display name
+        # from the scoped_users dataframe (which is filtered by their numeric user_id).
+        # Overriding it with auth.username (the login ID) was causing the discrepancy.
 
         return {
             "status": "success",
@@ -378,7 +416,7 @@ def get_all_filter_options(
             "filters": {
                 "company": company_options,
                 "channel": _sorted_unique(scoped_rvc["Channel_Name"]),
-                "user": _sorted_unique(scoped_users[name_col]),
+                "user": user_options,
                 "language": _sorted_unique(scoped_videos["Language"].dropna()),
                 "input_type": _sorted_unique(scoped_videos["Input_Type"].dropna()),
                 "output_type": _sorted_unique(scoped_assets["Output_Type"].dropna()),
@@ -422,7 +460,10 @@ def validate_filter_combination(
     try:
         if auth.role == "client_admin":
             company = [auth.client_name]
-
+        elif auth.role == "user":
+            company = [auth.client_name]
+            # [FIX] Do not filter by auth.username (the login ID).
+            # The numeric user filtering happens via auth.user_id check below.
         engine = _get_engine()
         videos = pd.read_sql(
             "SELECT \"Video_ID\", \"User_ID\", \"Input_Type\", \"Language\", \"Upload_Date\" FROM \"raw_videos\"",
@@ -437,6 +478,9 @@ def validate_filter_combination(
         )
 
         videos["Upload_Date"] = pd.to_datetime(videos["Upload_Date"])
+
+        if auth.role == "user" and auth.user_id is not None:
+            videos = videos[videos["User_ID"] == auth.user_id]
 
         if company and not _is_all(company):
             company_list = _to_list(company)

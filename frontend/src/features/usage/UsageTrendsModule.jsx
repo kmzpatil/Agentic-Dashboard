@@ -14,6 +14,7 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
     CalendarDays,
     SlidersHorizontal,
     X,
+    History,
   } from "lucide-react";
   import { Line } from "react-chartjs-2";
   import { useApi } from "../../hooks/useApi";
@@ -24,7 +25,6 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
     ChartSkeleton,
     Skeleton,
   } from "../../components/common/Skeleton";
-  import InsightCard from "../../components/insights/InsightCard";
 
   const METRIC_GROUPS = [
     {
@@ -65,6 +65,7 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
     options,
     isGroups = false,
     minWidth = "240px",
+    className = "",
     themeColor = "red",
     disabled = false,
     multiSelect = false,
@@ -135,7 +136,7 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
     const dotColor = themeColor === "red" ? "bg-red-500" : "bg-red-400";
 
     return (
-      <div ref={ref} className="relative" style={{ minWidth }}>
+      <div ref={ref} className={`relative ${className}`} style={minWidth ? { minWidth } : {}}>
         <button
           type="button"
           disabled={disabled}
@@ -377,7 +378,7 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
               max={maxIndex}
               value={safeStart}
               onChange={(event) => onChange(Number(event.target.value), safeEnd)}
-              className="frammer-range absolute inset-0 z-20"
+              className="frammer-range absolute top-1/2 -translate-y-1/2 left-0 w-full h-1.5 z-20"
             />
             <input
               type="range"
@@ -385,7 +386,7 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
               max={maxIndex}
               value={safeEnd}
               onChange={(event) => onChange(safeStart, Number(event.target.value))}
-              className="frammer-range absolute inset-0 z-30"
+              className="frammer-range absolute top-1/2 -translate-y-1/2 left-0 w-full h-1.5 z-30"
             />
           </div>
 
@@ -411,7 +412,8 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
     "#FB923C", "#60A5FA", "#F87171", "#4ADE80", "#E879F9",
   ];
 
-  const CLIENT_OPTIONAL_DIMS = new Set(["output_type", "input_type_proportion"]);
+  const CLIENT_OPTIONAL_DIMS = new Set(["output_type", "input_type_proportion", "volume_dynamics", "duration_dynamics", "success_scores"]);
+  const USER_OPTIONAL_DIMS = new Set(["output_type", "input_type_proportion", "volume_dynamics", "duration_dynamics", "success_scores"]);
 
   function formatMetricValue(metric, value) {
     if (metric.includes("rate") || metric.includes("efficiency"))
@@ -491,6 +493,7 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
     const [cutoffDate, setCutoffDate] = useState("");
     const [multiDim, setMultiDim] = useState("output_type");
     const [clientFilter, setClientFilter] = useState("");
+    const [userFilter, setUserFilter] = useState("");
     const [filters, setFilters] = useState({
       company: authUser?.role === "client_admin" ? [authUser.clientName] : ["All"],
       channel: ["All"],
@@ -506,6 +509,8 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
     const [isMaximized, setIsMaximized] = useState(false);
     const [isFiltersOpen, setIsFiltersOpen] = useState(true);
     const [showPoints, setShowPoints] = useState(false);
+    const [showComparison, setShowComparison] = useState(false);
+    const [comparisonOffset, setComparisonOffset] = useState(1);
     const chartRef = useRef(null);
 
     // ── Side effects ─────────────────────────────────────────────────────────
@@ -559,6 +564,19 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
       [filterOptionsUrl],
     );
 
+    // [FIX] Scoped Filter Options for Multi-Dim section
+    const multiDimCompany = useMemo(() => {
+      if (authUser?.role === "client_admin") return authUser.clientName;
+      if (authUser?.role === "website_admin") return clientFilter;
+      return "";
+    }, [authUser, clientFilter]);
+
+    const multiDimFilterOptionsUrl = `${API_BASE}/usage-trends/v1/filters/options${multiDimCompany ? `?company=${encodeURIComponent(multiDimCompany)}` : ""}`;
+    const { data: multiDimFilterOptionsData } = useApi(
+      multiDimFilterOptionsUrl,
+      [multiDimFilterOptionsUrl],
+    );
+
     const dateRangeUrl = `${API_BASE}/usage-trends/v1/filters/date-range`;
     const { data: dateRangeData } = useApi(dateRangeUrl, [dateRangeUrl]);
 
@@ -585,7 +603,7 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
 
     const multiDimUrl =
       multiDim !== "none"
-        ? `${API_BASE}/usage-trends/v1/multi-dim?analysis=${encodeURIComponent(multiDim)}&granularity=${encodeURIComponent(granularity)}${clientFilter ? `&client_name=${encodeURIComponent(clientFilter)}` : ""}${appliedFiltersQuerySuffix}`
+        ? `${API_BASE}/usage-trends/v1/multi-dim?analysis=${encodeURIComponent(multiDim)}&granularity=${encodeURIComponent(granularity)}${clientFilter ? `&client_name=${encodeURIComponent(clientFilter)}` : ""}${userFilter ? `&user=${encodeURIComponent(userFilter)}` : ""}${appliedFiltersQuerySuffix}`
         : null;
     const { data: multiDimData, loading: multiDimLoading, error: multiDimError } = useApi(multiDimUrl, [multiDimUrl]);
 
@@ -689,10 +707,12 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
      */
     const resolvedCutoff = useMemo(() => {
       if (cutoffDate) return cutoffDate;
+      // [FIX] Auto cutoff must be last data point showing in plot
+      if (historySeries.length > 0) return historySeries.at(-1).period.slice(0, 10);
       if (!prediction.data?.clients) return null;
       const first = Object.values(prediction.data.clients)[0];
       return first?.history_cutoff ? String(first.history_cutoff).slice(0, 10) : null;
-    }, [cutoffDate, prediction.data]);
+    }, [cutoffDate, historySeries, prediction.data]);
 
     const predictionSeries = useMemo(() => {
       if (!isPredicting || prediction.loading || !prediction.data?.clients) return [];
@@ -826,11 +846,36 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
         });
       }
 
+      if (showComparison && historySeries.length > 0) {
+        // Create lagged series
+        const laggedData = labels.map((label, idx) => {
+          const sourceIdx = idx - comparisonOffset;
+          if (sourceIdx >= 0) {
+            const sourceDate = labels[sourceIdx];
+            return historyByDate.get(sourceDate);
+          }
+          return null;
+        });
+
+        datasets.push({
+          label: `${resolvedMetric.replace(/_/g, " ")} (${comparisonOffset}p Lag)`,
+          data: laggedData,
+          borderColor: "#A855F7", // Purple-500
+          backgroundColor: "transparent",
+          borderWidth: 2,
+          tension: 0.25,
+          borderDash: [3, 3],
+          fill: false,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+        });
+      }
+
       return { labels, datasets };
     }, [
       historySeries, resolvedMetric, predictionSeries,
       isPredicting, showPoints, cutoffDate, resolvedCutoff,
-      trends.data,
+      trends.data, showComparison, comparisonOffset,
     ]);
 
     const multiDimChartData = useMemo(() => {
@@ -901,6 +946,7 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
 
     const anomalies = trends.data?.anomalies || [];
     const needsClientFilter = CLIENT_OPTIONAL_DIMS.has(multiDim);
+    const needsUserFilter = USER_OPTIONAL_DIMS.has(multiDim);
     const hasDataForFilters = validateData?.has_data;
 
     const handleDateRangeChange = (nextStartIndex, nextEndIndex) => {
@@ -942,12 +988,14 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
           }
           .frammer-range:focus { outline: none; }
           .frammer-range::-webkit-slider-runnable-track {
-            height: 0;
-            background: transparent;
+            height: 6px;
+            background: rgba(255,255,255,0.08);
+            border-radius: 3px;
           }
           .frammer-range::-moz-range-track {
-            height: 0;
-            background: transparent;
+            height: 6px;
+            background: rgba(255,255,255,0.08);
+            border-radius: 3px;
           }
           .frammer-range::-webkit-slider-thumb {
             -webkit-appearance: none;
@@ -960,6 +1008,15 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
             border: 2px solid #ef4444;
             box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.15);
             cursor: pointer;
+            margin-top: -6px; /* (6px track - 18px thumb) / 2 */
+          }
+          .comparison-slider::-webkit-slider-thumb {
+            background: #A855F7 !important;
+            border: 2px solid #000 !important;
+            box-shadow: 0 0 10px rgba(168, 85, 247, 0.4) !important;
+          }
+          .comparison-slider::-webkit-slider-runnable-track {
+            background: rgba(168, 85, 247, 0.1) !important;
           }
           .frammer-range::-moz-range-thumb {
             pointer-events: auto;
@@ -970,6 +1027,14 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
             border: 2px solid #ef4444;
             box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.15);
             cursor: pointer;
+          }
+          .comparison-slider::-moz-range-thumb {
+            background: #fafafa !important;
+            border: 2px solid #A855F7 !important;
+            box-shadow: 0 0 0 4px rgba(168, 85, 247, 0.15) !important;
+          }
+          .comparison-slider {
+            pointer-events: auto !important;
           }
         `}</style>
         {!isMaximized && (
@@ -991,6 +1056,8 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
                     options={METRIC_GROUPS}
                     isGroups={true}
                     disabled={isPredicting}
+                    minWidth=""
+                    className="w-full lg:min-w-[240px]"
                   />
                 </div>
 
@@ -1094,13 +1161,13 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
                 <div className="hidden lg:block self-stretch w-px bg-neutral-800/70" />
 
                 {/* KPI strip */}
-                <section className="w-full lg:w-auto lg:flex-1 grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-0 items-end">
+                <section className="w-full xl:w-auto xl:flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 xl:gap-0 items-end">
                   {/* KPI 1: This Period */}
-                  <div className="rounded-lg border border-neutral-900/70 bg-transparent px-3 py-2 md:pr-4">
+                  <div className="rounded-xl border border-neutral-800/50 bg-neutral-900/20 px-4 py-3 xl:px-3 xl:py-2 xl:bg-transparent xl:border-neutral-900/70">
                     <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-neutral-500">
                       This Period
                     </div>
-                    <div className="mt-1 text-lg font-bold leading-tight text-white">
+                    <div className="mt-1 text-xl xl:text-lg font-bold leading-tight text-white">
                       {formatMetricValue(resolvedMetric, summary.latestValue)}
                     </div>
                     <div className="mt-0.5 text-[11px] text-neutral-500">
@@ -1109,7 +1176,7 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
                   </div>
 
                   {/* KPI 2: vs Last Period */}
-                  <div className="rounded-lg border border-neutral-900/70 bg-transparent px-3 py-2 md:ml-4 md:pl-4 md:border-l md:border-l-neutral-800/70">
+                  <div className="rounded-xl border border-neutral-800/50 bg-neutral-900/20 px-4 py-3 xl:px-3 xl:py-2 xl:ml-4 xl:pl-4 xl:bg-transparent xl:border-neutral-900/70 xl:border-l xl:border-l-neutral-800/70">
                     {(() => {
                       const deltaNum = summary.deltaVsPreviousPct;
                       const deltaUp = deltaNum !== null && deltaNum > 0;
@@ -1155,23 +1222,19 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
           </>
         )}
 
-        {/* ── 3-column fixed-height row: [filter] [chart] [anomaly] ───────── */}
-        {/* All three columns share the same height (560px). Each manages     */}
-        {/* its own internal scroll so nothing ever pushes the row taller.    */}
         <section
           className={`${
             isMaximized
               ? "h-full"
-              : "grid grid-cols-1 xl:grid-cols-[auto_minmax(0,1fr)_300px] gap-6 items-stretch"
+              : "grid grid-cols-1 lg:grid-cols-[auto_1fr] xl:grid-cols-[auto_minmax(0,1fr)_300px] gap-6 items-stretch"
           }`}
         >
-          {/* ── Col 1: Filter sidebar ────────────────────────────────────── */}
           {!isMaximized && (
             <aside
-              className="rounded-[24px] border border-neutral-800 bg-[#0e0e0e] shadow-xl transition-all duration-300 hover:border-neutral-700 flex flex-col"
-              style={{ width: isFiltersOpen ? "240px" : "56px", height: "560px" }}
+              className={`rounded-[24px] border border-neutral-800 bg-[#0e0e0e] shadow-xl transition-all duration-300 hover:border-neutral-700 flex flex-col h-auto lg:h-[560px] w-full ${
+                isFiltersOpen ? "lg:w-[240px]" : "lg:w-[56px]"
+              }`}
             >
-              {/* Header — always visible */}
               <div className="flex-shrink-0 flex items-center justify-between border-b border-neutral-800/60 bg-[#121212] px-3 py-3 rounded-t-[24px] gap-2">
                 {isFiltersOpen && (
                   <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
@@ -1221,32 +1284,34 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
                   {/* Scrollable filter list — fills space between header and footer */}
                   <div className="flex-1 overflow-y-auto frammer-scrollbar min-h-0">
                     <div className="space-y-3 p-3">
-                      <div className="group">
-                        <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">Client</label>
-                        <FloatingDropdown
-                          value={filters.company}
-                          onChange={(value) => setFilters((prev) => ({
-                            ...prev, company: value,
-                            channel: ["All"], user: ["All"], language: ["All"],
-                            inputType: ["All"], outputType: ["All"],
-                          }))}
-                          options={toOptionList(
-                            authUser?.role === "client_admin"
-                              ? filterOptions.company.filter(c => c !== "All")
-                              : filterOptions.company
-                          )}
-                          minWidth="100%"
-                          multiSelect={authUser?.role !== "client_admin"}
-                        />
-                      </div>
+                      {/* HIDE Client filter for client_admin and user roles */}
+                      {authUser?.role !== "client_admin" && authUser?.role !== "user" && (
+                        <div className="group">
+                          <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">Client</label>
+                          <FloatingDropdown
+                            value={filters.company}
+                            onChange={(value) => setFilters((prev) => ({
+                              ...prev, company: value,
+                              channel: ["All"], user: ["All"], language: ["All"],
+                              inputType: ["All"], outputType: ["All"],
+                            }))}
+                            options={toOptionList(filterOptions.company)}
+                            minWidth="100%"
+                            multiSelect={true}
+                          />
+                        </div>
+                      )}
                       <div className="group">
                         <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">Channel</label>
                         <FloatingDropdown value={filters.channel} onChange={(v) => setFilters((p) => ({ ...p, channel: v }))} options={toOptionList(filterOptions.channel)} minWidth="100%" multiSelect={true} />
                       </div>
-                      <div className="group">
-                        <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">User</label>
-                        <FloatingDropdown value={filters.user} onChange={(v) => setFilters((p) => ({ ...p, user: v }))} options={toOptionList(filterOptions.user)} minWidth="100%" multiSelect={true} />
-                      </div>
+                      {/* HIDE User filter for user role */}
+                      {authUser?.role !== "user" && (
+                        <div className="group">
+                          <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">User</label>
+                          <FloatingDropdown value={filters.user} onChange={(v) => setFilters((p) => ({ ...p, user: v }))} options={toOptionList(filterOptions.user)} minWidth="100%" multiSelect={true} />
+                        </div>
+                      )}
                       <div className="group">
                         <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">Language</label>
                         <FloatingDropdown value={filters.language} onChange={(v) => setFilters((p) => ({ ...p, language: v }))} options={toOptionList(filterOptions.language)} minWidth="100%" multiSelect={true} />
@@ -1319,12 +1384,10 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
             </aside>
           )}
 
-          {/* ── Col 2: Chart — fixed height, chart fills it exactly ──────── */}
           <div
             className={`rounded-[24px] border border-neutral-800 bg-[#0e0e0e] flex flex-col overflow-hidden shadow-xl transition-all duration-300 hover:border-neutral-700 ${
-              isMaximized ? "flex-1 h-full" : ""
+              isMaximized ? "flex-1 h-full" : "h-[400px] lg:h-[560px]"
             }`}
-            style={!isMaximized ? { height: "560px" } : {}}
           >
             {/* Chart header */}
             <div className="flex-shrink-0 flex items-center justify-between border-b border-neutral-800/60 bg-[#121212] px-6 py-4">
@@ -1333,14 +1396,43 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
                 <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-300">
                   Trend Analysis & Forecasts
                 </h3>
-                {isPredicting && resolvedCutoff && (
-                  <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-sky-500/20 bg-sky-500/10 px-2 py-0.5 text-[10px] font-bold text-sky-400">
-                    <CalendarDays size={10} />
-                    cutoff {resolvedCutoff}
-                  </span>
-                )}
               </div>
               <div className="flex items-center gap-3">
+                {/* Comparison Toggle & Slider */}
+                <div className="flex items-center gap-2 mr-2">
+                  <button 
+                    onClick={() => setShowComparison(!showComparison)} 
+                    className={`p-1.5 rounded-lg transition-all duration-300 ${
+                      showComparison 
+                        ? "bg-purple-500/20 text-purple-400 border border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.2)]" 
+                        : "text-neutral-500 hover:text-neutral-300 border border-transparent"
+                    }`}
+                    title="Compare with Past Period"
+                  >
+                    <History size={18} />
+                  </button>
+                  
+                  {showComparison && (
+                    <div className="flex items-center gap-3 animate-in fade-in slide-in-from-right-2 duration-300">
+                      <div className="flex flex-col">
+                        <input 
+                          type="range"
+                          min="1"
+                          max="12"
+                          value={comparisonOffset}
+                          onChange={(e) => setComparisonOffset(parseInt(e.target.value))}
+                          className="w-24 accent-purple-500 comparison-slider frammer-range cursor-pointer"
+                        />
+                      </div>
+                      <span className="text-[10px] font-black text-purple-400/80 w-8 tabular-nums">
+                        {comparisonOffset}P LAG
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="h-4 w-px bg-neutral-800 mx-1" />
+
                 <button onClick={() => setShowPoints(!showPoints)} className={`text-neutral-400 hover:text-white transition-colors ${showPoints ? "text-white" : ""}`} title="Toggle Data Points">
                   <CircleDot size={18} />
                 </button>
@@ -1379,8 +1471,7 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
           {/* ── Col 3: Anomaly panel — same fixed height, scrolls internally ── */}
           {!isMaximized && (
             <div
-              className="rounded-[24px] border border-neutral-800 bg-[#0e0e0e] flex flex-col overflow-hidden shadow-xl transition-all duration-300 hover:border-neutral-700"
-              style={{ height: "560px" }}
+              className="rounded-[24px] border border-neutral-800 bg-[#0e0e0e] flex flex-col overflow-hidden shadow-xl transition-all duration-300 hover:border-neutral-700 h-[400px] lg:h-[560px] lg:col-span-2 xl:col-span-1"
             >
               {/* Panel header — fixed, never scrolls */}
               <div className="flex-shrink-0 flex items-center gap-2 border-b border-neutral-800/60 bg-[#121212] px-6 py-4">
@@ -1438,23 +1529,37 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
                 <label className="mb-2 block text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-500 group-hover:text-neutral-300 transition-colors">
                   Multi-Dimensional Analysis
                 </label>
-                <FloatingDropdown value={multiDim} onChange={setMultiDim} options={MULTI_DIM_OPTIONS} />
+                <FloatingDropdown value={multiDim} onChange={setMultiDim} options={MULTI_DIM_OPTIONS} minWidth="" className="w-full lg:min-w-[240px]" />
               </div>
-              {needsClientFilter && (
+              {needsClientFilter && authUser?.role === "website_admin" && (
                 <div className="group">
                   <label className="mb-2 block text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-500 group-hover:text-neutral-300 transition-colors">
                     Client Filter <span className="text-neutral-600 lowercase">(optional)</span>
                   </label>
                   <FloatingDropdown 
-                    value={clientFilter || (authUser?.role === "client_admin" ? authUser.clientName : "All Companies")} 
-                    onChange={(val) => setClientFilter(val === "All Companies" ? "" : val)} 
-                    options={
-                      authUser?.role === "client_admin"
-                        ? [{ value: authUser.clientName, label: authUser.clientName }]
-                        : [{ value: "All Companies", label: "All Companies" }, ...toOptionList(filterOptions.company.filter(c => c !== "All"))]
-                    }
-                    minWidth="200px"
-                    disabled={authUser?.role === "client_admin"}
+                    value={clientFilter || "All Companies"} 
+                    onChange={(val) => {
+                      setClientFilter(val === "All Companies" ? "" : val);
+                      setUserFilter(""); // [FIX] Reset user when client changes
+                    }} 
+                    options={[{ value: "All Companies", label: "All Companies" }, ...toOptionList(filterOptions.company.filter(c => c !== "All"))]}
+                    minWidth=""
+                    className="w-full lg:min-w-[200px]"
+                  />
+                </div>
+              )}
+
+              {needsUserFilter && authUser?.role !== "user" && (
+                <div className="group">
+                  <label className="mb-2 block text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-500 group-hover:text-neutral-300 transition-colors">
+                    User Filter <span className="text-neutral-600 lowercase">(optional)</span>
+                  </label>
+                  <FloatingDropdown 
+                    value={userFilter || "All Users"} 
+                    onChange={(val) => setUserFilter(val === "All Users" ? "" : val)} 
+                    options={[{ value: "All Users", label: "All Users" }, ...toOptionList((multiDimFilterOptionsData?.filters?.user || []).filter(u => u !== "All"))]}
+                    minWidth=""
+                    className="w-full lg:min-w-[200px]"
                   />
                 </div>
               )}
@@ -1465,9 +1570,14 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
                 <BarChart2 size={16} className="text-emerald-400" />
                 MULTI-DIM — {MULTI_DIM_OPTIONS.find((o) => o.value === multiDim)?.label}
               </h3>
-              {needsClientFilter && !clientFilter && (
+              {needsClientFilter && authUser?.role === "website_admin" && !clientFilter && (
                 <div className="text-neutral-500 text-sm mb-3">
                   Showing all clients. Select a client to filter this view.
+                </div>
+              )}
+              {needsUserFilter && authUser?.role !== "user" && !userFilter && (
+                <div className="text-neutral-500 text-sm mb-3">
+                  Showing all users. Select a user to filter this view.
                 </div>
               )}
                 {multiDimLoading && <ChartSkeleton height={320} />}

@@ -290,8 +290,12 @@ def _apply_usage_filters(
     output_type: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
+    force_user_id: Optional[int] = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, Optional[pd.DataFrame]]:
     """Apply filter parameters consistently across usage-trends datasets."""
+    if force_user_id is not None:
+        videos = videos[videos["User_ID"] == force_user_id]
+        users = users[users["User_ID"] == force_user_id]
     def _is_all(value: Optional[str | List[str]]) -> bool:
         if value is None:
             return True
@@ -410,6 +414,24 @@ def _drop_incomplete_tail(df: pd.DataFrame, granularity: str) -> pd.DataFrame:
         )
 
     return _trim(df).reset_index(drop=True)
+
+
+def _drop_trailing_zeros(df: pd.DataFrame, metric: str) -> pd.DataFrame:
+    """
+    Removes trailing rows from a dataframe where the specified metric is zero or null.
+    This ensures that forecasts start immediately after the last "real" data point,
+    aligning with the visual "Auto cutoff" on the frontend.
+    """
+    if df.empty or metric not in df.columns:
+        return df
+
+    # Find the index of the last non-zero/non-null value
+    non_zero_indices = df.index[df[metric] > 0]
+    if non_zero_indices.empty:
+        return df.iloc[:0]  # Or return empty if everything is zero
+
+    last_idx = non_zero_indices[-1]
+    return df.loc[:last_idx].copy()
 
 
 # ── Chronos singleton ─────────────────────────────────────────────────────
@@ -711,7 +733,10 @@ def get_pipeline_metrics(
         posts_df["Publish_Date"] = pd.to_datetime(posts_df["Publish_Date"])
 
         if auth_context.role == "client_admin":
-            company = auth_context.client_name
+            company = [auth_context.client_name]
+        elif auth_context.role == "user":
+            company = [auth_context.client_name]
+            # user = [auth_context.username]  <-- [FIX] This login ID doesn't match display name
 
         videos_df, assets_df, posts_df, users_df, dist_df = _apply_usage_filters(
             videos_df,
@@ -728,6 +753,7 @@ def get_pipeline_metrics(
             output_type=output_type,
             date_from=date_from,
             date_to=date_to,
+            force_user_id=auth_context.user_id if auth_context.role == "user" else None,
         )
 
         if videos_df.empty:
@@ -784,7 +810,11 @@ def get_client_master_timeline_endpoint(
 
         if auth_context.role == "client_admin":
             client_name = auth_context.client_name
-            company = auth_context.client_name
+            company = [auth_context.client_name]
+        elif auth_context.role == "user":
+            client_name = auth_context.client_name
+            company = [auth_context.client_name]
+            # [FIX] Do not filter by auth_context.username here either.
 
         videos_df, assets_df, posts_df, users_df, dist_df = _apply_usage_filters(
             videos_df,
@@ -801,6 +831,7 @@ def get_client_master_timeline_endpoint(
             output_type=output_type,
             date_from=date_from,
             date_to=date_to,
+            force_user_id=auth_context.user_id if auth_context.role == "user" else None,
         )
 
         timeline_df = get_client_master_timeline(
@@ -858,14 +889,15 @@ def get_multi_dim(
     analysis: str = Query(..., description="volume_dynamics | duration_dynamics | success_scores | output_type | input_type_proportion"),
     granularity: str = Query("month", description="day, week, month, or quarter"),
     client_name: Optional[str] = Query(None, description="Required for output_type and input_type_proportion"),
-    company: Optional[str] = Query(None),
-    channel: Optional[str] = Query(None),
-    user: Optional[str] = Query(None),
-    language: Optional[str] = Query(None),
-    input_type: Optional[str] = Query(None),
-    output_type: Optional[str] = Query(None),
+    company: Optional[List[str]] = Query(None),
+    channel: Optional[List[str]] = Query(None),
+    user: Optional[List[str]] = Query(None),
+    language: Optional[List[str]] = Query(None),
+    input_type: Optional[List[str]] = Query(None),
+    output_type_filter: Optional[List[str]] = Query(None, alias="output_type"),
     date_from: Optional[str] = Query(None, description="YYYY-MM-DD"),
     date_to: Optional[str] = Query(None, description="YYYY-MM-DD"),
+    auth_context: AuthContext = Depends(require_auth),
 ):
     """Multi-dimensional analysis endpoint returning time series for multiple keys."""
     try:
@@ -886,6 +918,13 @@ def get_multi_dim(
             except Exception:
                 rvc_df = None
 
+            if auth_context.role == "client_admin":
+                company = [auth_context.client_name]
+            elif auth_context.role == "user":
+                company = [auth_context.client_name]
+                # [FIX] Do not filter by auth_context.username (the login ID).
+                # The numeric user filtering happens via force_user_id below.
+
             videos_df, assets_df, _, users_df, _ = _apply_usage_filters(
                 videos_df,
                 assets_df,
@@ -898,9 +937,10 @@ def get_multi_dim(
                 user=user,
                 language=language,
                 input_type=input_type,
-                output_type=output_type,
+                output_type=output_type_filter,
                 date_from=date_from,
                 date_to=date_to,
+                force_user_id=auth_context.user_id if auth_context.role == "user" else None,
             )
 
             # Attach client name via users
@@ -960,8 +1000,13 @@ def get_multi_dim(
         if analysis not in _MULTIDIM_ANALYSIS_COLS:
             raise HTTPException(status_code=400, detail=f"Unknown analysis '{analysis}'")
 
-        master_df = _build_master_df()
-        if any([company, channel, user, language, input_type, output_type, date_from, date_to]):
+        if auth_context.role == "client_admin":
+            company = [auth_context.client_name]
+        elif auth_context.role == "user":
+            company = [auth_context.client_name]
+            # user = [auth_context.username]
+
+        if any([company, channel, user, language, input_type, output_type_filter, date_from, date_to]) or auth_context.role == "user":
             engine = _get_engine()
             videos_df = pd.read_sql("SELECT * FROM \"raw_videos\"", engine)
             assets_df = pd.read_sql("SELECT * FROM \"created_assets\"", engine)
@@ -992,12 +1037,16 @@ def get_multi_dim(
                 user=user,
                 language=language,
                 input_type=input_type,
-                output_type=output_type,
+                output_type=output_type_filter,
                 date_from=date_from,
                 date_to=date_to,
+                force_user_id=auth_context.user_id if auth_context.role == "user" else None,
             )
 
             master_df = _build_master_df_from_frames(videos_df, assets_df, posts_df, users_df)
+        else:
+            master_df = _build_master_df()
+
         resampled = _resample_dataframe(master_df, safe_granularity)
 
         # Remove current incomplete period
@@ -1044,14 +1093,15 @@ def forecast_client_chronos(
             "Defaults to the last complete period in the data."
         ),
     ),
-    company: Optional[str] = Query(None),
-    channel: Optional[str] = Query(None),
-    user: Optional[str] = Query(None),
-    language: Optional[str] = Query(None),
-    input_type: Optional[str] = Query(None),
-    output_type: Optional[str] = Query(None),
+    company: Optional[List[str]] = Query(None),
+    channel: Optional[List[str]] = Query(None),
+    user: Optional[List[str]] = Query(None),
+    language: Optional[List[str]] = Query(None),
+    input_type: Optional[List[str]] = Query(None),
+    output_type_filter: Optional[List[str]] = Query(None, alias="output_type"),
     date_from: Optional[str] = Query(None, description="YYYY-MM-DD"),
     date_to: Optional[str] = Query(None, description="YYYY-MM-DD"),
+    auth_context: AuthContext = Depends(require_auth),
 ):
     """
     Forecast a single client metric using Chronos.
@@ -1061,8 +1111,15 @@ def forecast_client_chronos(
     instead of the latest available data point.
     """
     try:
-        master_df = _build_master_df()
-        if any([company, channel, user, language, input_type, output_type, date_from, date_to]):
+        if auth_context.role == "client_admin":
+            company = [auth_context.client_name]
+            client_name = auth_context.client_name
+        elif auth_context.role == "user":
+            company = [auth_context.client_name]
+            user = [auth_context.username]
+            client_name = auth_context.client_name
+
+        if any([company, channel, user, language, input_type, output_type_filter, date_from, date_to]) or auth_context.role == "user":
             engine = _get_engine()
             videos_df = pd.read_sql("SELECT * FROM \"raw_videos\"", engine)
             assets_df = pd.read_sql("SELECT * FROM \"created_assets\"", engine)
@@ -1093,12 +1150,15 @@ def forecast_client_chronos(
                 user=user,
                 language=language,
                 input_type=input_type,
-                output_type=output_type,
+                output_type=output_type_filter,
                 date_from=date_from,
                 date_to=date_to,
             )
 
             master_df = _build_master_df_from_frames(videos_df, assets_df, posts_df, users_df)
+        else:
+            master_df = _build_master_df()
+
         resampled_df = _resample_dataframe(master_df, granularity)
 
         # Always strip the current incomplete period first
@@ -1111,6 +1171,9 @@ def forecast_client_chronos(
             raise HTTPException(status_code=400, detail=f"Invalid metric '{metric}'")
 
         client_df = client_df.sort_values('Date')
+
+        # [FIX] Align Auto cutoff with the last data point showing in plot
+        client_df = _drop_trailing_zeros(client_df, metric)
 
         # ── Apply cutoff_date filter ──────────────────────────────────────
         if cutoff_date is not None:
@@ -1176,14 +1239,15 @@ def forecast_all_clients(
             "Defaults to the last complete period in the data."
         ),
     ),
-    company: Optional[str] = Query(None),
-    channel: Optional[str] = Query(None),
-    user: Optional[str] = Query(None),
-    language: Optional[str] = Query(None),
-    input_type: Optional[str] = Query(None),
-    output_type: Optional[str] = Query(None),
+    company: Optional[List[str]] = Query(None),
+    channel: Optional[List[str]] = Query(None),
+    user: Optional[List[str]] = Query(None),
+    language: Optional[List[str]] = Query(None),
+    input_type: Optional[List[str]] = Query(None),
+    output_type_filter: Optional[List[str]] = Query(None, alias="output_type"),
     date_from: Optional[str] = Query(None, description="YYYY-MM-DD"),
     date_to: Optional[str] = Query(None, description="YYYY-MM-DD"),
+    auth_context: AuthContext = Depends(require_auth),
 ):
     """
     Forecast a metric for all (or one) clients using Chronos.
@@ -1192,8 +1256,11 @@ def forecast_all_clients(
     All clients share the same cutoff so comparisons remain aligned.
     """
     try:
-        master_df = _build_master_df()
-        if any([company, channel, user, language, input_type, output_type, date_from, date_to]):
+        if auth_context.role == "client_admin":
+            company = [auth_context.client_name]
+            client_name = auth_context.client_name
+
+        if any([company, channel, user, language, input_type, output_type_filter, date_from, date_to]) or auth_context.role == "user":
             engine = _get_engine()
             videos_df = pd.read_sql("SELECT * FROM \"raw_videos\"", engine)
             assets_df = pd.read_sql("SELECT * FROM \"created_assets\"", engine)
@@ -1224,13 +1291,16 @@ def forecast_all_clients(
                 user=user,
                 language=language,
                 input_type=input_type,
-                output_type=output_type,
+                output_type=output_type_filter,
                 date_from=date_from,
                 date_to=date_to,
+                force_user_id=auth_context.user_id if auth_context.role == "user" else None,
             )
 
-            master_df = master_df[master_df["Client_Name"].isin(users_df["Client_Name"].dropna().unique())]
-            master_df = master_df[master_df["Date"].isin(videos_df["Upload_Date"].dt.normalize().unique())]
+            master_df = _build_master_df_from_frames(videos_df, assets_df, posts_df, users_df)
+        else:
+            master_df = _build_master_df()
+
         resampled_df = _resample_dataframe(master_df, granularity)
 
         # Always strip the current incomplete period first
@@ -1266,6 +1336,9 @@ def forecast_all_clients(
                 raise HTTPException(status_code=400, detail=f"Invalid metric '{metric}'")
 
             client_df = client_df.sort_values('Date')
+
+            # [FIX] Align Auto cutoff with the last data point showing in plot
+            client_df = _drop_trailing_zeros(client_df, metric)
 
             # ── Apply cutoff_date filter ──────────────────────────────────
             if cutoff_ts is not None:
