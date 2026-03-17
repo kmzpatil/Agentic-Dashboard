@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 export function useApi(url, dependencies = []) {
   const [data, setData] = useState(null);
+  const [dataUrl, setDataUrl] = useState(null);
   const [loading, setLoading] = useState(Boolean(url));
   const [error, setError] = useState('');
 
@@ -32,7 +33,10 @@ export function useApi(url, dependencies = []) {
         }
 
         const payload = await response.json();
-        if (!ignore) setData(payload);
+        if (!ignore) {
+          setData(payload);
+          setDataUrl(url);
+        }
       } catch (err) {
         if (!ignore) setError(err.message || 'Failed to load');
       } finally {
@@ -44,5 +48,5 @@ export function useApi(url, dependencies = []) {
     return () => { ignore = true; };
   }, dependencies);
 
-  return { data, loading, error };
+  return { data, loading, error, dataUrl };
 }
