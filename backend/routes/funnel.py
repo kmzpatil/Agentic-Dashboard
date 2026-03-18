@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from fastapi.responses import JSONResponse
 
@@ -33,6 +35,7 @@ from backend.queries.funnel_queries import (
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _collect_filters(
@@ -82,7 +85,8 @@ def get_filter_options(auth: AuthContext = Depends(require_auth)):
             "teams": [r["value"] for r in teams_rows if r.get("value")],
         }
     except Exception as error:
-        return JSONResponse(status_code=500, content={"error": str(error)})
+        logger.exception("Failed to load funnel filter options", exc_info=error)
+        return JSONResponse(status_code=500, content={"error": "Failed to load funnel filter options"})
 
 
 @router.get("", include_in_schema=False)
@@ -268,7 +272,7 @@ def get_funnel(
             "absoluteWasteTopChannels": [
                 {
                     "channel_name": row.get("channel_name"),
-                    "client_name": row.get("client_name"),
+                    "client_name": row.get("client_name") if is_website_admin else None,
                     "videos_assigned": int(row.get("videos_assigned") or 0),
                     "yield_pct": float(row.get("yield_pct") or 0),
                     "waste_slots": int(row.get("waste_slots") or 0),
@@ -330,7 +334,8 @@ def get_funnel(
             "journeyVideos": journey_videos if can_inspect_raw_journey else [],
         }
     except Exception as error:
-        return JSONResponse(status_code=500, content={"error": str(error)})
+        logger.exception("Failed to load funnel data", exc_info=error)
+        return JSONResponse(status_code=500, content={"error": "Failed to load funnel data"})
 
 
 @router.get("/video/{video_id}")
@@ -363,4 +368,5 @@ def get_video_details(
             "assets": assets_result.rows,
         }
     except Exception as error:
-        return JSONResponse(status_code=500, content={"error": str(error)})
+        logger.exception("Failed to load funnel video details", exc_info=error)
+        return JSONResponse(status_code=500, content={"error": "Failed to load funnel video details"})
