@@ -15,7 +15,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Annotated, Dict, List, Optional, TypedDict
+from typing import Annotated, Any, Dict, List, Optional, TypedDict
 import re
 
 from dotenv import load_dotenv
@@ -73,10 +73,10 @@ def _extract_response(text: str) -> str:
 from contextvars import ContextVar
 _ctx: ContextVar[dict] = ContextVar("agent_ctx")
 
-def _new_ctx() -> dict:
+def _new_ctx(auth: Optional[Any] = None) -> dict:
     return {
         "sql": "", "records": [], "query_results": {}, "latest_result_id": "",
-        "chart_xml": "", "chart_data": {}, "actions": [], "plan": "",
+        "chart_xml": "", "chart_data": {}, "actions": [], "plan": "", "auth": auth
     }
 
 def _get_ctx() -> dict:
@@ -161,7 +161,7 @@ def run_sql_query(sql: str, limit: int = 200) -> str:
     """
     ctx = _get_ctx()
     logger.info("[tool] run_sql_query: %s…", sql[:120])
-    raw = execute_sql_query(sql, limit=limit)
+    raw = execute_sql_query(sql, limit=limit, auth=ctx.get("auth"))
     parsed = json.loads(raw)
 
     if "error" in parsed:
@@ -441,7 +441,7 @@ def _conversational_reply(question: str, memory: str = "", current_time: str = "
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 
-async def run_agent(question: str, working_memory: str = "") -> AgentResult:
+async def run_agent(question: str, auth: Optional[Any] = None, working_memory: str = "") -> AgentResult:
     from datetime import datetime
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
@@ -449,7 +449,7 @@ async def run_agent(question: str, working_memory: str = "") -> AgentResult:
     if intent == "conversational":
         return _conversational_reply(question, working_memory, current_time=now_str)
 
-    ctx = _new_ctx()
+    ctx = _new_ctx(auth=auth)
     _ctx.set(ctx)
 
     # ── Context Injection ──────────────────────────────────────────────────
@@ -468,6 +468,25 @@ async def run_agent(question: str, working_memory: str = "") -> AgentResult:
     memory_block = f"\n## Conversation Memory\n{working_memory}" if working_memory else ""
 
     system = SYSTEM_PROMPT.format(schema_block=_schema_cache, metrics_block=all_metrics, plan_block=plan_block, memory_block=memory_block)
+    
+    # ── Client Enforcement Prompt Injection ──────────────────────────────
+    if auth and getattr(auth, "role", "website_admin") != "website_admin":
+        role = getattr(auth, "role", "user")
+        client_name = getattr(auth, "client_name", None)
+        user_id = getattr(auth, "user_id", None)
+        
+        restriction = f"\n\n## DATA ACCESS RESTRICTION\nYou are logged in as a **{role}**"
+        if client_name:
+            restriction += f" for client **{client_name}**."
+            restriction += f"\n- ALWAYS filter every query by client: `COALESCE(ch.\"Client_Name\", u.\"Client_Name\") = '{client_name}'`"
+            restriction += "\n- Join with `users` (u) and `channels` (ch) via `raw_video_channel` (rvc) to reach `Client_Name`."
+        elif role == "user" and user_id:
+            restriction += f" with User ID **{user_id}**."
+            restriction += f"\n- ALWAYS filter every query to only show data for your User ID: `rv.\"User_ID\" = {user_id}`"
+        
+        restriction += "\n- NEVER attempt to access data belonging to other clients or users."
+        system += restriction
+
     # Inject current time directly into the first message for immediate context
     system += f"\n\n## System Environment\nCurrent System Time: {now_str}\n"
     

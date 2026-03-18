@@ -21,7 +21,7 @@ def get_scoped_ctes(access_filter: dict) -> str:
       ORDER BY ca."Asset_ID"
     ),
     scoped_posts AS (
-      SELECT DISTINCT ON (pp."Post_ID") pp.*
+      SELECT DISTINCT ON (pp."Post_ID") pp.*, sa."Video_ID"
       FROM published_posts pp
       JOIN scoped_assets sa ON sa."Asset_ID" = pp."Asset_ID"
       ORDER BY pp."Post_ID"
@@ -46,6 +46,11 @@ def get_kpi_query(access_filter: dict) -> str:
     published AS (
       SELECT COUNT(DISTINCT "Post_ID")::int AS count, COALESCE(SUM("Published_Duration"), 0)::float8 AS duration, COALESCE(AVG("Published_Duration"), 0)::float8 AS avg_duration
       FROM scoped_posts
+    ),
+    failures AS (
+      SELECT (COUNT(DISTINCT CASE WHEN sp."Post_ID" IS NULL THEN sv."Video_ID" END)::float8 / NULLIF(COUNT(DISTINCT sv."Video_ID"), 0)) * 100 as rate
+      FROM scoped_videos sv
+      LEFT JOIN scoped_posts sp ON sv."Video_ID" = sp."Video_ID"
     )
     SELECT
       u.count AS uploaded_count,
@@ -58,8 +63,10 @@ def get_kpi_query(access_filter: dict) -> str:
       CASE WHEN c.count = 0 THEN 0 ELSE (pb.count::float8 / c.count) * 100 END AS publish_conversion_rate,
       CASE WHEN c.duration = 0 THEN 0 ELSE (pb.duration / c.duration) * 100 END AS processing_efficiency,
       CASE WHEN u.count = 0 THEN 0 ELSE (c.count::float8 / u.count) * 100 END AS creation_rate,
-      (c.avg_duration - pb.avg_duration) AS waste_index
-    FROM uploaded u, processed p, created c, published pb;
+      (c.avg_duration - pb.avg_duration) AS waste_index,
+      CASE WHEN c.avg_duration = 0 THEN 0 ELSE 1 - (ABS(c.avg_duration - pb.avg_duration) / c.avg_duration) END AS cdas,
+      COALESCE(f.rate, 0) AS upload_failure_rate
+    FROM uploaded u, processed p, created c, published pb, failures f;
   '''
 
 
@@ -160,6 +167,63 @@ def get_alerts_query(access_filter: dict) -> str:
     LEFT JOIN scoped_posts sp ON sa."Asset_ID" = sp."Asset_ID"
     GROUP BY svc."Channel_Name"
     HAVING COUNT(DISTINCT sa."Asset_ID") > 5
-    ORDER BY conversion ASC, created_count DESC
     LIMIT 5;
   '''
+
+def get_output_type_stats_query(access_filter: dict) -> str:
+    return f'''{get_scoped_ctes(access_filter)}
+    , output_stats AS (
+        SELECT 
+            sa."Output_Type" as label,
+            COUNT(DISTINCT sv."Video_ID")::int as total_uploaded_count,
+            COALESCE(SUM(sv."Uploaded_Duration"), 0)::float8 as total_uploaded_duration,
+            COUNT(DISTINCT sa."Asset_ID")::int as total_created_count,
+            COALESCE(SUM(sa."Created_Duration"), 0)::float8 as total_created_duration,
+            COUNT(DISTINCT sp."Post_ID")::int as total_published_count,
+            COALESCE(SUM(sp."Published_Duration"), 0)::float8 as total_published_duration
+        FROM scoped_assets sa
+        JOIN scoped_videos sv ON sv."Video_ID" = sa."Video_ID"
+        LEFT JOIN scoped_posts sp ON sa."Asset_ID" = sp."Asset_ID"
+        WHERE sa."Output_Type" IS NOT NULL
+        GROUP BY sa."Output_Type"
+    )
+    SELECT * FROM output_stats ORDER BY total_created_count DESC;
+    '''
+def get_kpi_sparklines_query(access_filter: dict) -> str:
+    return f'''{get_scoped_ctes(access_filter)}
+    , daily_uploaded AS (
+      SELECT to_date("Upload_Date", 'YYYY-MM-DD') AS dt, COUNT(*)::float8 AS val FROM scoped_videos GROUP BY 1
+    ),
+    daily_processed AS (
+      SELECT to_date("Create_Date", 'YYYY-MM-DD') AS dt, COUNT(DISTINCT "Video_ID")::float8 AS val FROM scoped_assets GROUP BY 1
+    ),
+    daily_created AS (
+      SELECT to_date("Create_Date", 'YYYY-MM-DD') AS dt, COUNT(*)::float8 AS val FROM scoped_assets GROUP BY 1
+    ),
+    daily_published AS (
+      SELECT to_date("Publish_Date", 'YYYY-MM-DD') AS dt, COUNT(*)::float8 AS val FROM scoped_posts GROUP BY 1
+    ),
+    all_dates AS (
+      SELECT generate_series(CURRENT_DATE - INTERVAL '13 days', CURRENT_DATE, '1 day')::date AS dt
+    ),
+    seed_counts AS (
+      SELECT
+        (SELECT COUNT(*)::float8 FROM scoped_videos WHERE to_date("Upload_Date", 'YYYY-MM-DD') < CURRENT_DATE - INTERVAL '13 days') as uploaded_seed,
+        (SELECT COUNT(DISTINCT "Video_ID")::float8 FROM scoped_assets WHERE to_date("Create_Date", 'YYYY-MM-DD') < CURRENT_DATE - INTERVAL '13 days') as processed_seed,
+        (SELECT COUNT(*)::float8 FROM scoped_assets WHERE to_date("Create_Date", 'YYYY-MM-DD') < CURRENT_DATE - INTERVAL '13 days') as created_seed,
+        (SELECT COUNT(*)::float8 FROM scoped_posts WHERE to_date("Publish_Date", 'YYYY-MM-DD') < CURRENT_DATE - INTERVAL '13 days') as published_seed
+    )
+    SELECT 
+      ad.dt,
+      COALESCE(sc.uploaded_seed, 0) + SUM(COALESCE(du.val, 0)) OVER (ORDER BY ad.dt) as uploaded,
+      COALESCE(sc.processed_seed, 0) + SUM(COALESCE(dp.val, 0)) OVER (ORDER BY ad.dt) as processed,
+      COALESCE(sc.created_seed, 0) + SUM(COALESCE(dc.val, 0)) OVER (ORDER BY ad.dt) as created,
+      COALESCE(sc.published_seed, 0) + SUM(COALESCE(dpb.val, 0)) OVER (ORDER BY ad.dt) as published
+    FROM all_dates ad
+    LEFT JOIN daily_uploaded du ON ad.dt = du.dt
+    LEFT JOIN daily_processed dp ON ad.dt = dp.dt
+    LEFT JOIN daily_created dc ON ad.dt = dc.dt
+    LEFT JOIN daily_published dpb ON ad.dt = dpb.dt
+    CROSS JOIN seed_counts sc
+    ORDER BY ad.dt ASC;
+    '''
