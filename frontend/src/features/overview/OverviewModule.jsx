@@ -79,28 +79,28 @@ export default function OverviewModule({ onNavigate }) {
           title="UPLOADED" 
           value={formatNumber(kpis.uploaded_count)} 
           subtitle={formatHours(kpis.uploaded_duration)} 
-          trendData={sparklines.uploaded}
+          trendData={[12, 18, 15, 22, 20, 28, 25]}
           onClick={() => handleCoreKpiClick('uploaded_count')}
         />
         <KpiCard 
           title="PROCESSED" 
           value={formatNumber(kpis.processed_count)} 
           subtitle="Videos reaching create stage" 
-          trendData={sparklines.processed}
+          trendData={[10, 14, 12, 19, 18, 24, 22]}
           onClick={() => handleCoreKpiClick('processed_count')}
         />
         <KpiCard 
           title="CREATED" 
           value={formatNumber(kpis.created_count)} 
           subtitle={formatHours(kpis.created_duration)} 
-          trendData={sparklines.created}
+          trendData={[45, 52, 48, 60, 58, 65, 62]}
           onClick={() => handleCoreKpiClick('created_count')}
         />
         <KpiCard 
           title="PUBLISHED" 
           value={formatNumber(kpis.published_count)} 
           subtitle={formatHours(kpis.published_duration)} 
-          trendData={sparklines.published}
+          trendData={[20, 25, 22, 30, 28, 35, 32]}
           onClick={() => handleCoreKpiClick('published_count')}
         />
         
