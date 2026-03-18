@@ -9,8 +9,11 @@ import json
 import re
 from typing import Any, Dict, Optional
 
-from tools._db import get_db, DEFAULT_QUERY_LIMIT, MAX_QUERY_LIMIT
-from mcp_server.database import QueryValidationError
+from ._db import get_db, DEFAULT_QUERY_LIMIT, MAX_QUERY_LIMIT
+try:
+    from mcp_server.database import QueryValidationError
+except ImportError:
+    from agent.mcp_server.database import QueryValidationError
 
 
 def _type_aware_fillna(df: "pd.DataFrame") -> "pd.DataFrame":

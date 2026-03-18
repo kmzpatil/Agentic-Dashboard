@@ -31,7 +31,10 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT_DIR / ".env")
 load_dotenv()
 
-from mcp_server.config import resolve_database_url
+try:
+    from mcp_server.config import resolve_database_url
+except ImportError:
+    from agent.mcp_server.config import resolve_database_url
 
 logger = logging.getLogger("frammer.conversations")
 

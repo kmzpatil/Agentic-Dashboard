@@ -52,11 +52,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Frammer Analytics API (Anthropic Version)", version="5.0.0-anthropic", lifespan=lifespan)
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%H:%M:%S",
-)
+# setup_logging() is called above.
 logger = logging.getLogger("frammer.api_server")
 
 app.add_middleware(

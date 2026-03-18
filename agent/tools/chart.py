@@ -24,8 +24,11 @@ from xml.etree.ElementTree import Element, SubElement, indent, tostring
 
 import pandas as pd
 
-from tools._db import get_db, DEFAULT_QUERY_LIMIT, MAX_QUERY_LIMIT
-from mcp_server.database import QueryValidationError
+from ._db import get_db, DEFAULT_QUERY_LIMIT, MAX_QUERY_LIMIT
+try:
+    from mcp_server.database import QueryValidationError
+except ImportError:
+    from agent.mcp_server.database import QueryValidationError
 
 FORBIDDEN_KEYWORDS = {"DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "CREATE", "TRUNCATE"}
 

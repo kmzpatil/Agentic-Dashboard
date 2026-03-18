@@ -1,5 +1,6 @@
 from pathlib import Path
 from contextlib import asynccontextmanager
+import sys
 
 from dotenv import load_dotenv
 
@@ -11,6 +12,12 @@ load_dotenv(_PROJECT_ROOT / ".env")
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+# Ensure our local agent directory is in path for legacy baggage
+sys.path.append(str(_PROJECT_ROOT / "agent"))
+
+from agent.logger_setup import setup_logging
+setup_logging()
 
 from backend.assistant.service import ensure_assistant_tables
 from backend.config.env import get_config

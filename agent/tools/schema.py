@@ -5,40 +5,61 @@ DatabaseClient.  Works with any SQLAlchemy-supported backend.
 Always call this before writing SQL to ensure table and column names are correct.
 """
 
-from tools._db import get_db, get_default_schema
+import json
+import logging
+from ._db import get_db, get_default_schema
 
+logger = logging.getLogger("frammer.tools.schema")
 
 def get_frammer_schema() -> str:
     """
     Inspect the database and return a human-readable schema string.
-
-    Uses the shared MCP DatabaseClient so it stays in sync with all
-    other tools and benefits from connection pooling.
-
-    Returns:
-        A multi-line string listing every table and its columns (with types),
-        or an error message if the database cannot be opened.
+    Uses a highly optimized single-query approach for PostgreSQL.
     """
     try:
         db = get_db()
-        schema = get_default_schema()
-        tables = db.list_tables(schema=schema)
-
-        if not tables:
-            return "No tables found in the database."
-
+        schema = get_default_schema() or "public"
+        
+        # Optimized for performance: retrieve all columns in one go if possible
+        # Otherwise fall back to the slower per-table inspection
+        
         schema_info = "Frammer AI Database Schema:\n"
-        for tbl in tables:
-            name = tbl["name"]
-            try:
-                details = db.describe_table(name, schema=schema)
-                col_parts = []
-                for col in details.get("columns", []):
-                    nullable_tag = "" if col.get("nullable", True) else " NOT NULL"
-                    col_parts.append(f"{col['name']} ({col['type']}{nullable_tag})")
-                schema_info += f"\nTable: {name}\nColumns: {', '.join(col_parts)}\n"
-            except Exception:
-                schema_info += f"\nTable: {name}\nColumns: (could not inspect)\n"
+        
+        try:
+            # Try optimized PostgreSQL query
+            sql = f"""
+            SELECT table_name, column_name, data_type 
+            FROM information_schema.columns 
+            WHERE table_schema = '{schema}'
+            AND table_name NOT LIKE 'pg_%'
+            AND table_name NOT LIKE 'sql_%'
+            ORDER BY table_name, ordinal_position;
+            """
+            from sqlalchemy import text
+            with db.engine.connect() as conn:
+                res = conn.execute(text(sql))
+                rows = res.fetchall()
+            
+            if rows:
+                current_table = None
+                for row in rows:
+                    t_name, c_name, d_type = row
+                    if t_name != current_table:
+                        if current_table:
+                            schema_info += "\n"
+                        schema_info += f"\nTable: {t_name}\nColumns: "
+                        current_table = t_name
+                        schema_info += f"{c_name} ({d_type})"
+                    else:
+                        schema_info += f", {c_name} ({d_type})"
+                schema_info += "\n"
+            else:
+                # Fallback to standard inspection if no rows (e.g. not Postgres or empty)
+                return _get_schema_fallback(db, schema)
+                
+        except Exception as e:
+            logger.warning("Optimized schema fetch failed: %s. Falling back.", e)
+            return _get_schema_fallback(db, schema)
 
         schema_info += "\n--- CRITICAL DATASET RELATIONSHIP RULES ---\n"
         schema_info += "1. The content pipeline is: raw_videos -> created_assets -> published_posts\n"
@@ -49,3 +70,21 @@ def get_frammer_schema() -> str:
 
     except Exception as exc:
         return f"Error retrieving schema: {exc}"
+
+def _get_schema_fallback(db, schema) -> str:
+    tables = db.list_tables(schema=schema)
+    if not tables:
+        return "No tables found in the database."
+
+    schema_info = "Frammer AI Database Schema (Fallback):\n"
+    for tbl in tables:
+        name = tbl["name"]
+        try:
+            details = db.describe_table(name, schema=schema)
+            col_parts = []
+            for col in details.get("columns", []):
+                col_parts.append(f"{col['name']} ({col['type']})")
+            schema_info += f"\nTable: {name}\nColumns: {', '.join(col_parts)}\n"
+        except Exception:
+            schema_info += f"\nTable: {name}\nColumns: (could not inspect)\n"
+    return schema_info
