@@ -149,7 +149,7 @@ export const KPI_DEFINITIONS = [
   {
     id: 'upload_failure_rate',
     title: 'UPLOAD FAILURE RATE',
-    getValue: () => '2.4%',
+    getValue: (kpis) => formatPct(kpis?.upload_failure_rate || 2.4),
     getSubtitle: () => '0 Publishes/Upload',
     trendData: [4.1, 3.8, 3.5, 3.0, 2.8, 2.5, 2.4],
     definition: 'The severity of uploads that result in absolutely zero published clips.',
@@ -179,11 +179,11 @@ export const KPI_DEFINITIONS = [
   {
     id: 'cdas',
     title: 'CLIP ALIGNMENT (CDAS)',
-    getValue: () => '0.85',
+    getValue: (kpis) => (kpis?.cdas !== undefined ? Number(kpis.cdas).toFixed(2) : '0.85'),
     getSubtitle: () => 'Target: 1.0',
     trendData: [0.65, 0.70, 0.75, 0.78, 0.82, 0.84, 0.85],
     definition: 'Inspired by KL Divergence, this scores how closely the duration of the created assets aligns with the duration of the final published assets.',
-    formula: '1 - abs(average created duration - average published duration) / (average created duration)',
+    formula: '1 - (abs(avg created duration - avg published duration) / avg created duration)',
     significance: 'A higher score indicates that the generated clips are already very close to their final, publishable length, implying an accurate, highly efficient initial cut.',
     detailsData: {
       inputs: { labels: ['Interview', 'Webinar', 'Podcast', 'Tutorial', 'Vlog', 'Gaming'], data: [0.85, 0.60, 0.75, 0.90, 0.45, 0.88] },

@@ -46,6 +46,11 @@ def get_kpi_query(access_filter: dict) -> str:
     published AS (
       SELECT COUNT(DISTINCT "Post_ID")::int AS count, COALESCE(SUM("Published_Duration"), 0)::float8 AS duration, COALESCE(AVG("Published_Duration"), 0)::float8 AS avg_duration
       FROM scoped_posts
+    ),
+    failures AS (
+      SELECT (COUNT(DISTINCT CASE WHEN sp."Post_ID" IS NULL THEN sv."Video_ID" END)::float8 / NULLIF(COUNT(DISTINCT sv."Video_ID"), 0)) * 100 as rate
+      FROM scoped_videos sv
+      LEFT JOIN scoped_posts sp ON sv."Video_ID" = sp."Video_ID"
     )
     SELECT
       u.count AS uploaded_count,
@@ -58,8 +63,10 @@ def get_kpi_query(access_filter: dict) -> str:
       CASE WHEN c.count = 0 THEN 0 ELSE (pb.count::float8 / c.count) * 100 END AS publish_conversion_rate,
       CASE WHEN c.duration = 0 THEN 0 ELSE (pb.duration / c.duration) * 100 END AS processing_efficiency,
       CASE WHEN u.count = 0 THEN 0 ELSE (c.count::float8 / u.count) * 100 END AS creation_rate,
-      (c.avg_duration - pb.avg_duration) AS waste_index
-    FROM uploaded u, processed p, created c, published pb;
+      (c.avg_duration - pb.avg_duration) AS waste_index,
+      CASE WHEN c.avg_duration = 0 THEN 0 ELSE 1 - (ABS(c.avg_duration - pb.avg_duration) / c.avg_duration) END AS cdas,
+      COALESCE(f.rate, 0) AS upload_failure_rate
+    FROM uploaded u, processed p, created c, published pb, failures f;
   '''
 
 
