@@ -13,12 +13,9 @@ import logging
 
 logger = logging.getLogger("frammer.database")
 
-try:
-    from sentence_transformers import SentenceTransformer
-    from scipy.spatial.distance import cosine
-except ImportError:
-    SentenceTransformer = None
-    cosine = None
+# Heavy imports moved to properties to avoid startup hang
+SentenceTransformer = None
+cosine = None
 
 
 
@@ -45,8 +42,10 @@ class DatabaseClient:
         self._schema_index = None
 
     @cached_property
-    def embedding_model(self) -> "SentenceTransformer":
-        if SentenceTransformer is None:
+    def embedding_model(self) -> Any:
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ImportError:
             raise ImportError("sentence-transformers is not installed")
         # Initialize a very small and fast embedding model
         return SentenceTransformer("all-MiniLM-L6-v2")
@@ -244,6 +243,7 @@ class DatabaseClient:
         if not self._schema_index:
             return []
 
+        from scipy.spatial.distance import cosine
         query_embedding = self.embedding_model.encode([query])[0]
         results = []
         for item in self._schema_index:

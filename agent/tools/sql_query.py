@@ -9,11 +9,10 @@ import json
 import re
 from typing import Any, Dict, Optional
 
+from ._db import get_db, DEFAULT_QUERY_LIMIT, MAX_QUERY_LIMIT
 try:
-    from tools._db import get_db, DEFAULT_QUERY_LIMIT, MAX_QUERY_LIMIT
     from mcp_server.database import QueryValidationError
 except ImportError:
-    from agent.tools._db import get_db, DEFAULT_QUERY_LIMIT, MAX_QUERY_LIMIT
     from agent.mcp_server.database import QueryValidationError
 
 

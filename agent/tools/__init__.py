@@ -3,18 +3,11 @@ tools package
 Exports all Frammer Analytics tool functions for direct import.
 """
 
-try:
-    from tools.metric_definitions import retrieve_metric_definitions
-    from tools.schema import get_frammer_schema
-    from tools.sql_query import execute_sql_query, execute_exploration_queries
-    from tools.chart import generate_plotly_chart
-    from tools._db import get_db
-except ImportError:
-    from agent.tools.metric_definitions import retrieve_metric_definitions
-    from agent.tools.schema import get_frammer_schema
-    from agent.tools.sql_query import execute_sql_query, execute_exploration_queries
-    from agent.tools.chart import generate_plotly_chart
-    from agent.tools._db import get_db
+from .metric_definitions import retrieve_metric_definitions
+from .schema import get_frammer_schema
+from .sql_query import execute_sql_query, execute_exploration_queries
+from .chart import generate_plotly_chart
+from ._db import get_db
 
 __all__ = [
     "retrieve_metric_definitions",

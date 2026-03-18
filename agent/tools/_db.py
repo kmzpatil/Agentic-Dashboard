@@ -11,8 +11,12 @@ provides query validation, proper error handling, and CHESS-style RAG.
 
 from functools import lru_cache
 
-from mcp_server.config import ServerSettings
-from mcp_server.database import DatabaseClient
+try:
+    from mcp_server.config import ServerSettings
+    from mcp_server.database import DatabaseClient
+except ImportError:
+    from agent.mcp_server.config import ServerSettings
+    from agent.mcp_server.database import DatabaseClient
 
 
 @lru_cache(maxsize=1)

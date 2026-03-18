@@ -9,6 +9,7 @@ Features:
   - Factory modes: fast(), thinking(), creative()
 """
 
+import json
 import logging
 import os
 import re
@@ -149,4 +150,4 @@ class LLMClient:
 
     def __repr__(self) -> str:
         mode = "thinking" if self.preserve_thinking else "fast"
-        return f"LLMClient(azure:{self._model}, t={self._temperature}, {mode})"
+        return f"LLMClient(model:{self.model}, t={self.temperature}, {mode})"
