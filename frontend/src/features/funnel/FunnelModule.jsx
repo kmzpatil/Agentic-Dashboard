@@ -6,6 +6,7 @@ import OverviewFlowTab from './components/OverviewFlowTab';
 import ChannelEfficiencyTab from './components/ChannelEfficiencyTab';
 import ContentAnalysisTab from './components/ContentAnalysisTab';
 import DataExplorerTab from './components/DataExplorerTab';
+import { FunnelSkeleton } from '../../components/common/Skeleton';
 import {
   buildBreakdownOutcomeLinks,
   buildFromTotals,
@@ -258,11 +259,7 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
           onFiltersChange={handleFiltersChange}
         />
 
-        {loading && (
-          <div className="flex items-center justify-center py-20">
-            <div className="w-6 h-6 rounded-full border-2 border-neutral-800 border-t-violet-500 animate-spin" />
-          </div>
-        )}
+        {loading && <FunnelSkeleton />}
         {error && <div className="text-red-400 py-8 text-center text-sm">{error}</div>}
 
         {!loading && !error && (

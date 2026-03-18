@@ -321,13 +321,52 @@ export function UsageTrendsSkeleton() {
 export function FunnelSkeleton() {
   return (
     <div className="space-y-6">
-      <KpiSkeleton count={4} />
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <SankeySkeleton />
-        <SankeySkeleton />
+      <div className="pb-4 border-b border-neutral-900 space-y-3">
+        <div className="flex flex-wrap items-end gap-4">
+          <Skeleton className="h-3 w-16" />
+          <div className="flex gap-1">
+            <Skeleton className="h-7 w-16 rounded-full" />
+            <Skeleton className="h-7 w-20 rounded-full" />
+            <Skeleton className="h-7 w-20 rounded-full" />
+            <Skeleton className="h-7 w-16 rounded-full" />
+          </div>
+          <Skeleton className="h-6 w-px" />
+          <Skeleton className="h-10 w-28" />
+          <Skeleton className="h-10 w-24" />
+          <Skeleton className="h-10 w-24" />
+          <Skeleton className="h-10 w-24" />
+          <div className="flex-1" />
+          <Skeleton className="h-3 w-20" />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Skeleton className="h-6 w-24 rounded-full" />
+          <Skeleton className="h-6 w-24 rounded-full" />
+          <Skeleton className="h-6 w-24 rounded-full" />
+        </div>
       </div>
-      <TableSkeleton rows={5} cols={6} />
-      <TableSkeleton rows={4} cols={8} />
+
+      <div className="space-y-5">
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-3 w-10" />
+          <div className="flex gap-1">
+            <Skeleton className="h-8 w-28 rounded-full" />
+            <Skeleton className="h-8 w-32 rounded-full" />
+            <Skeleton className="h-8 w-28 rounded-full" />
+            <Skeleton className="h-8 w-24 rounded-full" />
+          </div>
+          <Skeleton className="h-px flex-1" />
+          <Skeleton className="h-3 w-14" />
+        </div>
+
+        <KpiSkeleton count={4} />
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <SankeySkeleton height={360} />
+          <SankeySkeleton height={360} />
+        </div>
+
+        <TableSkeleton rows={4} cols={5} />
+      </div>
     </div>
   );
 }
