@@ -1,6 +1,9 @@
 from math import sqrt
 from typing import Any
 
+import numpy as np
+import pandas as pd
+
 
 METRIC_SQL = {
     "uploaded_count": '''
@@ -145,33 +148,134 @@ ANALYTICS_BASE_FROM = '''
 
 
 def get_trend_insights(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    if len(points) < 3:
+    if len(points) < 6:
         return []
 
-    values = [float(point.get("value") or 0) for point in points]
-    mean = sum(values) / len(values)
-    variance = sum((value - mean) ** 2 for value in values) / len(values)
-    std = sqrt(variance)
+    periods = [str(point.get("period")) for point in points]
+    values = np.array([float(point.get("value") or 0) for point in points], dtype=float)
 
-    ranked = []
-    for point in points:
-        value = float(point.get("value") or 0)
-        z_score = 0 if std == 0 else (value - mean) / std
-        ranked.append({"period": point.get("period"), "value": value, "z": z_score})
+    # Infer granularity period for STL from date spacing.
+    parsed_periods = pd.to_datetime(periods, errors="coerce")
+    valid_periods = parsed_periods.dropna()
+    stl_period = 12
+    if len(valid_periods) >= 3:
+        day_deltas = np.diff(valid_periods.values.astype("datetime64[D]")).astype(int)
+        positive_deltas = day_deltas[day_deltas > 0]
+        if positive_deltas.size:
+            median_delta = float(np.median(positive_deltas))
+            if median_delta <= 2:
+                stl_period = 7
+            elif median_delta <= 10:
+                stl_period = 8
+            elif median_delta <= 40:
+                stl_period = 12
+            else:
+                stl_period = 4
 
-    ranked = [point for point in ranked if abs(point["z"]) >= 1.5]
-    ranked.sort(key=lambda item: abs(item["z"]), reverse=True)
+    # Decompose into trend/seasonal/residual using STL when available.
+    trend = values.copy()
+    seasonal = np.zeros_like(values)
+    residual = np.zeros_like(values)
+    if len(values) >= max(stl_period * 2, 8):
+        try:
+            seasonal_mod = __import__("statsmodels.tsa.seasonal", fromlist=["STL"])
+            STL = getattr(seasonal_mod, "STL")
 
-    return [
-        {
-            "period": point["period"],
-            "value": round(point["value"], 2),
-            "zScore": round(point["z"], 2),
-            "severity": "high" if abs(point["z"]) >= 2.5 else "medium",
-            "direction": "spike" if point["z"] > 0 else "drop",
-        }
-        for point in ranked[:8]
-    ]
+            fit = STL(values, period=stl_period, robust=True).fit()
+            trend = np.asarray(fit.trend, dtype=float)
+            seasonal = np.asarray(fit.seasonal, dtype=float)
+            residual = np.asarray(fit.resid, dtype=float)
+        except Exception:
+            # Lightweight fallback if STL is unavailable in environment.
+            window = min(max(stl_period, 3), len(values))
+            trend = (
+                pd.Series(values)
+                .rolling(window=window, center=True, min_periods=1)
+                .mean()
+                .to_numpy(dtype=float)
+            )
+            detrended = values - trend
+            if stl_period > 1 and len(values) >= stl_period:
+                index_mod = np.arange(len(values)) % stl_period
+                seasonal_means = np.zeros(stl_period, dtype=float)
+                for i in range(stl_period):
+                    bucket = detrended[index_mod == i]
+                    seasonal_means[i] = float(bucket.mean()) if bucket.size else 0.0
+                seasonal = seasonal_means[index_mod]
+                seasonal = seasonal - float(np.mean(seasonal))
+            residual = values - trend - seasonal
+
+    anomalies: list[dict[str, Any]] = []
+
+    # 1) Global z-score anomalies (existing behavior retained).
+    mean = float(values.mean())
+    std = float(values.std())
+    if std > 0:
+        z_scores = (values - mean) / std
+        for idx, z_score in enumerate(z_scores):
+            if abs(z_score) >= 1.5:
+                anomalies.append(
+                    {
+                        "period": periods[idx],
+                        "value": round(float(values[idx]), 2),
+                        "zScore": round(float(z_score), 2),
+                        "severity": "high" if abs(z_score) >= 2.5 else "medium",
+                        "direction": "spike" if z_score > 0 else "drop",
+                        "method": "zscore",
+                    }
+                )
+
+    # 2) Seasonal deviation anomalies from STL residuals.
+    residual_std = float(np.std(residual))
+    if residual_std > 0:
+        residual_z = residual / residual_std
+        for idx, score in enumerate(residual_z):
+            if abs(score) >= 2.0:
+                anomalies.append(
+                    {
+                        "period": periods[idx],
+                        "value": round(float(values[idx]), 2),
+                        "zScore": round(float(score), 2),
+                        "severity": "high" if abs(score) >= 3.0 else "medium",
+                        "direction": "spike" if score > 0 else "drop",
+                        "method": "seasonal_deviation",
+                    }
+                )
+
+    # 3) Trend reversal anomalies from trend derivative sign changes.
+    if len(trend) >= 4:
+        slope = np.diff(trend)
+        if slope.size >= 3:
+            slope_scale = float(np.std(slope))
+            if slope_scale > 0:
+                for i in range(1, len(slope)):
+                    prev_s = float(slope[i - 1])
+                    curr_s = float(slope[i])
+                    # Significant sign change: rising->falling or falling->rising.
+                    if prev_s == 0 or curr_s == 0 or np.sign(prev_s) == np.sign(curr_s):
+                        continue
+                    if abs(prev_s) < (0.35 * slope_scale) and abs(curr_s) < (0.35 * slope_scale):
+                        continue
+
+                    reversal_strength = abs(curr_s - prev_s) / slope_scale
+                    if reversal_strength < 1.2:
+                        continue
+
+                    point_idx = i  # slope[i] is between point i and i+1, reversal centered at i
+                    turning_direction = "drop" if prev_s > 0 and curr_s < 0 else "spike"
+                    anomalies.append(
+                        {
+                            "period": periods[point_idx],
+                            "value": round(float(values[point_idx]), 2),
+                            "zScore": round(float(reversal_strength), 2),
+                            "severity": "high" if reversal_strength >= 2.2 else "medium",
+                            "direction": turning_direction,
+                            "method": "trend_reversal",
+                        }
+                    )
+
+    anomalies.sort(key=lambda item: abs(float(item.get("zScore") or 0)), reverse=True)
+    return anomalies[:8]
 
 
 def build_where_clause(predicates: list[str]) -> str:

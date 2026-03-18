@@ -434,6 +434,84 @@ def _drop_trailing_zeros(df: pd.DataFrame, metric: str) -> pd.DataFrame:
     return df.loc[:last_idx].copy()
 
 
+_RATE_METRICS = {
+    "publish_conversion_rate",
+    "creation_rate",
+    "processing_efficiency",
+    "waste_index",
+}
+
+
+def _stl_period_for_granularity(granularity: str) -> int:
+    # Practical defaults aligned to the expected seasonality at each level.
+    return {
+        "day": 7,
+        "week": 8,
+        "month": 12,
+        "quarter": 4,
+    }.get(granularity, 12)
+
+
+def _aggregate_metric_series(resampled_df: pd.DataFrame, metric: str) -> pd.DataFrame:
+    metric_agg = "mean" if metric in _RATE_METRICS else "sum"
+    aggregated = (
+        resampled_df
+        .groupby("Date")[metric]
+        .agg(metric_agg)
+        .reset_index()
+        .rename(columns={metric: "value"})
+        .sort_values("Date")
+        .reset_index(drop=True)
+    )
+    return aggregated
+
+
+def _decompose_series(values: np.ndarray, period: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    n = len(values)
+    if n == 0:
+        return values, values, values
+    if n < 3:
+        zeros = np.zeros(n, dtype=float)
+        return values.astype(float), zeros, zeros
+
+    # Preferred: true STL when statsmodels is available and we have enough points.
+    if n >= max(period * 2, 8):
+        try:
+            from statsmodels.tsa.seasonal import STL
+
+            stl_fit = STL(values.astype(float), period=period, robust=True).fit()
+            return (
+                np.asarray(stl_fit.trend, dtype=float),
+                np.asarray(stl_fit.seasonal, dtype=float),
+                np.asarray(stl_fit.resid, dtype=float),
+            )
+        except Exception:
+            pass
+
+    # Fallback decomposition when STL dependency is unavailable or series is short.
+    window = min(max(period, 3), n)
+    trend = (
+        pd.Series(values.astype(float))
+        .rolling(window=window, center=True, min_periods=1)
+        .mean()
+        .to_numpy()
+    )
+
+    detrended = values.astype(float) - trend
+    seasonal = np.zeros(n, dtype=float)
+    if period > 1 and n >= period:
+        index_mod = np.arange(n) % period
+        seasonal_means = np.zeros(period, dtype=float)
+        for i in range(period):
+            bucket = detrended[index_mod == i]
+            seasonal_means[i] = float(bucket.mean()) if bucket.size else 0.0
+        seasonal = seasonal_means[index_mod]
+        seasonal = seasonal - float(np.mean(seasonal))
+
+    residual = values.astype(float) - trend - seasonal
+    return trend, seasonal, residual
+
+
 # ── Chronos singleton ─────────────────────────────────────────────────────
 import threading
 
@@ -882,6 +960,133 @@ _MULTIDIM_ANALYSIS_COLS = {
     "duration_dynamics": ["uploaded_duration", "created_duration", "published_duration"],
     "success_scores": ["creation_rate", "publish_conversion_rate", "processing_efficiency", "waste_index"],
 }
+
+
+@router.get("/v1/stl")
+def get_stl_decomposition(
+    metric: str = Query("uploaded_count", description="Metric to decompose"),
+    granularity: str = Query("week", description="day, week, month, or quarter"),
+    company: Optional[List[str]] = Query(None),
+    channel: Optional[List[str]] = Query(None),
+    user: Optional[List[str]] = Query(None),
+    language: Optional[List[str]] = Query(None),
+    input_type: Optional[List[str]] = Query(None),
+    output_type_filter: Optional[List[str]] = Query(None, alias="output_type"),
+    date_from: Optional[str] = Query(None, description="YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="YYYY-MM-DD"),
+    auth_context: AuthContext = Depends(require_auth),
+):
+    """Return STL-like decomposition (trend, seasonal, residual) for selected metric/time grain."""
+    try:
+        safe_granularity = granularity if granularity in {"day", "week", "month", "quarter"} else "week"
+
+        if auth_context.role == "client_admin":
+            company = [auth_context.client_name]
+        elif auth_context.role == "user":
+            company = [auth_context.client_name]
+
+        if any([company, channel, user, language, input_type, output_type_filter, date_from, date_to]) or auth_context.role == "user":
+            engine = _get_engine()
+            videos_df = pd.read_sql("SELECT * FROM \"raw_videos\"", engine)
+            assets_df = pd.read_sql("SELECT * FROM \"created_assets\"", engine)
+            posts_df = pd.read_sql("SELECT * FROM \"published_posts\"", engine)
+            users_df = pd.read_sql("SELECT * FROM \"users\"", engine)
+            try:
+                dist_df = pd.read_sql("SELECT * FROM \"post_distribution\"", engine)
+            except Exception:
+                dist_df = None
+            try:
+                rvc_df = pd.read_sql("SELECT * FROM \"raw_video_channel\"", engine)
+            except Exception:
+                rvc_df = None
+
+            videos_df["Upload_Date"] = pd.to_datetime(videos_df["Upload_Date"])
+            assets_df["Create_Date"] = pd.to_datetime(assets_df["Create_Date"])
+            posts_df["Publish_Date"] = pd.to_datetime(posts_df["Publish_Date"])
+
+            videos_df, assets_df, posts_df, users_df, _ = _apply_usage_filters(
+                videos_df,
+                assets_df,
+                posts_df,
+                users_df,
+                dist_df,
+                rvc_df,
+                company=company,
+                channel=channel,
+                user=user,
+                language=language,
+                input_type=input_type,
+                output_type=output_type_filter,
+                date_from=date_from,
+                date_to=date_to,
+                force_user_id=auth_context.user_id if auth_context.role == "user" else None,
+            )
+
+            if videos_df.empty:
+                return {
+                    "status": "success",
+                    "metric": metric,
+                    "granularity": safe_granularity,
+                    "period": _stl_period_for_granularity(safe_granularity),
+                    "row_count": 0,
+                    "data": [],
+                }
+
+            master_df = _build_master_df_from_frames(videos_df, assets_df, posts_df, users_df)
+        else:
+            master_df = _build_master_df()
+
+        resampled = _resample_dataframe(master_df, safe_granularity)
+        resampled = _drop_incomplete_tail(resampled, safe_granularity)
+
+        if resampled.empty:
+            return {
+                "status": "success",
+                "metric": metric,
+                "granularity": safe_granularity,
+                "period": _stl_period_for_granularity(safe_granularity),
+                "row_count": 0,
+                "data": [],
+            }
+
+        if metric not in resampled.columns:
+            raise HTTPException(status_code=400, detail=f"Invalid metric '{metric}'")
+
+        aggregated = _aggregate_metric_series(resampled, metric)
+        if aggregated.empty:
+            return {
+                "status": "success",
+                "metric": metric,
+                "granularity": safe_granularity,
+                "period": _stl_period_for_granularity(safe_granularity),
+                "row_count": 0,
+                "data": [],
+            }
+
+        period = _stl_period_for_granularity(safe_granularity)
+        observed = aggregated["value"].astype(float).to_numpy()
+        trend, seasonal, residual = _decompose_series(observed, period)
+
+        out = pd.DataFrame({
+            "Date": aggregated["Date"].astype(str),
+            "observed": observed,
+            "trend": trend,
+            "seasonal": seasonal,
+            "residual": residual,
+        })
+
+        return {
+            "status": "success",
+            "metric": metric,
+            "granularity": safe_granularity,
+            "period": period,
+            "row_count": len(out),
+            "data": out.to_dict(orient="records"),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/v1/multi-dim")
