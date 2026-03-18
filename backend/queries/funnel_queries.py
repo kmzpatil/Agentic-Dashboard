@@ -1,9 +1,16 @@
+from backend.queries.analytics_shared import build_client_name_expr
+
+
+CLIENT_EXPR = build_client_name_expr("ch", "u")
+CLIENT_EXPR_WITH_UNKNOWN = build_client_name_expr("ch", "u", include_unknown=True)
+
+
 BREAKDOWN_EXPR_MAP = {
   "channel": 'COALESCE(rvc."Channel_Name", \'Unknown\')',
   "input_type": 'COALESCE(rv."Input_Type", \'Unknown\')',
   "language": 'COALESCE(rv."Language", \'Unknown\')',
   "output_type": 'COALESCE(ca."Output_Type", \'Unknown\')',
-  "client": 'COALESCE(u."Client_Name", \'Unknown\')',
+  "client": CLIENT_EXPR_WITH_UNKNOWN,
   "user": 'COALESCE(u."User_Name", \'Unknown\')',
   "team": 'COALESCE(u."Team_Name", \'Unknown\')',
 }
@@ -112,6 +119,7 @@ def get_breakdown_query(filter_data: dict, breakdown_dimension: str, locked_valu
     JOIN raw_videos rv ON rv."Video_ID" = fv."Video_ID"
     LEFT JOIN users u ON u."User_ID" = rv."User_ID"
     LEFT JOIN raw_video_channel rvc ON rvc."Video_ID" = rv."Video_ID"
+    LEFT JOIN channels ch ON ch."Channel_Name" = rvc."Channel_Name"
     LEFT JOIN created_assets ca ON ca."Video_ID" = rv."Video_ID"
     LEFT JOIN published_posts pp ON pp."Asset_ID" = ca."Asset_ID"
     {lock_where}
@@ -368,7 +376,7 @@ def get_channel_efficiency_query(
         channel_where.append(f'rvc."Channel_Name" = ${next_index}')
         next_index += 1
     if locked_client:
-        channel_where.append(f'ch."Client_Name" = ${next_index}')
+        channel_where.append(f'COALESCE(ch."Client_Name", u."Client_Name") = ${next_index}')
         next_index += 1
     where_sql = f"WHERE {' AND '.join(channel_where)}" if channel_where else ""
 
@@ -382,11 +390,13 @@ def get_channel_efficiency_query(
     channel_video AS (
       SELECT DISTINCT
         rvc."Channel_Name" AS channel_name,
-        ch."Client_Name" AS client_name,
+        COALESCE(ch."Client_Name", u."Client_Name", 'Unknown') AS client_name,
         fv."Video_ID" AS video_id
       FROM filtered_videos fv
+      JOIN raw_videos rv ON rv."Video_ID" = fv."Video_ID"
+      LEFT JOIN users u ON u."User_ID" = rv."User_ID"
       JOIN raw_video_channel rvc ON rvc."Video_ID" = fv."Video_ID"
-      JOIN channels ch ON ch."Channel_Name" = rvc."Channel_Name"
+      LEFT JOIN channels ch ON ch."Channel_Name" = rvc."Channel_Name"
       {where_sql}
     ),
     published_video AS (
@@ -421,7 +431,7 @@ def get_absolute_waste_query(
         channel_where.append(f'rvc."Channel_Name" = ${next_index}')
         next_index += 1
     if locked_client:
-        channel_where.append(f'ch."Client_Name" = ${next_index}')
+        channel_where.append(f'COALESCE(ch."Client_Name", u."Client_Name") = ${next_index}')
         next_index += 1
     where_sql = f"WHERE {' AND '.join(channel_where)}" if channel_where else ""
 
@@ -435,11 +445,13 @@ def get_absolute_waste_query(
     channel_video AS (
       SELECT DISTINCT
         rvc."Channel_Name" AS channel_name,
-        ch."Client_Name" AS client_name,
+        COALESCE(ch."Client_Name", u."Client_Name", 'Unknown') AS client_name,
         fv."Video_ID" AS video_id
       FROM filtered_videos fv
+      JOIN raw_videos rv ON rv."Video_ID" = fv."Video_ID"
+      LEFT JOIN users u ON u."User_ID" = rv."User_ID"
       JOIN raw_video_channel rvc ON rvc."Video_ID" = fv."Video_ID"
-      JOIN channels ch ON ch."Channel_Name" = rvc."Channel_Name"
+      LEFT JOIN channels ch ON ch."Channel_Name" = rvc."Channel_Name"
       {where_sql}
     ),
     published_video AS (
@@ -601,14 +613,21 @@ def get_team_absolute_waste_query(filter_data: dict) -> str:
 def get_heatmap_query(filter_data: dict) -> str:
     return f'''
     WITH filtered_videos AS (
-      SELECT DISTINCT rv."Video_ID", rv."Input_Type", rv."User_ID"
+      SELECT
+        rv."Video_ID",
+        rv."Input_Type",
+        MIN({CLIENT_EXPR_WITH_UNKNOWN}) AS client_name
       FROM raw_videos rv
+      LEFT JOIN users u ON u."User_ID" = rv."User_ID"
+      LEFT JOIN raw_video_channel rvc ON rvc."Video_ID" = rv."Video_ID"
+      LEFT JOIN channels ch ON ch."Channel_Name" = rvc."Channel_Name"
       {filter_data["join"]}
       {filter_data["where"]}
+      GROUP BY rv."Video_ID", rv."Input_Type"
     )
     SELECT
       fv."Input_Type" AS input_type,
-      u."Client_Name" AS client_name,
+      fv.client_name AS client_name,
       COUNT(DISTINCT fv."Video_ID")::int AS videos_uploaded,
       COUNT(DISTINCT ca."Asset_ID")::int AS assets_created,
       COUNT(DISTINCT pp."Post_ID")::int AS posts_published,
@@ -621,11 +640,10 @@ def get_heatmap_query(filter_data: dict) -> str:
         2
       ) AS conversion_pct
     FROM filtered_videos fv
-    JOIN users u ON u."User_ID" = fv."User_ID"
     LEFT JOIN created_assets ca ON ca."Video_ID" = fv."Video_ID"
     LEFT JOIN published_posts pp ON pp."Asset_ID" = ca."Asset_ID"
-    GROUP BY fv."Input_Type", u."Client_Name"
-    ORDER BY fv."Input_Type", u."Client_Name";
+    GROUP BY fv."Input_Type", fv.client_name
+    ORDER BY fv."Input_Type", fv.client_name;
   '''
 
 
@@ -656,13 +674,19 @@ def get_output_type_survival_query(filter_data: dict) -> str:
 def get_publish_by_client_query(filter_data: dict) -> str:
     return f'''
     WITH filtered_videos AS (
-      SELECT DISTINCT rv."Video_ID", rv."User_ID"
+      SELECT
+        rv."Video_ID",
+        MIN({CLIENT_EXPR_WITH_UNKNOWN}) AS client_name
       FROM raw_videos rv
+      LEFT JOIN users u ON u."User_ID" = rv."User_ID"
+      LEFT JOIN raw_video_channel rvc ON rvc."Video_ID" = rv."Video_ID"
+      LEFT JOIN channels ch ON ch."Channel_Name" = rvc."Channel_Name"
       {filter_data["join"]}
       {filter_data["where"]}
+      GROUP BY rv."Video_ID"
     )
     SELECT
-      u."Client_Name" AS client_name,
+      fv.client_name AS client_name,
       COUNT(DISTINCT ca."Asset_ID")::int AS assets_created,
       COUNT(DISTINCT pp."Post_ID")::int AS posts_published,
       ROUND(
@@ -670,10 +694,9 @@ def get_publish_by_client_query(filter_data: dict) -> str:
         / NULLIF(COUNT(DISTINCT ca."Asset_ID"), 0) * 100, 2
       ) AS conversion_pct
     FROM filtered_videos fv
-    JOIN users u ON u."User_ID" = fv."User_ID"
     LEFT JOIN created_assets ca ON ca."Video_ID" = fv."Video_ID"
     LEFT JOIN published_posts pp ON pp."Asset_ID" = ca."Asset_ID"
-    GROUP BY u."Client_Name"
+    GROUP BY fv.client_name
     ORDER BY conversion_pct;
   '''
 
@@ -681,15 +704,21 @@ def get_publish_by_client_query(filter_data: dict) -> str:
 def get_client_outcome_platform_sankey_query(filter_data: dict) -> str:
     return f'''
     WITH filtered_videos AS (
-      SELECT DISTINCT rv."Video_ID", rv."User_ID"
+      SELECT
+        rv."Video_ID",
+        MIN({CLIENT_EXPR_WITH_UNKNOWN}) AS client_name
       FROM raw_videos rv
+      LEFT JOIN users u ON u."User_ID" = rv."User_ID"
+      LEFT JOIN raw_video_channel rvc ON rvc."Video_ID" = rv."Video_ID"
+      LEFT JOIN channels ch ON ch."Channel_Name" = rvc."Channel_Name"
       {filter_data["join"]}
       {filter_data["where"]}
+      GROUP BY rv."Video_ID"
     ),
     scoped_assets AS (
       SELECT
         DISTINCT ca."Asset_ID" AS asset_id,
-        fv."User_ID" AS user_id
+        fv.client_name AS client_name
       FROM filtered_videos fv
       JOIN created_assets ca ON ca."Video_ID" = fv."Video_ID"
     ),
@@ -700,22 +729,20 @@ def get_client_outcome_platform_sankey_query(filter_data: dict) -> str:
     ),
     published_by_client AS (
       SELECT
-        u."Client_Name" AS client_name,
+        sa.client_name AS client_name,
         COUNT(DISTINCT sa.asset_id)::int AS flow
       FROM scoped_assets sa
-      JOIN users u ON u."User_ID" = sa.user_id
       JOIN published_assets pa ON pa.asset_id = sa.asset_id
-      GROUP BY u."Client_Name"
+      GROUP BY sa.client_name
     ),
     not_published_by_client AS (
       SELECT
-        u."Client_Name" AS client_name,
+        sa.client_name AS client_name,
         COUNT(DISTINCT sa.asset_id)::int AS flow
       FROM scoped_assets sa
-      JOIN users u ON u."User_ID" = sa.user_id
       LEFT JOIN published_assets pa ON pa.asset_id = sa.asset_id
       WHERE pa.asset_id IS NULL
-      GROUP BY u."Client_Name"
+      GROUP BY sa.client_name
     ),
     published_asset_platforms AS (
       SELECT DISTINCT
@@ -763,16 +790,28 @@ def get_client_outcome_platform_sankey_query(filter_data: dict) -> str:
   '''
 
 
+def _normalize_option_predicates(predicates: list[str]) -> list[str]:
+    return [
+        p.replace("u_scope.", "u.")
+         .replace("ch_scope.", "ch.")
+         .replace("rvc_scope.", "rvc.")
+        for p in predicates
+    ]
+
+
 def get_filter_options_clients_query(access_filter: dict) -> str:
-    where = ""
     if access_filter.get("predicates"):
-        preds = [p.replace("rv.", "u.").replace("u_scope.", "u.").replace("ch_scope.", "ch.") for p in access_filter["predicates"]]
-        where = f"WHERE {' AND '.join(preds)}"
+        preds = _normalize_option_predicates(access_filter["predicates"])
+        where = f"WHERE COALESCE(ch.\"Client_Name\", u.\"Client_Name\") IS NOT NULL AND {' AND '.join(preds)}"
+    else:
+        where = 'WHERE COALESCE(ch."Client_Name", u."Client_Name") IS NOT NULL'
+
     return f'''
-    SELECT DISTINCT c."Client_Name" AS value
-    FROM clients c
-    LEFT JOIN users u ON u."Client_Name" = c."Client_Name"
-    LEFT JOIN channels ch ON ch."Client_Name" = c."Client_Name"
+    SELECT DISTINCT COALESCE(ch."Client_Name", u."Client_Name") AS value
+    FROM raw_videos rv
+    LEFT JOIN users u ON u."User_ID" = rv."User_ID"
+    LEFT JOIN raw_video_channel rvc ON rvc."Video_ID" = rv."Video_ID"
+    LEFT JOIN channels ch ON ch."Channel_Name" = rvc."Channel_Name"
     {where}
     ORDER BY 1;
   '''
@@ -816,13 +855,14 @@ def get_filter_options_languages_query(access_filter: dict = None) -> str:
 
 def get_filter_options_channels_query(access_filter: dict = None) -> str:
     if access_filter and access_filter.get("predicates"):
-        preds = [p.replace("rv.", "rvc.").replace("u_scope.", "u.").replace("ch_scope.", "ch.") for p in access_filter["predicates"]]
-        where = f"WHERE {' AND '.join(preds)}"
+        preds = _normalize_option_predicates(access_filter["predicates"])
+        where = f"WHERE ch.\"Channel_Name\" IS NOT NULL AND {' AND '.join(preds)}"
         return f'''
         SELECT DISTINCT ch."Channel_Name" AS value
-        FROM channels ch
-        LEFT JOIN users u ON u."Client_Name" = ch."Client_Name"
-        LEFT JOIN raw_video_channel rvc ON rvc."Channel_Name" = ch."Channel_Name"
+        FROM raw_videos rv
+        LEFT JOIN users u ON u."User_ID" = rv."User_ID"
+        LEFT JOIN raw_video_channel rvc ON rvc."Video_ID" = rv."Video_ID"
+        LEFT JOIN channels ch ON ch."Channel_Name" = rvc."Channel_Name"
         {where}
         ORDER BY 1;
       '''
@@ -835,12 +875,14 @@ def get_filter_options_channels_query(access_filter: dict = None) -> str:
 
 def get_filter_options_users_query(access_filter: dict = None) -> str:
     if access_filter and access_filter.get("predicates"):
-        preds = [p.replace("rv.", "u.").replace("u_scope.", "u.").replace("ch_scope.", "ch.") for p in access_filter["predicates"]]
+        preds = _normalize_option_predicates(access_filter["predicates"])
         where = f"AND {' AND '.join(preds)}"
         return f'''
         SELECT DISTINCT u."User_Name" AS value
-        FROM users u
-        LEFT JOIN channels ch ON ch."Client_Name" = u."Client_Name"
+        FROM raw_videos rv
+        LEFT JOIN users u ON u."User_ID" = rv."User_ID"
+        LEFT JOIN raw_video_channel rvc ON rvc."Video_ID" = rv."Video_ID"
+        LEFT JOIN channels ch ON ch."Channel_Name" = rvc."Channel_Name"
         WHERE u."User_Name" IS NOT NULL {where}
         ORDER BY 1;
       '''
@@ -854,12 +896,14 @@ def get_filter_options_users_query(access_filter: dict = None) -> str:
 
 def get_filter_options_teams_query(access_filter: dict = None) -> str:
     if access_filter and access_filter.get("predicates"):
-        preds = [p.replace("rv.", "u.").replace("u_scope.", "u.").replace("ch_scope.", "ch.") for p in access_filter["predicates"]]
+        preds = _normalize_option_predicates(access_filter["predicates"])
         where = f"AND {' AND '.join(preds)}"
         return f'''
         SELECT DISTINCT u."Team_Name" AS value
-        FROM users u
-        LEFT JOIN channels ch ON ch."Client_Name" = u."Client_Name"
+        FROM raw_videos rv
+        LEFT JOIN users u ON u."User_ID" = rv."User_ID"
+        LEFT JOIN raw_video_channel rvc ON rvc."Video_ID" = rv."Video_ID"
+        LEFT JOIN channels ch ON ch."Channel_Name" = rvc."Channel_Name"
         WHERE u."Team_Name" IS NOT NULL {where}
         ORDER BY 1;
       '''

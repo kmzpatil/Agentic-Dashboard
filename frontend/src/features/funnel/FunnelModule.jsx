@@ -26,6 +26,7 @@ const BREAKDOWN_SOURCES_LIMITS = {
   user: 12,
   team: 10,
   client: 10,
+  output_type: 10,
   input_type: 8,
   language: 8,
 };
@@ -34,7 +35,7 @@ const EMPTY_FILTERS = { client: '', input_type: '', language: '', channel: '', u
 const FILTER_DIMENSIONS = new Set(['client', 'input_type', 'language', 'channel', 'user', 'team']);
 const FILTER_KEYS = ['client', 'input_type', 'language', 'channel', 'user', 'team'];
 
-function buildFiltersFromRouteState(routeState = {}, nextBreakdown = 'channel') {
+function buildFiltersFromRouteState(routeState = {}) {
   const next = { ...EMPTY_FILTERS };
   FILTER_KEYS.forEach((key) => {
     if (routeState[key]) next[key] = routeState[key];
@@ -46,14 +47,14 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
   const compositionChartRef = useRef(null);
 
   const [breakdown, setBreakdown] = useState(routeState.breakdown || 'channel');
-  const [filters, setFilters] = useState(() => buildFiltersFromRouteState(routeState, routeState.breakdown || 'channel'));
+  const [filters, setFilters] = useState(() => buildFiltersFromRouteState(routeState));
   const [compositionSourceMode, setCompositionSourceMode] = useState('top');
   const [compositionTopN, setCompositionTopN] = useState(() => BREAKDOWN_SOURCES_LIMITS[routeState.breakdown || 'channel'] || MAX_BREAKDOWN_SOURCES);
   const [analysisTab, setAnalysisTab] = useState('overview');
 
   useEffect(() => {
     const nextBreakdown = routeState.breakdown || 'channel';
-    const next = buildFiltersFromRouteState(routeState, nextBreakdown);
+    const next = buildFiltersFromRouteState(routeState);
     setBreakdown(nextBreakdown);
     setFilters(next);
     setCompositionTopN(BREAKDOWN_SOURCES_LIMITS[nextBreakdown] || MAX_BREAKDOWN_SOURCES);

@@ -7,6 +7,7 @@ const ALL_VIEW_BY = [
   { label: 'Client',     value: 'client',    roles: ['website_admin'] },
   { label: 'Channel',    value: 'channel',   roles: ['website_admin', 'client_admin', 'user'] },
   { label: 'Input type', value: 'input_type', roles: ['website_admin', 'client_admin', 'user'] },
+  { label: 'Output type', value: 'output_type', roles: ['website_admin', 'client_admin', 'user'] },
   { label: 'User',       value: 'user',      roles: ['website_admin', 'client_admin'] },
   { label: 'Team',       value: 'team',      roles: ['website_admin', 'client_admin'] },
 ];
@@ -42,8 +43,9 @@ export default function FunnelFilterBar({ authUser, breakdown, filters, onBreakd
   const isAdmin = role === 'website_admin';
   const isAdminOrClientAdmin = role === 'website_admin' || role === 'client_admin';
 
-  const { data: opts } = useApi(`${API_BASE}/funnel/filter-options`, []);
+  const { data: opts, loading: optionsLoading, error: optionsError } = useApi(`${API_BASE}/funnel/filter-options`, []);
   const options = opts || { clients: [], input_types: [], languages: [], channels: [], users: [], teams: [] };
+  const filtersDisabled = Boolean(optionsError) || optionsLoading;
 
   const allowedViewBy = ALL_VIEW_BY.filter((o) => o.roles.includes(role));
 
@@ -84,37 +86,37 @@ export default function FunnelFilterBar({ authUser, breakdown, filters, onBreakd
         <div className="h-4 w-px bg-neutral-800 shrink-0" />
 
         {/* Dropdowns */}
-        <FilterSelect label="Input type" value={filters.input_type || ''} onChange={(e) => update('input_type', e.target.value)}>
+        <FilterSelect label="Input type" value={filters.input_type || ''} onChange={(e) => update('input_type', e.target.value)} disabled={filtersDisabled}>
           <option value="">All</option>
           {options.input_types.map((v) => <option key={v} value={v}>{v}</option>)}
         </FilterSelect>
 
-        <FilterSelect label="Language" value={filters.language || ''} onChange={(e) => update('language', e.target.value)}>
+        <FilterSelect label="Language" value={filters.language || ''} onChange={(e) => update('language', e.target.value)} disabled={filtersDisabled}>
           <option value="">All</option>
           {options.languages.map((v) => <option key={v} value={v}>{v}</option>)}
         </FilterSelect>
 
-        <FilterSelect label="Channel" value={filters.channel || ''} onChange={(e) => update('channel', e.target.value)}>
+        <FilterSelect label="Channel" value={filters.channel || ''} onChange={(e) => update('channel', e.target.value)} disabled={filtersDisabled}>
           <option value="">All</option>
           {(options.channels || []).map((v) => <option key={v} value={v}>{v}</option>)}
         </FilterSelect>
 
         {isAdmin && (
-          <FilterSelect label="Client" value={filters.client || ''} onChange={(e) => update('client', e.target.value)}>
+          <FilterSelect label="Client" value={filters.client || ''} onChange={(e) => update('client', e.target.value)} disabled={filtersDisabled}>
             <option value="">All</option>
             {options.clients.map((v) => <option key={v} value={v}>{v}</option>)}
           </FilterSelect>
         )}
 
         {isAdminOrClientAdmin && (
-          <FilterSelect label="User" value={filters.user || ''} onChange={(e) => update('user', e.target.value)}>
+          <FilterSelect label="User" value={filters.user || ''} onChange={(e) => update('user', e.target.value)} disabled={filtersDisabled}>
             <option value="">All</option>
             {(options.users || []).map((v) => <option key={v} value={v}>{v}</option>)}
           </FilterSelect>
         )}
 
         {isAdminOrClientAdmin && (
-          <FilterSelect label="Team" value={filters.team || ''} onChange={(e) => update('team', e.target.value)}>
+          <FilterSelect label="Team" value={filters.team || ''} onChange={(e) => update('team', e.target.value)} disabled={filtersDisabled}>
             <option value="">All</option>
             {(options.teams || []).map((v) => <option key={v} value={v}>{v}</option>)}
           </FilterSelect>
@@ -134,6 +136,12 @@ export default function FunnelFilterBar({ authUser, breakdown, filters, onBreakd
       </div>
 
       {/* Active pills */}
+      {optionsError && (
+        <div className="rounded-lg border border-amber-600/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-300">
+          Filter options are temporarily unavailable. Retry in a moment.
+        </div>
+      )}
+
       {active.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {active.map(([key, value]) => (

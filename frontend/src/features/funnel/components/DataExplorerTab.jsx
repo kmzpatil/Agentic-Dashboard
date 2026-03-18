@@ -65,8 +65,8 @@ export default function DataExplorerTab({ authUser, data, breakdown, filters }) 
               </tr>
             </thead>
             <tbody>
-              {(data?.breakdown || []).map((row) => (
-                <tr key={row.label} className="border-b border-neutral-900 hover:bg-[#0d0d0d] transition-colors">
+              {(data?.breakdown || []).map((row, index) => (
+                <tr key={`${row.label || 'unknown'}-${index}`} className="border-b border-neutral-900 hover:bg-[#0d0d0d] transition-colors">
                   <td className="py-2 text-neutral-200 text-[12px] font-medium">{row.label || '(unknown)'}</td>
                   <td className="py-2 text-right text-neutral-400 text-[12px]">{formatNumber(row.uploaded_count)}</td>
                   <td className="py-2 text-right text-neutral-400 text-[12px]">{formatNumber(row.created_count)}</td>
@@ -171,8 +171,8 @@ export default function DataExplorerTab({ authUser, data, breakdown, filters }) 
                     </tr>
                   </thead>
                   <tbody>
-                    {(videoDetails.data.assets || []).map((a) => (
-                      <tr key={a.asset_id} className="border-b border-neutral-900">
+                    {(videoDetails.data.assets || []).map((a, idx) => (
+                      <tr key={`${a.asset_id || 'asset'}-${a.post_id || 'no-post'}-${idx}`} className="border-b border-neutral-900">
                         <td className="py-2 text-neutral-200">{a.asset_id}</td>
                         <td className="py-2 text-neutral-400">{a.output_type || '-'}</td>
                         <td className="py-2 text-right text-neutral-400">{formatNumber(a.created_duration)}</td>
