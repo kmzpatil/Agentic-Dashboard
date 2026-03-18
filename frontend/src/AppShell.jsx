@@ -3,6 +3,7 @@ import {
   BarChart3,
   Bot,
   Funnel,
+  Route,
   LayoutDashboard,
   Microscope,
   FlaskConical,
@@ -14,6 +15,7 @@ import { useApi } from './hooks/useApi';
 import OverviewModule from './features/overview/OverviewModule';
 import UsageTrendsModule from './features/usage/UsageTrendsModule';
 import FunnelModule from './features/funnel/FunnelModule';
+import UserJourneyModule from './features/journey/UserJourneyModule';
 import ExplorerModule from './features/explorer/ExplorerModule';
 import TalkToDataModule from './features/talk/TalkToDataModule';
 import LabsModule from './features/labs/LabsModule';
@@ -109,6 +111,7 @@ export default function AppShell() {
     { id: 'mission-control', label: 'Mission Control', icon: <LayoutDashboard size={16} /> },
     { id: 'trends', label: 'Trends', icon: <BarChart3 size={16} /> },
     { id: 'funnel', label: 'Funnel', icon: <Funnel size={16} /> },
+    { id: 'journey', label: 'Metrics', icon: <Route size={16} /> },
     { id: 'explorer', label: 'Explorer', icon: <Microscope size={16} /> },
     { id: 'copilot', label: 'Copilot', icon: <Bot size={16} /> },
     { id: 'labs', label: 'Labs', icon: <FlaskConical size={16} /> },
@@ -278,6 +281,7 @@ export default function AppShell() {
         {activeView === 'mission-control' && <OverviewModule routeState={routeState} onNavigate={navigate} />}
         {activeView === 'trends' && <UsageTrendsModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'funnel' && <FunnelModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
+        {activeView === 'journey' && <UserJourneyModule />}
         {activeView === 'explorer' && <ExplorerModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'copilot' && <TalkToDataModule authToken={authToken} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'labs' && <LabsModule />}
