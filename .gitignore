@@ -4,6 +4,14 @@
 venv/
 env/
 
+# Folders
+dist/
+docs/
+
+# Files
+auth_schema.sql
+
+
 # ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
@@ -11,6 +19,8 @@ __pycache__/
 *.egg-info/
 
 # ── Databases & data files ────────────────────────────────────────────────────
+*.dump
+*.txt
 *.db
 *.sqlite
 *.sqlite3

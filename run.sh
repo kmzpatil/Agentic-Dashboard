@@ -78,8 +78,17 @@ fi
 PYTHON="$VENV_PYTHON"
 
 echo "Installing Python dependencies..."
-"$PYTHON" -m pip install --upgrade pip --quiet
-"$PYTHON" -m pip install -r "$REQUIREMENTS_FILE"
+if "$PYTHON" -m pip --version >/dev/null 2>&1; then
+  "$PYTHON" -m pip install --upgrade pip --quiet
+  "$PYTHON" -m pip install -r "$REQUIREMENTS_FILE"
+elif command -v uv >/dev/null 2>&1; then
+  echo "pip is unavailable in $VENV_DIR; using uv pip with the selected interpreter."
+  uv pip install --python "$PYTHON" -r "$REQUIREMENTS_FILE"
+else
+  echo "ERROR: pip is unavailable in $VENV_DIR and uv is not installed."
+  echo "Install pip in the venv or install uv, then retry."
+  exit 1
+fi
 
 if [[ ! -d "$FRONTEND_DIR/node_modules" ]]; then
   echo "Installing frontend dependencies..."

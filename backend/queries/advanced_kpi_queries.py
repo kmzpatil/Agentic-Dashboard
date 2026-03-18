@@ -290,6 +290,22 @@ def get_generic_trend_query(access_filter: dict, kpi_id: str) -> str:
     dt = config["date_col"]
     id_col = config["id_col"]
 
+    if tbl == "scoped_videos":
+      count_expr = id_col
+      user_join = ""
+      channel_join = ""
+      input_join = ""
+    elif tbl == "scoped_posts":
+      count_expr = f't.{id_col}'
+      user_join = 'JOIN scoped_posts t ON sv."Video_ID" = t."Video_ID"'
+      channel_join = 'JOIN scoped_posts t ON svc."Video_ID" = t."Video_ID"'
+      input_join = 'JOIN scoped_posts t ON sv."Video_ID" = t."Video_ID"'
+    else:
+      count_expr = f't.{id_col}'
+      user_join = f'JOIN {tbl} t ON sv."Video_ID" = t."Video_ID"'
+      channel_join = f'JOIN {tbl} t ON svc."Video_ID" = t."Video_ID"'
+      input_join = f'JOIN {tbl} t ON sv."Video_ID" = t."Video_ID"'
+
     return f'''{get_scoped_advanced_ctes(access_filter)}
     ,    time_series AS (
       SELECT to_char(to_date({dt}, 'YYYY-MM-DD'), 'Mon') AS label,
@@ -301,25 +317,22 @@ def get_generic_trend_query(access_filter: dict, kpi_id: str) -> str:
       ORDER BY m_num LIMIT 12
     ),
     user_stats AS (
-      SELECT u."User_Name" AS label, COUNT(DISTINCT {"t." + id_col if tbl not in ("scoped_videos", "scoped_posts") else id_col})::float8 AS rate
+      SELECT u."User_Name" AS label, COUNT(DISTINCT {count_expr})::float8 AS rate
       FROM scoped_videos sv
       JOIN users u ON u."User_ID" = sv."User_ID"
-      {"JOIN " + tbl + " t ON sv.\"Video_ID\" = t.\"Video_ID\"" if tbl not in ("scoped_videos", "scoped_posts") else ""}
-      {"JOIN scoped_posts t ON sv.\"Video_ID\" = t.\"Video_ID\"" if tbl == "scoped_posts" else ""}
+      {user_join}
       GROUP BY 1 ORDER BY rate DESC LIMIT 20
     ),
     channel_stats AS (
-      SELECT svc."Channel_Name" AS label, COUNT(DISTINCT {"t." + id_col if tbl not in ("scoped_videos", "scoped_posts") else id_col})::float8 AS rate
+      SELECT svc."Channel_Name" AS label, COUNT(DISTINCT {count_expr})::float8 AS rate
       FROM scoped_video_channels svc
-      {"JOIN " + tbl + " t ON svc.\"Video_ID\" = t.\"Video_ID\"" if tbl not in ("scoped_videos", "scoped_posts") else ""}
-      {"JOIN scoped_posts t ON svc.\"Video_ID\" = t.\"Video_ID\"" if tbl == "scoped_posts" else ""}
+      {channel_join}
       GROUP BY 1 ORDER BY rate DESC LIMIT 20
     ),
     input_stats AS (
-      SELECT sv."Input_Type" AS label, COUNT(DISTINCT {"t." + id_col if tbl not in ("scoped_videos", "scoped_posts") else id_col})::float8 AS rate
+      SELECT sv."Input_Type" AS label, COUNT(DISTINCT {count_expr})::float8 AS rate
       FROM scoped_videos sv
-      {"JOIN " + tbl + " t ON sv.\"Video_ID\" = t.\"Video_ID\"" if tbl not in ("scoped_videos", "scoped_posts") else ""}
-      {"JOIN scoped_posts t ON sv.\"Video_ID\" = t.\"Video_ID\"" if tbl == "scoped_posts" else ""}
+      {input_join}
       GROUP BY 1 ORDER BY rate DESC LIMIT 10
     )
     SELECT 

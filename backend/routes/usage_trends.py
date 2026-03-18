@@ -2,27 +2,32 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 import pandas as pd
 import numpy as np
 import importlib
-import os
+from urllib.parse import quote_plus
 from typing import Optional, List
 
 from backend.analytics.trends_service import get_trends_snapshot
+from backend.config.env import get_config
 from backend.routes.filters import router as filters_router
 from backend.middleware.auth import AuthContext, require_auth
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 router.include_router(filters_router)
 
-DATABASE_URL = (
-    os.getenv("DATABASE_URL")
-    or os.getenv("POSTGRES_URL")
-    or (
-        f"postgresql://{os.getenv('POSTGRES_USER', 'postgres')}:"
-        f"{os.getenv('POSTGRES_PASSWORD', '')}@"
-        f"{os.getenv('POSTGRES_HOST', 'localhost')}:"
-        f"{os.getenv('POSTGRES_PORT', '5432')}/"
-        f"{os.getenv('POSTGRES_DB', 'frammer_database')}"
-    )
-)
+def _database_url_from_config() -> str:
+    db = get_config().db
+    user = quote_plus(db.user)
+    password = quote_plus(db.password) if db.password else ""
+
+    if db.host.startswith("/"):
+        auth = f"{user}:{password}@" if password else f"{user}@"
+        host = quote_plus(db.host)
+        return f"postgresql://{auth}/{db.database}?host={host}&port={db.port}"
+
+    auth = f"{user}:{password}@" if password else f"{user}@"
+    return f"postgresql://{auth}{db.host}:{db.port}/{db.database}"
+
+
+DATABASE_URL = _database_url_from_config()
 _ENGINE = None
 
 
