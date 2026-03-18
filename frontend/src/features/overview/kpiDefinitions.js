@@ -91,7 +91,7 @@ export const KPI_DEFINITIONS = [
   {
     id: 'processing_efficiency',
     title: 'PROCESSING EFFICIENCY',
-    getValue: () => '43%',
+    getValue: (kpis) => formatPct(kpis?.processing_efficiency || 43),
     getSubtitle: () => 'Avg. time utilized',
     trendData: [35, 38, 40, 41, 42, 45, 43],
     definition: 'The ratio of the total duration of published content to the total duration of created content.',
@@ -123,7 +123,7 @@ export const KPI_DEFINITIONS = [
   {
     id: 'waste_index',
     title: 'WASTE INDEX',
-    getValue: () => '1.42',
+    getValue: (kpis) => (kpis?.waste_index !== undefined ? Number(kpis.waste_index).toFixed(2) : '1.42'),
     getSubtitle: () => 'Logarithmic waste',
     trendData: [1.8, 1.7, 1.6, 1.5, 1.45, 1.4, 1.42],
     definition: 'A logarithmic scale measuring the proportion of created duration that does not get published.',
