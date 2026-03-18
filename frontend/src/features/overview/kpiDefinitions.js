@@ -91,7 +91,7 @@ export const KPI_DEFINITIONS = [
   {
     id: 'processing_efficiency',
     title: 'PROCESSING EFFICIENCY',
-    getValue: () => '43%',
+    getValue: (kpis) => formatPct(kpis?.processing_efficiency || 43),
     getSubtitle: () => 'Avg. time utilized',
     trendData: [35, 38, 40, 41, 42, 45, 43],
     definition: 'The ratio of the total duration of published content to the total duration of created content.',
@@ -108,7 +108,7 @@ export const KPI_DEFINITIONS = [
   {
     id: 'creation_rate',
     title: 'CREATION RATE',
-    getValue: (kpis) => formatPct(kpis?.creation_rate || 0.42),
+    getValue: (kpis) => (kpis?.creation_rate !== undefined ? (Number(kpis.creation_rate) / 100).toFixed(2) : '4.20'),
     getSubtitle: () => 'Clips per upload',
     trendData: [30, 32, 28, 35, 40, 38, 42],
     definition: 'The average number of short clips generated per single uploaded raw video.',
@@ -123,7 +123,7 @@ export const KPI_DEFINITIONS = [
   {
     id: 'waste_index',
     title: 'WASTE INDEX',
-    getValue: () => '1.42',
+    getValue: (kpis) => (kpis?.waste_index !== undefined ? Number(kpis.waste_index).toFixed(2) : '1.42'),
     getSubtitle: () => 'Logarithmic waste',
     trendData: [1.8, 1.7, 1.6, 1.5, 1.45, 1.4, 1.42],
     definition: 'A logarithmic scale measuring the proportion of created duration that does not get published.',
@@ -153,7 +153,7 @@ export const KPI_DEFINITIONS = [
     getSubtitle: () => '0 Publishes/Upload',
     trendData: [4.1, 3.8, 3.5, 3.0, 2.8, 2.5, 2.4],
     definition: 'The severity of uploads that result in absolutely zero published clips.',
-    formula: '1000 * (upload_failure_rate^1.5)',
+    formula: '1000 * (upload_failure^1.5), where upload_failure = Share of the user/channel with 0 published videos in the total uploaded videos.(Calculated only for entities with zero publish rate)',
     significance: 'Punishes consistent "dead-end" uploads. Identifying cohorts with high failure rates points directly to user training needs or systemic processing errors.',
     detailsData: {
       channels: { labels: MOCK_CHANNELS.slice(0, 15), data: generateFloatArray(15, 0.5, 8.0, 1) },
@@ -183,7 +183,7 @@ export const KPI_DEFINITIONS = [
     getSubtitle: () => 'Target: 1.0',
     trendData: [0.65, 0.70, 0.75, 0.78, 0.82, 0.84, 0.85],
     definition: 'Inspired by KL Divergence, this scores how closely the duration of the created assets aligns with the duration of the final published assets.',
-    formula: '1 - (average created duration - average published duration) / (average created duration)',
+    formula: '1 - abs(average created duration - average published duration) / (average created duration)',
     significance: 'A higher score indicates that the generated clips are already very close to their final, publishable length, implying an accurate, highly efficient initial cut.',
     detailsData: {
       inputs: { labels: ['Interview', 'Webinar', 'Podcast', 'Tutorial', 'Vlog', 'Gaming'], data: [0.85, 0.60, 0.75, 0.90, 0.45, 0.88] },
@@ -203,7 +203,7 @@ export const KPI_DEFINITIONS = [
     getSubtitle: () => 'Avg synergy',
     trendData: [0.1, 0.2, 0.15, 0.3, 0.35, 0.38, 0.4],
     definition: 'Measures the positive or negative correlation between two specific dimensions (e.g., Input Type and Output Type) on the publish rate.',
-    formula: 'log(publish rate(dim1, dim2) / (publish rate(dim1) * publish rate(dim2)))',
+    formula: 'log(publish rate(Input Type, Output Type) / (publish rate(Input Type) * publish rate(Output Type)))',
     significance: 'A higher Interaction Lift Score suggests a strong positive synergy between the two dimensions. For example, determining if Interviews (input) perform exceptionally well when converted to Reels (output).',
     detailsData: {
       heatmap: (() => {
@@ -242,7 +242,7 @@ export const KPI_DEFINITIONS = [
     getSubtitle: () => 'Cramers V',
     trendData: [0.3, 0.35, 0.4, 0.42, 0.41, 0.44, 0.45],
     definition: 'Calculates the correlation of specific categorical sectors (like language or user) with the overall publish rate.',
-    formula: 'V = sqrt(x^2 / n) , where x^2 is the chi-square statistic from the contingency table.',
+    formula: 'V = sqrt(x^2 / n) , where x^2 is the chi-square statistic from the contingency table. chi-square statistic is calculated for a categorical feature against the target(published or not published)',
     significance: 'Highlights which categorical dimensions are the strongest predictors of a video actually making it to publication.',
     detailsData: {
       sectors: { labels: ['User ID', 'Input Type', 'Output Type', 'Language'], data: [0.35, 0.65, 0.82, 0.15] },
@@ -261,7 +261,7 @@ export const KPI_DEFINITIONS = [
     getSubtitle: () => 'Length vs Success',
     trendData: [0.2, 0.25, 0.3, 0.32, 0.35, 0.37, 0.38],
     definition: 'The correlation between a continuous variable (like Uploaded/Created Duration) and a binary outcome (Published or Not Published).',
-    formula: 'r_pb = ((μ1 - μ0) / σ) * sqrt(pq)',
+    formula: 'r_pb = ((μ1 - μ0) / σ) * sqrt(pq), where \nμ1 = mean of the continuous variable for class 1(published),\nμ0 = mean of the continuous variable for class 0(not published),\nσ = standard deviation of the continuous variable,p = proportion of samples in class 1(Published),\nq = proportion of samples in class 0(Not published) (q = 1 − p)',
     significance: 'Determines if the initial length of an uploaded video statistically impacts its chances of being successfully published.',
     detailsData: {
       correlations: { labels: ['Created Duration', 'Uploaded Duration'], data: [0.45, -0.15] },
@@ -305,7 +305,7 @@ export const KPI_DEFINITIONS = [
     getSubtitle: () => 'Channel efficiency',
     trendData: [0.6, 0.65, 0.7, 0.72, 0.71, 0.75, 0.76],
     definition: 'An efficiency metric evaluating how well a channel\'s workload is distributed among its users based on their historical publishing success.',
-    formula: '∑_x [(Share(x,y) / GlobalShare(x)) * (PublishRate(x,y) / Expected PublishRate(x,y))]',
+    formula: '∑_x [(Share(x,y) / GlobalShare(x)) * (PublishRate(x,y) / Expected PublishRate(x,y))], x = User, y = Channel',
     significance: 'Identifies whether a channel is effectively utilizing its best personnel. It mathematically proves how efficiently the channel\'s workload is divided.',
     detailsData: {
       channels: { labels: MOCK_CHANNELS, data: generateFloatArray(20, 0.2, 0.95, 2) },
@@ -320,7 +320,7 @@ export const KPI_DEFINITIONS = [
     getSubtitle: () => 'Baseline adjusted',
     trendData: [1.1, 1.15, 1.2, 1.25, 1.3, 1.32, 1.35],
     definition: 'Calculates the underlying quality and potential of each individual user, adjusting for the baseline difficulty of the content types they typically upload.',
-    formula: '(Created Count(user i, input j) / Created Count(user i)) * REI(User i, Input j)',
+    formula: '(Created Count(user i, input j) / Created Count(user i)) * REI(User i, Input j), where REI(Useri​,Inputj​)​=Publish Rate(Useri​,Inputj​)​​/Publish Rate(Input j)',
     significance: 'Prevents unfair penalization. It accounts for the possibility that a user has a low raw publish rate simply because they are tasked with uploading difficult, rarely-published video categories.',
     detailsData: {
       users: { labels: MOCK_USERS, data: generateFloatArray(20, 0.5, 2.0, 2) },

@@ -399,20 +399,17 @@ export default function KpiDetailsModal({ kpi, onClose }) {
       case 'published_count':
         return (
           <>
-            <ChartCard title="Count Over Time (Last 30 Days)">
-              <Line data={{ 
+            <ChartCard title="Month Wise Count">
+              <Bar data={{ 
                 labels: data?.timeSeries?.labels || [], 
                 datasets: [{ 
                   label: 'Count', 
                   data: data?.timeSeries?.data || [], 
-                  borderColor: '#3b82f6', 
-                  backgroundColor: '#3b82f620', 
-                  fill: true, 
-                  tension: 0.4 
+                  backgroundColor: '#3b82f6'
                 }] 
               }} options={chartOptions} />
             </ChartCard>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <ChartCard title="Input Type Breakdown">
                 <Bar data={{ 
                   labels: data?.inputs?.labels || [], 
