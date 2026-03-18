@@ -22,11 +22,18 @@ from dotenv import load_dotenv
 
 # -- Load env: agent dir first, then project root --
 _AGENT_DIR = Path(__file__).resolve().parent
+import sys
+if str(_AGENT_DIR) not in sys.path:
+    sys.path.append(str(_AGENT_DIR))
+
 load_dotenv(_AGENT_DIR / ".env")
 load_dotenv(_AGENT_DIR.parent / ".env")
 load_dotenv()
 
-from logger_setup import setup_logging
+try:
+    from logger_setup import setup_logging
+except ImportError:
+    from agent.logger_setup import setup_logging
 setup_logging()
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -36,15 +43,26 @@ from langgraph.prebuilt import ToolNode
 from langchain_core.tools import tool
 import uuid as _uuid
 
-from client import LLMClient
+try:
+    from client import LLMClient
+except ImportError:
+    from agent.client import LLMClient
 
-# -- MCP-backed tool implementations (still usable as LangChain tools) --
-from mcp_server.config import ServerSettings
-from mcp_server.database import DatabaseClient, QueryValidationError
-from tools.metric_definitions import retrieve_metric_definitions
-from tools.chart import generate_plotly_chart
-from tools import get_frammer_schema, execute_sql_query, get_db
-from tools.sql_query import execute_exploration_queries
+# -- Core MCP and Tools --
+try:
+    from mcp_server.config import ServerSettings
+    from mcp_server.database import DatabaseClient, QueryValidationError
+    from tools.metric_definitions import retrieve_metric_definitions
+    from tools.chart import generate_plotly_chart
+    from tools import get_frammer_schema, execute_sql_query, get_db
+    from tools.sql_query import execute_exploration_queries
+except ImportError:
+    from agent.mcp_server.config import ServerSettings
+    from agent.mcp_server.database import DatabaseClient, QueryValidationError
+    from agent.tools.metric_definitions import retrieve_metric_definitions
+    from agent.tools.chart import generate_plotly_chart
+    from agent.tools import get_frammer_schema, execute_sql_query, get_db
+    from agent.tools.sql_query import execute_exploration_queries
 
 logger = logging.getLogger("frammer.agent")
 
@@ -348,21 +366,33 @@ def _call_model(state: _AgentState):
     try:
         resp = _llm_with_tools.invoke(state["messages"])
         duration = time.time() - start
+        
+        # Heavy Logging: Usage Metadata (Tokens)
+        usage = getattr(resp, "usage_metadata", {})
+        input_tokens = usage.get("input_tokens", 0)
+        output_tokens = usage.get("output_tokens", 0)
+        total_tokens = usage.get("total_tokens", 0)
+        
+        logger.info(
+            "--- LLM STEP DONE ---\n"
+            "  Duration     : %.2fs\n"
+            "  Input Tokens : %d\n"
+            "  Output Tokens: %d\n"
+            "  Total Tokens : %d\n"
+            "  Response Raw : %s",
+            duration, input_tokens, output_tokens, total_tokens, resp.content[:1000]
+        )
+
         tool_count = len(getattr(resp, "tool_calls", []))
         if tool_count:
             for tc in resp.tool_calls:
-                args_preview = json.dumps(tc.get("args", {}))[:200]
+                args_preview = json.dumps(tc.get("args", {}))
                 logger.info(
-                    "--- TOOL CALL: [%s]\n  Args: %s",
+                    "--- TOOL CALL INITIATED ---\n"
+                    "  Tool : %s\n"
+                    "  Args : %s",
                     tc.get("name", "?"), args_preview,
                 )
-            logger.info("--- LOOP: %d tool call(s) in %.2fs ---", tool_count, duration)
-        else:
-            final_text = _clean(resp.content)[:400]
-            logger.info(
-                "--- LOOP FINAL ANSWER (%.2fs)\n%s\n--- END ---",
-                duration, final_text,
-            )
         return {"messages": [resp]}
     except Exception as e:
         logger.error("--- LOOP ERROR: %s ---", e)
@@ -442,6 +472,10 @@ def _conversational_reply(question: str, memory: str = "", current_time: str = "
 # ── Main entry point ──────────────────────────────────────────────────────────
 
 async def run_agent(question: str, auth: Optional[Any] = None, working_memory: str = "") -> AgentResult:
+    logger.info("--- AGENT REQUEST RECEIVED ---")
+    logger.info("Question : %r", question)
+    logger.info("Auth info: %s", f"{getattr(auth, 'username', 'Anon')} ({getattr(auth, 'role', 'N/A')})" if auth else "None")
+
     from datetime import datetime
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
@@ -470,22 +504,29 @@ async def run_agent(question: str, auth: Optional[Any] = None, working_memory: s
     system = SYSTEM_PROMPT.format(schema_block=_schema_cache, metrics_block=all_metrics, plan_block=plan_block, memory_block=memory_block)
     
     # ── Client Enforcement Prompt Injection ──────────────────────────────
-    if auth and getattr(auth, "role", "website_admin") != "website_admin":
+    if auth:
         role = getattr(auth, "role", "user")
+        username = getattr(auth, "username", "Unknown")
         client_name = getattr(auth, "client_name", None)
         user_id = getattr(auth, "user_id", None)
         
-        restriction = f"\n\n## DATA ACCESS RESTRICTION\nYou are logged in as a **{role}**"
-        if client_name:
-            restriction += f" for client **{client_name}**."
-            restriction += f"\n- ALWAYS filter every query by client: `COALESCE(ch.\"Client_Name\", u.\"Client_Name\") = '{client_name}'`"
-            restriction += "\n- Join with `users` (u) and `channels` (ch) via `raw_video_channel` (rvc) to reach `Client_Name`."
-        elif role == "user" and user_id:
-            restriction += f" with User ID **{user_id}**."
-            restriction += f"\n- ALWAYS filter every query to only show data for your User ID: `rv.\"User_ID\" = {user_id}`"
+        system += f"\n\n## USER PROFILE\n- You are currently assisting: **{username}**"
+        system += f"\n- User Role: **{role}**"
         
-        restriction += "\n- NEVER attempt to access data belonging to other clients or users."
-        system += restriction
+        if role != "website_admin":
+            restriction = "\n\n## DATA ACCESS RESTRICTION\nYour access is restricted based on your role."
+            if client_name:
+                restriction += f"\n- Scoped Client: **{client_name}**"
+                restriction += f"\n- ALWAYS filter every query by client: `COALESCE(ch.\"Client_Name\", u.\"Client_Name\") = '{client_name}'`"
+                restriction += "\n- Join with `users` (u) and `channels` (ch) via `raw_video_channel` (rvc) to reach `Client_Name`."
+            elif role == "user" and user_id:
+                restriction += f"\n- Scoped User ID: **{user_id}**"
+                restriction += f"\n- ALWAYS filter every query to only show data for your User ID: `rv.\"User_ID\" = {user_id}`"
+            
+            restriction += "\n- NEVER attempt to access data belonging to other clients or users."
+            system += restriction
+        else:
+            system += "\n- You have **website_admin** privileges with full read access to all records."
 
     # Inject current time directly into the first message for immediate context
     system += f"\n\n## System Environment\nCurrent System Time: {now_str}\n"
@@ -494,6 +535,7 @@ async def run_agent(question: str, auth: Optional[Any] = None, working_memory: s
 
     try:
         logger.info("=== ReAct loop start ===")
+        start_react = time.time()
         state = await _graph.ainvoke({"messages": messages}, config={"recursion_limit": 30})
 
         response = ""
@@ -505,16 +547,17 @@ async def run_agent(question: str, auth: Optional[Any] = None, working_memory: s
         if not response:
             response = "I analyzed your query but couldn't produce a summary. Try rephrasing."
 
+        duration_total = time.time() - start_react
         logger.info(
-            "=== AGENT DONE ===\n"
-            "  Actions  : %s\n"
-            "  Has chart: %s\n"
-            "  SQL len  : %d chars\n"
-            "  Response :\n%s",
+            "=== AGENT COMPLETE ===\n"
+            "  Total Time : %.2fs\n"
+            "  Actions    : %s\n"
+            "  SQL Query  : %s\n"
+            "  Response   : %s",
+            duration_total,
             ctx["actions"],
-            bool(ctx["chart_xml"]),
-            len(ctx["sql"]),
-            response[:600],
+            ctx["sql"][:500] if ctx["sql"] else "None",
+            response
         )
 
         return AgentResult(

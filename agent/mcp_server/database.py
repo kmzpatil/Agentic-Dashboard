@@ -8,6 +8,10 @@ from typing import Any
 import pandas as pd
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine
+import time
+import logging
+
+logger = logging.getLogger("frammer.database")
 
 try:
     from sentence_transformers import SentenceTransformer
@@ -352,8 +356,15 @@ class DatabaseClient:
         statement = text(
             f"WITH mcp_cte AS ({validated_query}) SELECT * FROM mcp_cte LIMIT :limit"
         )
+        
+        start_time = time.time()
+        logger.info("Executing scoped SQL query...")
+        
         with self.engine.connect() as connection:
-            return pd.read_sql_query(statement, connection, params={"limit": limit})
+            df = pd.read_sql_query(statement, connection, params={"limit": limit})
+            duration = time.time() - start_time
+            logger.info("SQL Execution COMPLETE. Duration: %.2fs. Rows: %d", duration, len(df))
+            return df
 
     @staticmethod
     def dataframe_to_records(dataframe: pd.DataFrame) -> list[dict[str, Any]]:
