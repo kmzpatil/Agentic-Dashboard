@@ -263,7 +263,7 @@ def get_cdas_query(access_filter: dict) -> str:
         SELECT sv."Input_Type" as label,
                AVG(sa."Created_Duration") as avg_created,
                AVG(sp."Published_Duration") as avg_published,
-               1 - ((AVG(sa."Created_Duration") - COALESCE(AVG(sp."Published_Duration"), AVG(sa."Created_Duration"))) / AVG(sa."Created_Duration")) as score
+               1 - (ABS(AVG(sa."Created_Duration") - COALESCE(AVG(sp."Published_Duration"), 0)) / NULLIF(AVG(sa."Created_Duration"), 0)) as score
         FROM scoped_videos sv
         JOIN scoped_assets sa ON sv."Video_ID" = sa."Video_ID"
         LEFT JOIN scoped_posts sp ON sa."Asset_ID" = sp."Asset_ID"
