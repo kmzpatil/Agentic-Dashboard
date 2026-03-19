@@ -7,11 +7,21 @@ The XML schema follows the Frammer dashboard format:
   <dashboard> → <meta> + <layout> → <row> → <widget>
 
 Supported widget types (auto-selected from chart_attributes.type):
-  bar-chart   → bar / grouped bar
-  pie-chart   → pie / donut
-  kpi         → single-value KPI cards (when query returns 1 row)
-  heatmap     → cross-tabular / pivot data
-  line-chart  → time-series line
+  bar-chart        → bar / grouped bar
+  stacked-bar-chart→ stacked bar
+  horizontal-bar   → horizontal bar
+  pie-chart        → pie / donut
+  polar-area-chart → polar area
+  line-chart       → time-series line
+  area-chart       → stacked area
+  scatter-chart    → scatter plot
+  bubble-chart     → bubble chart
+  heatmap          → cross-tabular / pivot data
+  treemap          → hierarchical proportions
+  box-chart        → box plot distribution
+  violin-chart     → violin distribution
+  radar-chart      → spider web / radar
+  kpi              → single-value KPI cards (when query returns 1 row)
 
 Returns the dashboard XML string, or an error JSON string on failure.
 """
@@ -24,8 +34,11 @@ from xml.etree.ElementTree import Element, SubElement, indent, tostring
 
 import pandas as pd
 
-from tools._db import get_db, DEFAULT_QUERY_LIMIT, MAX_QUERY_LIMIT
-from mcp_server.database import QueryValidationError
+from ._db import get_db, DEFAULT_QUERY_LIMIT, MAX_QUERY_LIMIT
+try:
+    from mcp_server.database import QueryValidationError
+except ImportError:
+    from agent.mcp_server.database import QueryValidationError
 
 FORBIDDEN_KEYWORDS = {"DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "CREATE", "TRUNCATE"}
 
@@ -152,6 +165,169 @@ def _build_dashboard_xml(
             "y-fields":     y_fields_str,
             "y-labels":     y_labels_str,
             "color-scheme": "multi" if len(y_cols) > 1 else "blue",
+            "show-legend":  "true",
+        })
+
+    elif chart_type in ("stacked-bar", "stacked-bar-chart"):
+        SubElement(row_chart, "widget", {
+            "id":           f"w{widget_id}",
+            "type":         "stacked-bar-chart",
+            "col":          "1",
+            "span":         "12",
+            "title":        title,
+            "data-source":  "query_result",
+            "x-field":      x_col,
+            "y-fields":     y_fields_str,
+            "y-labels":     y_labels_str,
+            "color-scheme": "multi",
+            "show-legend":  "true",
+            "stacked":      "true",
+        })
+
+    elif chart_type in ("horizontal-bar",):
+        SubElement(row_chart, "widget", {
+            "id":           f"w{widget_id}",
+            "type":         "bar-chart",
+            "col":          "1",
+            "span":         "12",
+            "title":        title,
+            "data-source":  "query_result",
+            "x-field":      x_col,
+            "y-fields":     y_fields_str,
+            "y-labels":     y_labels_str,
+            "color-scheme": "multi",
+            "show-legend":  "true",
+            "orientation":  "horizontal",
+        })
+
+    elif chart_type in ("area", "area-chart"):
+        SubElement(row_chart, "widget", {
+            "id":           f"w{widget_id}",
+            "type":         "area-chart",
+            "col":          "1",
+            "span":         "12",
+            "title":        title,
+            "data-source":  "query_result",
+            "x-field":      x_col,
+            "y-fields":     y_fields_str,
+            "y-labels":     y_labels_str,
+            "color-scheme": "multi",
+            "show-legend":  "true",
+        })
+
+    elif chart_type in ("scatter", "scatter-chart"):
+        widget_attrs = {
+            "id":           f"w{widget_id}",
+            "type":         "scatter-chart",
+            "col":          "1",
+            "span":         "12",
+            "title":        title,
+            "data-source":  "query_result",
+            "x-field":      x_col,
+            "y-fields":     y_fields_str,
+            "color-scheme": "multi",
+        }
+        if attrs.get("group_field"):
+            widget_attrs["group-field"] = attrs["group_field"]
+        SubElement(row_chart, "widget", widget_attrs)
+
+    elif chart_type in ("bubble", "bubble-chart"):
+        widget_attrs = {
+            "id":           f"w{widget_id}",
+            "type":         "bubble-chart",
+            "col":          "1",
+            "span":         "12",
+            "title":        title,
+            "data-source":  "query_result",
+            "x-field":      x_col,
+            "y-fields":     y_fields_str,
+            "color-scheme": "multi",
+        }
+        if attrs.get("size_field"):
+            widget_attrs["size-field"] = attrs["size_field"]
+        if attrs.get("group_field"):
+            widget_attrs["group-field"] = attrs["group_field"]
+        SubElement(row_chart, "widget", widget_attrs)
+
+    elif chart_type in ("heatmap",):
+        SubElement(row_chart, "widget", {
+            "id":           f"w{widget_id}",
+            "type":         "heatmap",
+            "col":          "1",
+            "span":         "12",
+            "title":        title,
+            "data-source":  "query_result",
+            "x-field":      x_col,
+            "y-fields":     y_fields_str,
+            "color-scheme": "heat",
+        })
+
+    elif chart_type in ("treemap",):
+        SubElement(row_chart, "widget", {
+            "id":           f"w{widget_id}",
+            "type":         "treemap",
+            "col":          "1",
+            "span":         "12",
+            "title":        title,
+            "data-source":  "query_result",
+            "x-field":      x_col,
+            "y-fields":     y_fields_str,
+            "color-scheme": "multi",
+        })
+
+    elif chart_type in ("box", "violin"):
+        SubElement(row_chart, "widget", {
+            "id":           f"w{widget_id}",
+            "type":         f"{chart_type}-chart",
+            "col":          "1",
+            "span":         "12",
+            "title":        title,
+            "data-source":  "query_result",
+            "x-field":      x_col,
+            "y-fields":     y_fields_str,
+            "color-scheme": "blue",
+        })
+
+    elif chart_type in ("radar", "radar-chart"):
+        SubElement(row_chart, "widget", {
+            "id":           f"w{widget_id}",
+            "type":         "radar-chart",
+            "col":          "1",
+            "span":         "12",
+            "title":        title,
+            "data-source":  "query_result",
+            "x-field":      x_col,
+            "y-fields":     y_fields_str,
+            "color-scheme": "multi",
+            "show-legend":  "true",
+        })
+
+    elif chart_type in ("doughnut", "donut"):
+        SubElement(row_chart, "widget", {
+            "id":           f"w{widget_id}",
+            "type":         "pie-chart",
+            "col":          "1",
+            "span":         "12",
+            "title":        title,
+            "data-source":  "query_result",
+            "name-field":   x_col,
+            "value-field":  y_cols[0] if y_cols else "",
+            "color-scheme": "multi",
+            "show-legend":  "true",
+            "variant":      "donut",
+        })
+
+    elif chart_type in ("polar-area",):
+        SubElement(row_chart, "widget", {
+            "id":           f"w{widget_id}",
+            "type":         "polar-area-chart",
+            "col":          "1",
+            "span":         "12",
+            "title":        title,
+            "data-source":  "query_result",
+            "name-field":   x_col,
+            "value-field":  y_cols[0] if y_cols else "",
+            "color-scheme": "multi",
             "show-legend":  "true",
         })
 

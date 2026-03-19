@@ -22,6 +22,8 @@ METRIC_DICTIONARY: dict[str, str] = {
     "platform": 'platform: post_distribution."Published_Platform"',
     "duration": 'durations: Uploaded_Duration(rv), Created_Duration(ca), Published_Duration(pp)',
     "trend": "trend: date_trunc('month', to_date(col, 'YYYY-MM-DD'))::date",
+    "correlation": 'correlation: Use PostgreSQL CORR(x, y) for Pearson correlation between two numeric columns. Returns -1 to 1. Example: SELECT CORR("Uploaded_Duration"::numeric, asset_count::numeric) AS correlation_value FROM ...',
+    "heatmap": 'heatmap: SQL must return exactly 3 columns — two categorical dimensions and one numeric value. Example: SELECT lower(rv."Input_Type") AS x_dim, rv."Language" AS y_dim, COUNT(*) AS value FROM raw_videos rv GROUP BY 1, 2',
 }
 
 

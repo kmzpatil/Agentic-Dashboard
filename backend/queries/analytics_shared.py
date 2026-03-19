@@ -180,6 +180,13 @@ def build_where_clause(predicates: list[str]) -> str:
     return f"WHERE {' AND '.join(predicates)}"
 
 
+def build_client_name_expr(channel_alias: str, user_alias: str, include_unknown: bool = False) -> str:
+  base = f'COALESCE({channel_alias}."Client_Name", {user_alias}."Client_Name")'
+  if include_unknown:
+    return f"COALESCE({base}, 'Unknown')"
+  return base
+
+
 def build_access_filter(auth: Any, start_index: int = 1, video_alias: str = "rv") -> dict[str, Any]:
     if not auth or auth.role == "website_admin":
         return {
@@ -190,13 +197,14 @@ def build_access_filter(auth: Any, start_index: int = 1, video_alias: str = "rv"
         }
 
     if auth.role == "client_admin":
+        scoped_client_expr = build_client_name_expr("ch_scope", "u_scope")
         return {
             "join": f'''
         LEFT JOIN users u_scope ON u_scope."User_ID" = {video_alias}."User_ID"
         LEFT JOIN raw_video_channel rvc_scope ON rvc_scope."Video_ID" = {video_alias}."Video_ID"
         LEFT JOIN channels ch_scope ON ch_scope."Channel_Name" = rvc_scope."Channel_Name"
       ''',
-            "predicates": [f'COALESCE(ch_scope."Client_Name", u_scope."Client_Name") = ${start_index}'],
+            "predicates": [f'{scoped_client_expr} = ${start_index}'],
             "params": [auth.client_name],
             "next_index": start_index + 1,
         }
@@ -390,7 +398,7 @@ def build_funnel_filter(filters: dict[str, str] | None = None, start_index: int 
           join_parts.append('LEFT JOIN raw_video_channel rvc_filter ON rv."Video_ID" = rvc_filter."Video_ID"')
           needs_channel_join = True
         join_parts.append('LEFT JOIN channels ch_filter ON ch_filter."Channel_Name" = rvc_filter."Channel_Name"')
-        predicates.append(f'COALESCE(ch_filter."Client_Name", u_filter."Client_Name") = ${next_index}')
+        predicates.append(f'{build_client_name_expr("ch_filter", "u_filter")} = ${next_index}')
         params.append(value)
         next_index += 1
 

@@ -1,173 +1,187 @@
-# Frammer AI Dashboard
+# Frammer Frontend
 
-React + Vite frontend with a Node/Express gateway, a Python agent service, and a PostgreSQL analytics backend.
+React + Vite dashboard UI for Frammer analytics. This frontend talks to the Python FastAPI backend (served from the repo-level `backend` package) and renders multiple analytics surfaces such as Overview, Funnel, Usage Trends, Explorer, Labs, and Talk to Data.
 
-## Current Status (March 2026)
-- Frontend is modularized into feature modules: Overview, Usage & Trends, Funnel, Explorer.
-- The public API is now a single Node gateway under `frontend/backend` for analytics, health, and agent proxying.
-- The Python agent stays focused on chat/query/schema features and is reachable through the gateway.
-- PostgreSQL config is normalized across `PG*`, `POSTGRES_*`, and PostgreSQL `DATABASE_URL` values.
-- Basic runtime smoke checks are passing locally (`vite build`, Python compile, Node syntax checks).
+## What Is In This Folder
+
+- Vite app entrypoint and build config
+- Frontend-only styling/config files (Tailwind, PostCSS)
+- Modular feature surfaces under `src/features`
+- Shared component library under `src/components`
+- Shared hooks and helpers under `src/hooks` and `src/lib`
 
 ## Tech Stack
-- Frontend: React 19, Vite 5, Tailwind CSS
-- Charts: Chart.js, react-chartjs-2, chartjs-chart-sankey
-- Backend: Express 5, pg
-- Database: PostgreSQL (`frammer_database`)
+
+- React 19
+- Vite 5
+- Tailwind CSS
+- Chart.js + react-chartjs-2
+- chartjs-chart-sankey
+- lucide-react
+- react-markdown + remark-gfm
 
 ## Prerequisites
+
 - Node.js 18+
 - npm 9+
-- PostgreSQL (local or remote)
 - Python 3.10+
+- PostgreSQL (local or remote)
 
 ## Setup
-1. Create env file in the repo root or inside `frontend/`:
 
-```bash
-cp .env.example .env
-```
-
-2. Update `.env` values:
-- `PORT` (or `API_PORT`): Node gateway port (default `4000`)
-- `POSTGRES_HOST` / `PGHOST`
-- `POSTGRES_PORT` / `PGPORT`
-- `POSTGRES_DB` / `PGDATABASE`
-- `POSTGRES_USER` / `PGUSER`
-- `POSTGRES_PASSWORD` / `PGPASSWORD`
-- `POSTGRES_SSLMODE` / `PGSSLMODE`: `prefer`, `require`, etc.
-- `AGENT_BASE_URL`: Python agent base URL (default `http://127.0.0.1:8000`)
-- `VITE_API_BASE_URL`: frontend-to-gateway base URL
-
-3. If Postgres does not already contain the Frammer schema/data, bootstrap it from the bundled SQLite snapshot:
-
-```bash
-npm run db:bootstrap
-```
-
-4. Install frontend dependencies:
+1. Install frontend dependencies:
 
 ```bash
 npm install
 ```
 
-5. Install Python dependencies for the agent service:
+2. Create env file in `frontend/` (or repo root if you prefer shared env):
 
 ```bash
-pip install -r ../agent/requirements.txt
+cp .env.example .env
 ```
 
+3. Configure environment values (see Environment Variables section).
+
+4. Ensure Python backend dependencies are installed from the repo root as needed.
+
 ## Run
-Run frontend + gateway + agent together:
+
+### Frontend only
+
+```bash
+npm run dev
+```
+
+Frontend URL:
+- `http://localhost:5173`
+
+### API only (FastAPI backend from repo root package)
+
+```bash
+npm run api
+```
+
+API URL:
+- `http://localhost:4000`
+
+### Full local stack (DB start + API + Vite)
 
 ```bash
 npm run dev:full
 ```
 
-Run separately:
+## Build and Preview
 
-```bash
-npm run api
-npm run agent
-npm run dev
-```
-
-Default URLs:
-- Frontend: `http://localhost:5173`
-- Gateway API: `http://localhost:4000`
-- Agent service: `http://localhost:8000`
-
-## Build
 ```bash
 npm run build
 npm run preview
 ```
 
-## API Surface
-- `GET /api/health`
-- `GET /api/overview`
-- `GET /api/usage-trends`
-- `GET /api/funnel`
-- `GET /api/funnel/video/:videoId`
-- `GET /api/explorer/dimensions`
-- `GET /api/explorer/multidim`
-- `GET /api/explorer/tables`
-- `GET /api/explorer/table/:tableName`
-- `GET /api/explorer/chart`
-- `POST /api/chat`
-- `POST /api/query`
-- `GET /api/agent/health`
-- `GET /api/agent/tables`
-- `GET /api/agent/schema/search`
+## Useful Scripts
 
-## Directory Structure
-```text
-.
-├── server.js
-├── backend
-│   ├── app.js
-│   ├── agent
-│   │   └── client.js
-│   ├── config
-│   │   └── env.js
-│   ├── db
-│   │   └── pool.js
-│   ├── queries
-│   │   ├── analyticsShared.js
-│   │   ├── explorerQueries.js
-│   │   ├── funnelQueries.js
-│   │   └── overviewQueries.js
-│   ├── routes
-│   │   ├── agent.js
-│   │   ├── api.js
-│   │   ├── explorer.js
-│   │   ├── funnel.js
-│   │   ├── health.js
-│   │   ├── overview.js
-│   │   └── usageTrends.js
-│   └── utils
-└── src
-    ├── main.jsx
-    ├── index.css
-    ├── AppShell.jsx
-    ├── hooks
-    │   └── useApi.js
-    ├── components
-    │   ├── common
-    │   │   └── KpiCard.jsx
-    │   └── layout
-    │       ├── FilterDock.jsx
-    │       └── PipelineRail.jsx
-    ├── features
-    │   ├── overview
-    │   │   └── OverviewModule.jsx
-    │   ├── usage
-    │   │   └── UsageTrendsModule.jsx
-    │   ├── funnel
-    │   │   └── FunnelModule.jsx
-    │   ├── explorer
-    │   │   └── ExplorerModule.jsx
-    │   └── shared
-    │       └── ComingSoonModule.jsx
-    └── lib
-        ├── chartSetup.js
-        ├── constants.js
-        └── formatters.js
-```
+- `npm run dev`: start Vite dev server
+- `npm run api`: start FastAPI app via uvicorn
+- `npm run dev:full`: start DB helper + API + Vite concurrently
+- `npm run db:start`: start local Postgres helper
+- `npm run db:stop`: stop local Postgres helper
+- `npm run db:status`: check local Postgres helper status
+- `npm run db:bootstrap`: bootstrap Postgres from dataset
+- `npm run seed:auth`: seed auth users
 
 ## Environment Variables
-- `PORT`: gateway port fallback
-- `API_PORT`: optional gateway port alias
-- `POSTGRES_HOST` / `PGHOST`: PostgreSQL host or socket path
-- `POSTGRES_PORT` / `PGPORT`: PostgreSQL port
-- `POSTGRES_USER` / `PGUSER`: PostgreSQL username
-- `POSTGRES_DB` / `PGDATABASE`: PostgreSQL database name
-- `POSTGRES_PASSWORD` / `PGPASSWORD`: PostgreSQL password
-- `POSTGRES_SSLMODE` / `PGSSLMODE`: PostgreSQL SSL mode
-- `AGENT_BASE_URL`: Python agent base URL for proxying
-- `VITE_API_BASE_URL`: frontend API base URL
+
+Core runtime variables used by frontend/backend integration:
+
+- `VITE_API_BASE_URL`: frontend API base URL (for browser requests)
+- `PORT` or `API_PORT`: API service port override (default `4000`)
+- `POSTGRES_HOST` / `PGHOST`
+- `POSTGRES_PORT` / `PGPORT`
+- `POSTGRES_DB` / `PGDATABASE`
+- `POSTGRES_USER` / `PGUSER`
+- `POSTGRES_PASSWORD` / `PGPASSWORD`
+- `POSTGRES_SSLMODE` / `PGSSLMODE`
+
+## Source Layout
+
+```text
+src/
+├── main.jsx
+├── AppShell.jsx
+├── index.css
+├── components/
+├── features/
+├── hooks/
+└── lib/
+```
+
+### Features
+
+- `src/features/overview`
+- `src/features/usage`
+- `src/features/funnel`
+- `src/features/explorer`
+- `src/features/talk`
+- `src/features/labs`
+- `src/features/simulator`
+- `src/features/shared`
+
+### Shared Layers
+
+- `src/components`: reusable UI components
+- `src/hooks`: reusable hooks (`useApi`, `useVoiceInput`)
+- `src/lib`: constants, chart registration, formatters
+
+## Documentation Index
+
+### Top-level shared docs
+
+- `src/components/README.md`
+- `src/hooks/README.md`
+- `src/lib/README.md`
+
+### Components docs
+
+- `src/components/artifacts/README.md`
+- `src/components/charts/README.md`
+- `src/components/chat/README.md`
+- `src/components/common/README.md`
+- `src/components/insights/README.md`
+
+### Feature docs
+
+- `src/features/overview/README.md`
+- `src/features/usage/README.md`
+- `src/features/funnel/README.md`
+- `src/features/funnel/components/README.md`
+- `src/features/funnel/utils/README.md`
+- `src/features/explorer/README.md`
+- `src/features/talk/README.md`
+- `src/features/labs/README.md`
+- `src/features/simulator/README.md`
+- `src/features/shared/README.md`
+
+## API Surface (Frontend-consumed)
+
+Key routes consumed by this frontend include:
+
+- `GET /api/health`
+- `GET /api/overview`
+- `GET /api/insights`
+- `GET /api/usage-trends/*`
+- `GET /api/funnel`
+- `GET /api/funnel/filter-options`
+- `GET /api/funnel/video/:videoId`
+- `GET /api/explorer/*`
+- `POST /api/chat`
+- `GET /api/conversations`
+- `GET /api/conversations/:id`
+- `DELETE /api/conversations/:id`
+- `GET /api/labs/simulator/*`
+- `POST /api/labs/simulator/start|stop|reset`
 
 ## Notes
-- Keep `.env` local; commit `.env.example` only.
-- The Node gateway is the only API the frontend should talk to directly.
-- The Postgres bootstrap script lives at [database/bootstrap_postgres.py](/Users/praty/Downloads/Projects/gc/gcdata/database/bootstrap_postgres.py).
+
+- Keep `.env` local and out of version control.
+- Prefer adding docs near code (folder-level READMEs) and linking them here.
+- If a feature contract changes, update both implementation and its README in the same change.

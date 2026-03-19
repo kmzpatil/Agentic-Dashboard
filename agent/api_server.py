@@ -18,9 +18,6 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 load_dotenv()
 
-from logger_setup import setup_logging
-setup_logging()
-
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
@@ -52,11 +49,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Frammer Analytics API (Anthropic Version)", version="5.0.0-anthropic", lifespan=lifespan)
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%H:%M:%S",
-)
+# setup_logging() is called above.
 logger = logging.getLogger("frammer.api_server")
 
 app.add_middleware(
@@ -234,6 +227,8 @@ async def get_data_route(req: DataRequest):
     return {"records": parsed.get("data", [])}
 
 if __name__ == "__main__":
+    from logger_setup import setup_logging
+    setup_logging()
     import uvicorn
     # Use port 4001 or whatever matches the frontend/tests
     uvicorn.run(app, host="0.0.0.0", port=4001)

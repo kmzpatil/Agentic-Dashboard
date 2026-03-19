@@ -13,7 +13,10 @@ summarizes it into a shorter block, preserving key context.
 import logging
 from typing import Dict, List, Optional
 
-from client import LLMClient
+try:
+    from client import LLMClient
+except ImportError:
+    from agent.client import LLMClient
 
 logger = logging.getLogger("frammer.memory")
 

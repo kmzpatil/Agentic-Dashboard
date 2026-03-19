@@ -9,6 +9,7 @@ Features:
   - Factory modes: fast(), thinking(), creative()
 """
 
+import json
 import logging
 import os
 import re
@@ -21,8 +22,6 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 load_dotenv()
 
-from logger_setup import setup_logging
-setup_logging()
 logger = logging.getLogger("frammer.client")
 
 _THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL)
@@ -37,10 +36,11 @@ except ImportError:
 
 class LLMResponse:
     """Structured response from an LLM call."""
-    def __init__(self, content: str, thinking: Optional[str] = None, raw: str = ""):
+    def __init__(self, content: str, thinking: Optional[str] = None, raw: str = "", usage: Optional[dict] = None):
         self.content = content
         self.thinking = thinking
         self.raw = raw
+        self.usage = usage or {}
 
 
 class LLMClient:
@@ -104,8 +104,13 @@ class LLMClient:
             try:
                 result = self.llm.invoke(prompt)
                 duration = time.time() - start_time
-                logger.info("[%s] Anthropic responded in %.2fs.", label, duration)
-                return self._parse(result.content, label=label)
+                usage = getattr(result, "usage_metadata", {})
+                
+                logger.info(
+                    "[%s] Anthropic responded in %.2fs. Usage: %s",
+                    label, duration, json.dumps(usage) if usage else "N/A"
+                )
+                return self._parse(result.content, label=label, usage=usage)
 
             except Exception as exc:
                 if self._is_rate_limit(exc) and attempt < max_attempts - 1:
@@ -128,13 +133,13 @@ class LLMClient:
 
     # ── Internal helpers ─────────────────────────────────────────────────────
 
-    def _parse(self, raw: str, *, label: str) -> LLMResponse:
+    def _parse(self, raw: str, *, label: str, usage: Optional[dict] = None) -> LLMResponse:
         thinking = None
         match = _THINK_RE.search(raw)
         if match and self.preserve_thinking:
             thinking = match.group(1).strip()
         content = _THINK_RE.sub("", raw).strip()
-        return LLMResponse(content=content, thinking=thinking, raw=raw)
+        return LLMResponse(content=content, thinking=thinking, raw=raw, usage=usage)
 
     @staticmethod
     def _is_rate_limit(exc: Exception) -> bool:
@@ -143,4 +148,4 @@ class LLMClient:
 
     def __repr__(self) -> str:
         mode = "thinking" if self.preserve_thinking else "fast"
-        return f"LLMClient(azure:{self._model}, t={self._temperature}, {mode})"
+        return f"LLMClient(model:{self.model}, t={self.temperature}, {mode})"

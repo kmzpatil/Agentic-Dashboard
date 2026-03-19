@@ -8,6 +8,7 @@ from backend.routes.trends import router as trends_router
 from backend.routes.user_journey import router as user_journey_router
 from backend.routes.usage_trends import router as usage_trends_router
 from backend.routes.advanced_kpis import router as advanced_kpis_router
+from backend.routes.kpi import router as kpi_router
 
 
 router = APIRouter()
@@ -20,3 +21,4 @@ router.include_router(explorer_router, prefix="/explorer")
 router.include_router(insights_router, prefix="/insights")
 router.include_router(user_journey_router, prefix="/user-journey")
 router.include_router(advanced_kpis_router, prefix="/advanced-kpis")
+router.include_router(kpi_router, prefix="/kpi")

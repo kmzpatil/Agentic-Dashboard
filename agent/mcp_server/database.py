@@ -8,13 +8,14 @@ from typing import Any
 import pandas as pd
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine
+import time
+import logging
 
-try:
-    from sentence_transformers import SentenceTransformer
-    from scipy.spatial.distance import cosine
-except ImportError:
-    SentenceTransformer = None
-    cosine = None
+logger = logging.getLogger("frammer.database")
+
+# Heavy imports moved to properties to avoid startup hang
+SentenceTransformer = None
+cosine = None
 
 
 
@@ -29,6 +30,10 @@ ALLOWED_PREFIXES = ("SELECT", "WITH")
 _schema_lock = threading.Lock()
 _shared_schema_index: list | None = None
 
+# ── Thread-safe shared schema profile (column value discovery) ────────────────
+_profile_lock = threading.Lock()
+_shared_schema_profile: dict | None = None
+
 
 class QueryValidationError(ValueError):
     """Raised when a query is not safe for read-only execution."""
@@ -41,8 +46,10 @@ class DatabaseClient:
         self._schema_index = None
 
     @cached_property
-    def embedding_model(self) -> "SentenceTransformer":
-        if SentenceTransformer is None:
+    def embedding_model(self) -> Any:
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ImportError:
             raise ImportError("sentence-transformers is not installed")
         # Initialize a very small and fast embedding model
         return SentenceTransformer("all-MiniLM-L6-v2")
@@ -193,6 +200,61 @@ class DatabaseClient:
             ),
         }
 
+    def build_schema_profile(self, schema: str | None = None) -> None:
+        """Build a one-time cached profile of distinct values for low-cardinality text columns.
+        Thread-safe; runs exactly once per process lifetime."""
+        global _shared_schema_profile
+        with _profile_lock:
+            if _shared_schema_profile is not None:
+                return
+            target_schema = self._resolve_schema(schema)
+            TEXT_TYPES = {"text", "character varying", "varchar", "char", "character"}
+            profile: dict = {}
+            tables = self.list_tables(schema=schema)
+            for tbl in tables:
+                table_name = tbl["name"]
+                try:
+                    details = self.describe_table(table_name, schema)
+                except Exception:
+                    continue
+                qualified = self._qualified_name(table_name, target_schema)
+                profile[table_name] = {}
+                for col in details.get("columns", []):
+                    col_name = col["name"]
+                    raw_type = str(col["type"]).lower().split("(")[0].strip()
+                    profile[table_name][col_name] = {"type": str(col["type"]), "values": None}
+                    if raw_type not in TEXT_TYPES:
+                        continue
+                    qcol = self._quote_identifier(col_name)
+                    try:
+                        with self.engine.connect() as conn:
+                            count = conn.execute(
+                                text(f"SELECT COUNT(DISTINCT {qcol}) FROM {qualified}")
+                            ).scalar()
+                        if count is None or count > 50:
+                            continue
+                        with self.engine.connect() as conn:
+                            rows = conn.execute(
+                                text(
+                                    f"SELECT DISTINCT {qcol} FROM {qualified} "
+                                    f"WHERE {qcol} IS NOT NULL ORDER BY {qcol} LIMIT 50"
+                                )
+                            ).fetchall()
+                        profile[table_name][col_name]["values"] = [
+                            r[0] for r in rows if r[0] is not None
+                        ]
+                    except Exception:
+                        continue
+            _shared_schema_profile = profile
+            logger.info("[db] Schema profile built: %d tables", len(profile))
+
+    def get_schema_profile(self, schema: str | None = None) -> dict:
+        """Return the cached schema profile, building it on first call."""
+        global _shared_schema_profile
+        if _shared_schema_profile is None:
+            self.build_schema_profile(schema=schema)
+        return _shared_schema_profile or {}
+
     def build_schema_index(self, schema: str | None = None) -> None:
         global _shared_schema_index
         with _schema_lock:
@@ -200,6 +262,7 @@ class DatabaseClient:
                 self._schema_index = _shared_schema_index
                 return
 
+            profile = self.get_schema_profile(schema=schema)
             tables = self.list_tables(schema=schema)
             index = []
             for tbl in tables:
@@ -207,13 +270,27 @@ class DatabaseClient:
                 kind = tbl["kind"]
                 try:
                     details = self.describe_table(name, schema)
-                    cols_repr = ", ".join(f"{c['name']} ({c['type']})" for c in details.get("columns", []))
+                    table_profile = profile.get(name, {})
+                    cols_parts = []
+                    for c in details.get("columns", []):
+                        part = f"{c['name']} ({c['type']})"
+                        vals = table_profile.get(c["name"], {}).get("values")
+                        if vals:
+                            part += f" [values: {', '.join(str(v) for v in vals)}]"
+                        cols_parts.append(part)
+                    cols_repr = ", ".join(cols_parts)
                     text_repr = f"{kind.capitalize()} {name}: columns are {cols_repr}."
+                    sample_values_map = {
+                        col_name: info["values"]
+                        for col_name, info in table_profile.items()
+                        if info.get("values")
+                    }
                     index.append({
                         "name": name,
                         "kind": kind,
                         "text": text_repr,
-                        "details": details
+                        "details": details,
+                        "sample_values": sample_values_map,
                     })
                 except Exception:
                     continue
@@ -240,6 +317,7 @@ class DatabaseClient:
         if not self._schema_index:
             return []
 
+        from scipy.spatial.distance import cosine
         query_embedding = self.embedding_model.encode([query])[0]
         results = []
         for item in self._schema_index:
@@ -254,7 +332,8 @@ class DatabaseClient:
                 "name": item["name"],
                 "kind": item["kind"],
                 "similarity": float(sim),
-                "details": item["details"]
+                "details": item["details"],
+                "sample_values": item.get("sample_values", {}),
             }
             for sim, item in results[:limit]
         ]
@@ -352,8 +431,15 @@ class DatabaseClient:
         statement = text(
             f"WITH mcp_cte AS ({validated_query}) SELECT * FROM mcp_cte LIMIT :limit"
         )
+        
+        start_time = time.time()
+        logger.info("Executing scoped SQL query...")
+        
         with self.engine.connect() as connection:
-            return pd.read_sql_query(statement, connection, params={"limit": limit})
+            df = pd.read_sql_query(statement, connection, params={"limit": limit})
+            duration = time.time() - start_time
+            logger.info("SQL Execution COMPLETE. Duration: %.2fs. Rows: %d", duration, len(df))
+            return df
 
     @staticmethod
     def dataframe_to_records(dataframe: pd.DataFrame) -> list[dict[str, Any]]:
