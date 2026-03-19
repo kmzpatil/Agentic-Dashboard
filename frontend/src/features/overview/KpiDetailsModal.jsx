@@ -52,8 +52,13 @@ export default function KpiDetailsModal({ kpi, onClose }) {
       try {
         const token = localStorage.getItem('frammer_auth_token');
         const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api';
-        
-        const response = await fetch(`${baseUrl}/advanced-kpis/${kpi.id}`, {
+
+        // Custom KPIs use the /api/kpi/:id endpoint; built-ins use /api/advanced-kpis/:id
+        const url = kpi.isCustom
+          ? `${baseUrl}/kpi/${kpi.kpi_db_id}`
+          : `${baseUrl}/advanced-kpis/${kpi.id}`;
+
+        const response = await fetch(url, {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -64,7 +69,7 @@ export default function KpiDetailsModal({ kpi, onClose }) {
         }
 
         const json = await response.json();
-        
+
         if (isMounted) {
           // Merge API data with any local fallback structural keys from kpiDefinitions
           setData({ ...kpi.detailsData, ...json });
@@ -88,6 +93,144 @@ export default function KpiDetailsModal({ kpi, onClose }) {
   if (!kpi) return null;
 
   const renderCharts = () => {
+    // ── Custom KPI: time-series line + insights panel ───────────────────────
+    if (kpi.isCustom) {
+      const rawTimeSeries = data?.time_series || [];
+      const granularity = data?.dsl_json?.time_granularity || 'month';
+
+      // Limit data points to keep chart readable:
+      // day → last 90 days, week → last 52 weeks, month → all
+      const MAX_POINTS = { day: 90, week: 52, month: 999 };
+      const maxPts = MAX_POINTS[granularity] ?? 60;
+      const timeSeries = rawTimeSeries.length > maxPts
+        ? rawTimeSeries.slice(-maxPts)
+        : rawTimeSeries;
+
+      // Thin x-axis labels when there are many points
+      const labelStep = timeSeries.length > 60 ? Math.ceil(timeSeries.length / 20)
+        : timeSeries.length > 30 ? 3 : 1;
+      const labels = timeSeries.map((p, i) =>
+        i % labelStep === 0 && p.period ? String(p.period).slice(0, 10) : ''
+      );
+      const values = timeSeries.map((p) => parseFloat(p.value) || 0);
+      const insights = data?.insights || {};
+      const trendColor =
+        insights.trend === 'up' ? '#10b981' :
+        insights.trend === 'down' ? '#ef4444' : '#3b82f6';
+
+      // Build chart options — reduce dot clutter for dense daily series
+      const kpiChartOptions = {
+        ...chartOptions,
+        plugins: {
+          ...chartOptions.plugins,
+          legend: { labels: { color: trendColor } },
+        },
+        elements: {
+          point: { radius: timeSeries.length > 30 ? 0 : 3, hoverRadius: 4 },
+        },
+        scales: {
+          ...chartOptions.scales,
+          x: {
+            ...chartOptions.scales.x,
+            ticks: {
+              color: '#888',
+              maxRotation: 45,
+              autoSkip: true,
+              maxTicksLimit: 15,
+            },
+          },
+          y: {
+            ...chartOptions.scales.y,
+            min: 0,
+          },
+        },
+      };
+
+      return (
+        <>
+          <ChartCard title={`${kpi.title} — Time Series (${granularity.toUpperCase()})`}>
+            <Line
+              data={{
+                labels,
+                datasets: [{
+                  label: kpi.title,
+                  data: values,
+                  borderColor: trendColor,
+                  backgroundColor: `${trendColor}20`,
+                  fill: true,
+                  tension: timeSeries.length > 30 ? 0.2 : 0.4,
+                  pointRadius: 0,
+                  pointHoverRadius: 4,
+                }],
+              }}
+              options={kpiChartOptions}
+            />
+          </ChartCard>
+
+          {/* Insights panel */}
+          {insights.summary && (
+            <div className="rounded-2xl border border-neutral-800 bg-[#111111] p-5 space-y-4">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-500">Insights</h4>
+
+              <p className="text-sm text-neutral-300 leading-relaxed">{insights.summary}</p>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="rounded-xl bg-[#0d0d0d] border border-neutral-800 p-3 text-center">
+                  <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">Trend</div>
+                  <div className={`text-lg font-bold ${
+                    insights.trend === 'up' ? 'text-emerald-400' :
+                    insights.trend === 'down' ? 'text-red-400' : 'text-blue-400'
+                  }`}>
+                    {insights.trend === 'up' ? '↑ Up' : insights.trend === 'down' ? '↓ Down' : '→ Stable'}
+                  </div>
+                </div>
+
+                <div className="rounded-xl bg-[#0d0d0d] border border-neutral-800 p-3 text-center">
+                  <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">Change</div>
+                  <div className={`text-lg font-bold ${
+                    insights.percentage_change > 0 ? 'text-emerald-400' :
+                    insights.percentage_change < 0 ? 'text-red-400' : 'text-neutral-300'
+                  }`}>
+                    {insights.percentage_change > 0 ? '+' : ''}{insights.percentage_change?.toFixed(1)}%
+                  </div>
+                </div>
+
+                <div className="rounded-xl bg-[#0d0d0d] border border-neutral-800 p-3 text-center">
+                  <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">Peak</div>
+                  <div className="text-sm font-bold text-white">
+                    {parseFloat(insights.max_point?.value || 0).toFixed(2)}
+                  </div>
+                  <div className="text-[10px] text-neutral-500 mt-0.5">
+                    {insights.max_point?.period?.slice(0, 10) || '—'}
+                  </div>
+                </div>
+
+                <div className="rounded-xl bg-[#0d0d0d] border border-neutral-800 p-3 text-center">
+                  <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">Low</div>
+                  <div className="text-sm font-bold text-white">
+                    {parseFloat(insights.min_point?.value || 0).toFixed(2)}
+                  </div>
+                  <div className="text-[10px] text-neutral-500 mt-0.5">
+                    {insights.min_point?.period?.slice(0, 10) || '—'}
+                  </div>
+                </div>
+              </div>
+
+              {/* DSL info */}
+              {data?.dsl_json && (
+                <div className="rounded-xl bg-[#0a0a0a] border border-neutral-800/50 p-3">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-neutral-600 mb-1">DSL Definition</div>
+                  <pre className="text-[11px] text-neutral-500 font-mono overflow-auto max-h-20">
+                    {JSON.stringify(data.dsl_json, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      );
+    }
+
     switch (kpi.id) {
       case 'publish_conversion':
       case 'processing_efficiency':

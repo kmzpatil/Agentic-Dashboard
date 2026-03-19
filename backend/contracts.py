@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -80,3 +80,29 @@ class ServiceStatus(BaseModel):
 class HealthStatus(BaseModel):
     ok: bool
     services: dict[str, ServiceStatus]
+
+
+# ── Custom KPI ────────────────────────────────────────────────────────────────
+
+class KPICreateRequest(BaseModel):
+    name: str
+    description: str | None = None
+    mode: Literal["formula", "natural_language"]
+    expression: str
+    time_granularity: Literal["day", "week", "month"] = "month"
+
+
+class KPIResponse(BaseModel):
+    id: int
+    name: str
+    description: str | None = None
+    dsl_json: dict[str, Any]
+    created_at: str | None = None
+
+
+class KPIExecuteResponse(BaseModel):
+    id: int
+    name: str
+    dsl_json: dict[str, Any]
+    time_series: list[dict[str, Any]] = Field(default_factory=list)
+    insights: dict[str, Any] = Field(default_factory=dict)
