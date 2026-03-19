@@ -20,7 +20,7 @@ ChartJS.register(
   Filler
 );
 
-export default function KpiCard({ title, value, subtitle, trendData, onRemove, onAdd, onEdit, onClick }) {
+export default function KpiCard({ title, value, subtitle, description, trendData, onRemove, onAdd, onEdit, onClick }) {
   // Determine if trend is positive or negative for color
   const isTrendPositive = trendData && trendData.length > 0 && trendData[trendData.length - 1] >= trendData[0];
   const lineColor = isTrendPositive ? '#10b981' : '#ef4444'; // Green or Red
@@ -118,6 +118,9 @@ export default function KpiCard({ title, value, subtitle, trendData, onRemove, o
           </div>
         )}
       </div>
+      {description && (
+        <div className="mt-2 text-[11px] leading-4 text-neutral-500 line-clamp-2">{description}</div>
+      )}
     </div>
   );
 }

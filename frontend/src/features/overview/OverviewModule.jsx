@@ -179,31 +179,35 @@ export default function OverviewModule({ onNavigate }) {
   return (
     <div className="h-full overflow-y-auto bg-[#050505] px-6 py-6 space-y-6">
       <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
-        <KpiCard 
-          title="UPLOADED" 
-          value={formatNumber(kpis.uploaded_count)} 
-          subtitle={formatHours(kpis.uploaded_duration)} 
+        <KpiCard
+          title="UPLOADED"
+          value={formatNumber(kpis.uploaded_count)}
+          subtitle={formatHours(kpis.uploaded_duration)}
+          description="Total raw video files uploaded into the pipeline"
           trendData={[12, 18, 15, 22, 20, 28, 25]}
           onClick={() => handleCoreKpiClick('uploaded_count')}
         />
-        <KpiCard 
-          title="PROCESSED" 
-          value={formatNumber(kpis.processed_count)} 
-          subtitle="Videos reaching create stage" 
+        <KpiCard
+          title="PROCESSED"
+          value={formatNumber(kpis.processed_count)}
+          subtitle="Videos reaching create stage"
+          description="Videos that passed through initial processing and slicing"
           trendData={[10, 14, 12, 19, 18, 24, 22]}
           onClick={() => handleCoreKpiClick('processed_count')}
         />
-        <KpiCard 
-          title="CREATED" 
-          value={formatNumber(kpis.created_count)} 
-          subtitle={formatHours(kpis.created_duration)} 
+        <KpiCard
+          title="CREATED"
+          value={formatNumber(kpis.created_count)}
+          subtitle={formatHours(kpis.created_duration)}
+          description="Individual clip assets generated from all source videos"
           trendData={[45, 52, 48, 60, 58, 65, 62]}
           onClick={() => handleCoreKpiClick('created_count')}
         />
-        <KpiCard 
-          title="PUBLISHED" 
-          value={formatNumber(kpis.published_count)} 
-          subtitle={formatHours(kpis.published_duration)} 
+        <KpiCard
+          title="PUBLISHED"
+          value={formatNumber(kpis.published_count)}
+          subtitle={formatHours(kpis.published_duration)}
+          description="Posts successfully published to one or more platforms"
           trendData={[20, 25, 22, 30, 28, 35, 32]}
           onClick={() => handleCoreKpiClick('published_count')}
         />
@@ -373,39 +377,40 @@ export default function OverviewModule({ onNavigate }) {
         </section>
       )}
 
-      <section className="grid grid-cols-1 xl:grid-cols-[1.25fr_0.95fr] gap-6">
-        <div className="space-y-6">
-          <div className="rounded-[28px] border border-neutral-800 bg-[#101010] p-5">
-            <div className="mb-4 text-sm font-bold uppercase tracking-[0.2em] text-neutral-500">Frammer AI Insights</div>
-            <div className="grid grid-cols-1 gap-4">
-              {(insights.data?.insights || []).map((insight) => (
-                <InsightCard key={insight.id} insight={insight} onNavigate={onNavigate} />
-              ))}
-              {!insights.loading && !(insights.data?.insights || []).length && (
-                <div className="rounded-3xl border border-dashed border-neutral-800 p-6 text-sm text-neutral-500">
-                  No major issues are active in the current scope.
-                </div>
-              )}
-            </div>
+      <section className="grid grid-cols-1 xl:grid-cols-[1.25fr_0.95fr] gap-6 xl:items-start">
+        <div className="rounded-[28px] border border-neutral-800 bg-[#101010] p-5 xl:max-h-[600px] flex flex-col">
+          <div className="mb-4 text-sm font-bold uppercase tracking-[0.2em] text-neutral-500 shrink-0">Frammer AI Insights</div>
+          <div className="grid grid-cols-1 gap-3 overflow-y-auto pr-1 hide-scrollbar min-h-0">
+            {(insights.data?.insights || []).map((insight) => (
+              <InsightCard key={insight.id} insight={insight} onNavigate={onNavigate} />
+            ))}
+            {!insights.loading && !(insights.data?.insights || []).length && (
+              <div className="rounded-3xl border border-dashed border-neutral-800 p-6 text-sm text-neutral-500">
+                No major issues are active in the current scope.
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="space-y-6">
+        <div className="space-y-6 xl:max-h-[600px]">
           <div className="rounded-[28px] border border-neutral-800 bg-[#101010] p-5">
             <div className="mb-4 text-sm font-bold uppercase tracking-[0.2em] text-neutral-500">Top Performers</div>
-            <div className="space-y-3">
-              {(data.topPerformers || []).map((item) => (
-                <div key={item.dimension} className="flex items-center justify-between rounded-2xl border border-neutral-900 bg-[#0C0C0C] px-4 py-3">
-                  <div>
-                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-500">{item.dimension}</div>
-                    <div className="mt-1 text-sm font-semibold text-white">{item.label}</div>
+            <div className="space-y-2">
+              {(data.topPerformers || []).map((item) => {
+                const pct = Math.round((item.conversion || 0) * 100);
+                return (
+                  <div key={item.dimension} className="flex items-center gap-3 rounded-xl border border-neutral-900 bg-[#0C0C0C] px-4 py-3">
+                    <div className="text-sm font-semibold text-white shrink-0 w-28 truncate">{item.label}</div>
+                    <div className="flex-1 h-2 rounded-full bg-neutral-800 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-500"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <div className="text-sm font-bold text-white shrink-0 w-12 text-right">{formatPct(item.conversion)}</div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-lg font-black text-white">{formatPct(item.conversion)}</div>
-                    <div className="text-xs text-neutral-500">publish conversion</div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 

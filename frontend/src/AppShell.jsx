@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Microscope,
   FlaskConical,
+  ShieldCheck,
   Braces,
 } from 'lucide-react';
 import './lib/chartSetup';
@@ -19,6 +20,7 @@ import UserJourneyModule from './features/journey/UserJourneyModule';
 import ExplorerModule from './features/explorer/ExplorerModule';
 import TalkToDataModule from './features/talk/TalkToDataModule';
 import LabsModule from './features/labs/LabsModule';
+import DataQualityModule from './features/quality/DataQualityModule';
 
 function readRouteState() {
   const params = new URLSearchParams(window.location.search);
@@ -101,6 +103,7 @@ export default function AppShell() {
     { id: 'funnel', label: 'Funnel', icon: <Funnel size={16} /> },
     { id: 'journey', label: 'Metrics', icon: <Route size={16} /> },
     { id: 'explorer', label: 'Explorer', icon: <Microscope size={16} /> },
+    { id: 'quality', label: 'Data Quality', icon: <ShieldCheck size={16} /> },
     { id: 'copilot', label: 'Copilot', icon: <Bot size={16} /> },
     { id: 'labs', label: 'Labs', icon: <FlaskConical size={16} /> },
   ]), []);
@@ -260,6 +263,7 @@ export default function AppShell() {
         {activeView === 'funnel' && <FunnelModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'journey' && <UserJourneyModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'explorer' && <ExplorerModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
+        {activeView === 'quality' && <DataQualityModule />}
         {activeView === 'copilot' && <TalkToDataModule authToken={authToken} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'labs' && <LabsModule />}
       </main>
