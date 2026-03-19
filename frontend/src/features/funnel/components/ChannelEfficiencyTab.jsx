@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Chart } from 'react-chartjs-2';
+import FunnelViewContextStrip from './FunnelViewContextStrip';
 
 const C = {
   c1: '#8b5cf6', c2: '#60a5fa', c3: '#34d399', c4: '#f97316',
@@ -160,8 +161,6 @@ export default function ChannelEfficiencyTab({ authUser, data, breakdown, filter
   const [scatterView, setScatterView] = useState('channels');
   const [wasteView, setWasteView] = useState('channels');
   const [isFlaggedDialogOpen, setIsFlaggedDialogOpen] = useState(false);
-  const viewLabel = (breakdown || 'channel').replace('_', ' ');
-  const activeFilters = Object.entries(filters || {}).filter(([, v]) => v);
   const rows = data?.channelEfficiency || [];
   const teamRows = data?.teamVolumeYield || [];
 
@@ -626,16 +625,7 @@ export default function ChannelEfficiencyTab({ authUser, data, breakdown, filter
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="inline-flex items-center rounded-full border border-neutral-700/80 bg-neutral-900/70 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
-          View context: {viewLabel}
-        </span>
-        {activeFilters.length > 0 && (
-          <span className="inline-flex items-center rounded-full border border-violet-500/30 bg-violet-500/10 px-2.5 py-1 text-[11px] font-semibold text-violet-300">
-            {activeFilters.length} filter{activeFilters.length > 1 ? 's' : ''} active
-          </span>
-        )}
-      </div>
+      <FunnelViewContextStrip breakdown={breakdown} filters={filters} />
       <div className="grid grid-cols-1 items-start xl:grid-cols-[1.5fr_1fr] gap-3">
         <div className="space-y-3">
           <Card className="p-2.5 md:p-3 h-[430px] md:h-[460px] flex flex-col">

@@ -4,6 +4,7 @@ import {
   CategoryScale, LinearScale, BarElement, Tooltip, Legend,
 } from 'chart.js';
 import { Bar } from 'react-chartjs-2';
+import FunnelViewContextStrip from './FunnelViewContextStrip';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
@@ -416,7 +417,6 @@ export default function ContentAnalysisTab({ authUser, data, breakdown = 'channe
   const showHeatmap   = isAdmin && breakdown === 'client';
   const viewLabel     = fmtLabel(breakdown || 'channel');
   const heatmapRows   = data?.inputTypeClientHeatmap || [];
-  const activeFilters = Object.entries(filters || {}).filter(([, v]) => v);
 
   // Summary stats
   const summary = useMemo(() => {
@@ -473,15 +473,7 @@ export default function ContentAnalysisTab({ authUser, data, breakdown = 'channe
     <div className="ca-root" style={{ display:'flex', flexDirection:'column', gap:14 }}>
       <style>{STYLES}</style>
 
-      {/* Context strip */}
-      <div style={{ display:'flex', alignItems:'center', gap:7, flexWrap:'wrap' }}>
-        <Chip tone="neutral">View · {viewLabel}</Chip>
-        {activeFilters.length > 0 && (
-          <span className="inline-flex items-center rounded-full border border-violet-500/30 bg-violet-500/10 px-2.5 py-1 text-[11px] font-semibold text-violet-300">
-            {activeFilters.length} filter{activeFilters.length > 1 ? 's' : ''} active
-          </span>
-        )}
-      </div>
+      <FunnelViewContextStrip breakdown={breakdown} filters={filters} />
 
       {/* KPI strip */}
       {summary && (

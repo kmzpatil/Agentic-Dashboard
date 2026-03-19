@@ -2,6 +2,7 @@ import React from 'react';
 import { formatNumber, formatPct } from '../../../lib/formatters';
 import { useApi } from '../../../hooks/useApi';
 import { API_BASE } from '../../../lib/constants';
+import FunnelViewContextStrip from './FunnelViewContextStrip';
 
 const Card = ({ children, className = '' }) => (
   <div className={`bg-[#111111] rounded-xl border border-neutral-800 p-4 ${className}`}>{children}</div>
@@ -31,8 +32,6 @@ export default function DataExplorerTab({ authUser, data, breakdown, filters }) 
     ? `${API_BASE}/funnel/video/${selectedVideoId}${filterQuery}`
     : null;
   const videoDetails = useApi(videoDetailsUrl, [videoDetailsUrl]);
-  const viewLabel = (breakdown || 'channel').replace('_', ' ');
-  const activeFilters = Object.entries(filters || {}).filter(([, v]) => v);
 
   React.useEffect(() => {
     setSelectedVideoId(null);
@@ -40,16 +39,7 @@ export default function DataExplorerTab({ authUser, data, breakdown, filters }) 
 
   return (
     <div className="space-y-2.5">
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="inline-flex items-center rounded-full border border-neutral-700/80 bg-neutral-900/70 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
-          View by: {viewLabel}
-        </span>
-        {activeFilters.length > 0 && (
-          <span className="inline-flex items-center rounded-full border border-violet-500/30 bg-violet-500/10 px-2.5 py-1 text-[11px] font-semibold text-violet-300">
-            {activeFilters.length} filter{activeFilters.length > 1 ? 's' : ''} active
-          </span>
-        )}
-      </div>
+      <FunnelViewContextStrip breakdown={breakdown} filters={filters} />
 
       <Card>
         <CardTitle title={`Top-down breakdown (${breakdown})`} desc="Breakdown of volume and conversion across the current view." />

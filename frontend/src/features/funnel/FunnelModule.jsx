@@ -13,7 +13,7 @@ import {
   groupSmallLinks,
   makeSankeyOptions,
   MAX_BREAKDOWN_SOURCES,
-  normalizeLinksByIncomingCapacity,
+  normalizeStageSankeyLinks,
   normalizeSankeyLinks,
 } from './utils/funnelFlow';
 
@@ -102,14 +102,7 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
     navigate(next);
   };
 
-  const rawStageLinks = useMemo(() => normalizeSankeyLinks(data?.sankeyLinks || []), [data?.sankeyLinks]);
-  const stageNodeOrder = useMemo(() => (
-    ['Uploaded', 'Processed', 'Not Processed', 'Created', 'Published', 'Not Published', 'Platform posts']
-  ), []);
-  const stageLinks = useMemo(
-    () => normalizeLinksByIncomingCapacity(rawStageLinks, stageNodeOrder),
-    [rawStageLinks, stageNodeOrder],
-  );
+  const stageLinks = useMemo(() => normalizeStageSankeyLinks(data?.sankeyLinks || []), [data?.sankeyLinks]);
   const showAllCompositionSources = compositionSourceMode === 'all';
   const publishedPlatformTailLinks = useMemo(() => (
     (data?.compositionLinks || [])
@@ -205,15 +198,19 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
       // Assign columns to ensure each stage has its own column
       if (from === 'Uploaded') column[from] = 0;
       else if (from === 'Processed') column[from] = 1;
+      else if (from === 'Asset Expansion') column[from] = 1;
       else if (fromIsNotProcessedNode) column[from] = 1;
       else if (from === 'Created') column[from] = 2;
       else if (isPublishNode) column[from] = 3;
+      else if (from === 'Cross-post Expansion') column[from] = 3;
       else if (from === 'Platform posts') column[from] = 4;
 
       if (to === 'Processed') column[to] = 1;
+      else if (to === 'Asset Expansion') column[to] = 1;
       else if (isNotProcessedNode) column[to] = 1;
       else if (to === 'Created') column[to] = 2;
       else if (isPublishNode) column[to] = 3;
+      else if (to === 'Cross-post Expansion') column[to] = 3;
       else if (to === 'Platform posts') column[to] = 4;
     });
     return column;
@@ -230,6 +227,8 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
         if (node === 'Not Processed') return 40;
         if (node === 'Published') return -100;
         if (node === 'Not Published') return -50;
+        if (node === 'Asset Expansion') return 10;
+        if (node === 'Cross-post Expansion') return -75;
         if (node === 'Platform posts') return 100;
         return 0;
       };
@@ -239,21 +238,40 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
     return priority;
   }, [stageLinks]);
 
-  const stageSankeyData = useMemo(() => ({
-    datasets: [{
-      data: stageLinks,
-      column: stageColumn,
-      priority: stagePriority,
-      size: 'max',
-      colorFrom: '#64748b',
-      colorTo: '#22c55e',
-      colorMode: 'gradient',
-      borderColor: 'rgba(0, 0, 0, 0)',
-      borderWidth: 0,
-      nodeWidth: 20,
-      nodePadding: 30,
-    }],
-  }), [stageLinks, stageColumn, stagePriority]);
+  const stageSankeyData = useMemo(() => {
+    const isExpansionEdge = (raw) => {
+      const edgeType = String(raw?.edgeType || '');
+      return edgeType === 'asset_expansion_to_created' || edgeType === 'cross_post_expansion_to_platform';
+    };
+
+    const stageColorFrom = (context) => {
+      const raw = context?.raw || {};
+      if (isExpansionEdge(raw)) return 'rgba(100, 116, 139, 0.22)';
+      return '#64748b';
+    };
+
+    const stageColorTo = (context) => {
+      const raw = context?.raw || {};
+      if (isExpansionEdge(raw)) return 'rgba(148, 163, 184, 0.36)';
+      return '#22c55e';
+    };
+
+    return {
+      datasets: [{
+        data: stageLinks,
+        column: stageColumn,
+        priority: stagePriority,
+        size: 'min',
+        colorFrom: stageColorFrom,
+        colorTo: stageColorTo,
+        colorMode: 'gradient',
+        borderColor: 'rgba(0, 0, 0, 0)',
+        borderWidth: 0,
+        nodeWidth: 20,
+        nodePadding: 30,
+      }],
+    };
+  }, [stageLinks, stageColumn, stagePriority]);
 
   const compositionSankeyData = useMemo(() => ({
     datasets: [{

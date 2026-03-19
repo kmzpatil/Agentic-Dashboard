@@ -22,6 +22,93 @@ export function normalizeSankeyLinks(links = []) {
     .sort(sankeyLinkSort);
 }
 
+const STAGE_NODE_ALIASES = {
+  upload: 'Uploaded',
+  uploaded: 'Uploaded',
+  processed: 'Processed',
+  'not processed': 'Not Processed',
+  created: 'Created',
+  published: 'Published',
+  'not published': 'Not Published',
+  platform: 'Platform posts',
+  'platform posts': 'Platform posts',
+};
+
+function canonicalizeStageNode(label) {
+  const key = String(label || '').trim().toLowerCase();
+  return STAGE_NODE_ALIASES[key] || String(label || '').trim();
+}
+
+export function normalizeStageSankeyLinks(links = []) {
+  const normalized = normalizeSankeyLinks(links)
+    .map((item) => ({
+      ...item,
+      from: canonicalizeStageNode(item.from),
+      to: canonicalizeStageNode(item.to),
+    }))
+    .filter((item) => item.from && item.to && item.flow > 0);
+
+  const merged = new Map();
+  normalized.forEach((item) => {
+    const key = `${item.from}::${item.to}`;
+    const prev = merged.get(key);
+    if (!prev) {
+      merged.set(key, { ...item });
+      return;
+    }
+    merged.set(key, {
+      ...prev,
+      flow: Number(prev.flow || 0) + Number(item.flow || 0),
+    });
+  });
+
+  const edgeMap = new Map(Array.from(merged.values()).map((item) => [`${item.from}::${item.to}`, item]));
+  const getFlow = (from, to) => Number(edgeMap.get(`${from}::${to}`)?.flow || 0);
+
+  const uploadedToProcessed = getFlow('Uploaded', 'Processed');
+  const uploadedToNotProcessed = getFlow('Uploaded', 'Not Processed');
+  const processedToCreatedRaw = getFlow('Processed', 'Created');
+  const createdToPublished = getFlow('Created', 'Published');
+  const createdToNotPublished = getFlow('Created', 'Not Published');
+  const publishedToPlatformRaw = getFlow('Published', 'Platform posts');
+
+  const processedToCreated = uploadedToProcessed > 0
+    ? Math.min(processedToCreatedRaw, uploadedToProcessed)
+    : processedToCreatedRaw;
+  const createdExpansion = Math.max(processedToCreatedRaw - processedToCreated, 0);
+
+  const publishedToPlatform = createdToPublished > 0
+    ? Math.min(publishedToPlatformRaw, createdToPublished)
+    : publishedToPlatformRaw;
+  const platformExpansion = Math.max(publishedToPlatformRaw - publishedToPlatform, 0);
+
+  const repaired = [];
+  if (uploadedToProcessed > 0) repaired.push({ from: 'Uploaded', to: 'Processed', flow: uploadedToProcessed, edgeType: 'uploaded_to_processed' });
+  if (uploadedToNotProcessed > 0) repaired.push({ from: 'Uploaded', to: 'Not Processed', flow: uploadedToNotProcessed, edgeType: 'uploaded_to_not_processed' });
+  if (processedToCreated > 0) repaired.push({ from: 'Processed', to: 'Created', flow: processedToCreated, edgeType: 'processed_to_created' });
+  if (createdExpansion > 0) repaired.push({ from: 'Asset Expansion', to: 'Created', flow: createdExpansion, edgeType: 'asset_expansion_to_created' });
+  if (createdToPublished > 0) repaired.push({ from: 'Created', to: 'Published', flow: createdToPublished, edgeType: 'created_to_published' });
+  if (createdToNotPublished > 0) repaired.push({ from: 'Created', to: 'Not Published', flow: createdToNotPublished, edgeType: 'created_to_not_published' });
+  if (publishedToPlatform > 0) repaired.push({ from: 'Published', to: 'Platform posts', flow: publishedToPlatform, edgeType: 'published_to_platform' });
+  if (platformExpansion > 0) repaired.push({ from: 'Cross-post Expansion', to: 'Platform posts', flow: platformExpansion, edgeType: 'cross_post_expansion_to_platform' });
+
+  const handledEdges = new Set([
+    'Uploaded::Processed',
+    'Uploaded::Not Processed',
+    'Processed::Created',
+    'Created::Published',
+    'Created::Not Published',
+    'Published::Platform posts',
+  ]);
+
+  edgeMap.forEach((item, key) => {
+    if (handledEdges.has(key)) return;
+    repaired.push(item);
+  });
+
+  return repaired.sort(sankeyLinkSort);
+}
+
 export function normalizeLinksByIncomingCapacity(links = [], nodeOrder = []) {
   const normalized = normalizeSankeyLinks(links);
   if (!normalized.length || !nodeOrder.length) return normalized;
