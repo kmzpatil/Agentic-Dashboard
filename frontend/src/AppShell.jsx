@@ -281,7 +281,7 @@ export default function AppShell() {
         {activeView === 'mission-control' && <OverviewModule routeState={routeState} onNavigate={navigate} />}
         {activeView === 'trends' && <UsageTrendsModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'funnel' && <FunnelModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
-        {activeView === 'journey' && <UserJourneyModule />}
+        {activeView === 'journey' && <UserJourneyModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'explorer' && <ExplorerModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'copilot' && <TalkToDataModule authToken={authToken} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'labs' && <LabsModule />}

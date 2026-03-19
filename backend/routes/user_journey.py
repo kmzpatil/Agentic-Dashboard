@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import List, Optional
+
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 
@@ -13,19 +15,127 @@ router = APIRouter()
 VALID_GRANULARITIES = {"day", "week", "month", "quarter"}
 
 
-def _scoped_ctes(access_filter: dict) -> str:
-    scoped_videos_where = build_where_clause(access_filter["predicates"])
+def _is_active(vals: Optional[List[str]]) -> bool:
+    """Return True if the filter list contains real (non-'All') values."""
+    if not vals:
+        return False
+    return not any(v.strip().lower() in ("all", "") for v in vals)
+
+
+def _build_journey_filter(
+    auth,
+    start_index: int,
+    *,
+    company: Optional[List[str]] = None,
+    channel: Optional[List[str]] = None,
+    user: Optional[List[str]] = None,
+    language: Optional[List[str]] = None,
+    input_type: Optional[List[str]] = None,
+    output_type: Optional[List[str]] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+) -> dict:
+    """
+    Build combined access + dimension filter for the scoped_videos CTE.
+    Returns {join, predicates, params, next_index, output_type_where}.
+    """
+    access = build_access_filter(auth, start_index, "rv")
+    joins = []
+    predicates = list(access["predicates"])
+    params = list(access["params"])
+    idx = access["next_index"]
+
+    if access["join"]:
+        joins.append(access["join"])
+
+    has_user_join = False
+    has_rvc_join = False
+
+    if _is_active(company):
+        joins.append('LEFT JOIN users u_f ON rv."User_ID" = u_f."User_ID"')
+        joins.append('LEFT JOIN raw_video_channel rvc_f ON rv."Video_ID" = rvc_f."Video_ID"')
+        joins.append('LEFT JOIN channels ch_f ON ch_f."Channel_Name" = rvc_f."Channel_Name"')
+        has_user_join = True
+        has_rvc_join = True
+        placeholders = ", ".join(f"${idx + i}" for i in range(len(company)))
+        predicates.append(
+            f'COALESCE(ch_f."Client_Name", u_f."Client_Name") IN ({placeholders})'
+        )
+        params.extend(company)
+        idx += len(company)
+
+    if _is_active(channel):
+        if not has_rvc_join:
+            joins.append('LEFT JOIN raw_video_channel rvc_f ON rv."Video_ID" = rvc_f."Video_ID"')
+            has_rvc_join = True
+        placeholders = ", ".join(f"${idx + i}" for i in range(len(channel)))
+        predicates.append(f'rvc_f."Channel_Name" IN ({placeholders})')
+        params.extend(channel)
+        idx += len(channel)
+
+    if _is_active(user):
+        if not has_user_join:
+            joins.append('LEFT JOIN users u_f ON rv."User_ID" = u_f."User_ID"')
+            has_user_join = True
+        placeholders = ", ".join(f"${idx + i}" for i in range(len(user)))
+        predicates.append(f'u_f."User_Name" IN ({placeholders})')
+        params.extend(user)
+        idx += len(user)
+
+    if _is_active(language):
+        placeholders = ", ".join(f"${idx + i}" for i in range(len(language)))
+        predicates.append(f'rv."Language" IN ({placeholders})')
+        params.extend(language)
+        idx += len(language)
+
+    if _is_active(input_type):
+        placeholders = ", ".join(f"${idx + i}" for i in range(len(input_type)))
+        predicates.append(f'rv."Input_Type" IN ({placeholders})')
+        params.extend(input_type)
+        idx += len(input_type)
+
+    if date_from:
+        predicates.append(f'rv."Upload_Date" >= ${idx}')
+        params.append(date_from)
+        idx += 1
+
+    if date_to:
+        predicates.append(f'rv."Upload_Date" <= ${idx}')
+        params.append(date_to)
+        idx += 1
+
+    # Output type filtering happens at the scoped_assets level
+    output_type_where = ""
+    if _is_active(output_type):
+        placeholders = ", ".join(f"${idx + i}" for i in range(len(output_type)))
+        output_type_where = f'AND ca."Output_Type" IN ({placeholders})'
+        params.extend(output_type)
+        idx += len(output_type)
+
+    return {
+        "join": "\n".join(joins),
+        "predicates": predicates,
+        "params": params,
+        "next_index": idx,
+        "output_type_where": output_type_where,
+    }
+
+
+def _scoped_ctes(filt: dict) -> str:
+    scoped_videos_where = build_where_clause(filt["predicates"])
+    ot_where = filt.get("output_type_where", "")
     return f'''
     WITH scoped_videos AS (
       SELECT DISTINCT rv."Video_ID", rv."User_ID", rv."Upload_Date", rv."Input_Type", rv."Language"
       FROM raw_videos rv
-      {access_filter["join"]}
+      {filt["join"]}
       {scoped_videos_where}
     ),
     scoped_assets AS (
       SELECT DISTINCT ON (ca."Asset_ID") ca.*
       FROM created_assets ca
       JOIN scoped_videos sv ON sv."Video_ID" = ca."Video_ID"
+      WHERE 1=1 {ot_where}
       ORDER BY ca."Asset_ID"
     ),
     scoped_posts AS (
@@ -54,9 +164,9 @@ def _scoped_ctes(access_filter: dict) -> str:
     '''
 
 
-def _summary_query(access_filter: dict) -> str:
+def _summary_query(filt: dict) -> str:
     return f'''
-    {_scoped_ctes(access_filter)}
+    {_scoped_ctes(filt)}
     SELECT
       (SELECT COUNT(*) FROM scoped_videos)::bigint AS uploaded_videos,
       (SELECT COUNT(*) FROM scoped_assets)::bigint AS created_assets,
@@ -70,9 +180,9 @@ def _summary_query(access_filter: dict) -> str:
     '''
 
 
-def _series_query(access_filter: dict) -> str:
+def _series_query(filt: dict) -> str:
     return f'''
-    {_scoped_ctes(access_filter)}
+    {_scoped_ctes(filt)}
     , upload_periods AS (
       SELECT date_trunc($1, to_date("Upload_Date", 'YYYY-MM-DD'))::date AS period,
              COUNT(*)::bigint AS uploaded_videos
@@ -115,9 +225,9 @@ def _series_query(access_filter: dict) -> str:
     '''
 
 
-def _platform_query(access_filter: dict) -> str:
+def _platform_query(filt: dict) -> str:
     return f'''
-    {_scoped_ctes(access_filter)}
+    {_scoped_ctes(filt)}
     SELECT
       COALESCE("Published_Platform", 'Unknown') AS platform,
       COUNT(DISTINCT "Distribution_ID")::bigint AS distributions,
@@ -137,9 +247,9 @@ def _platform_query(access_filter: dict) -> str:
     '''
 
 
-def _output_type_query(access_filter: dict) -> str:
+def _output_type_query(filt: dict) -> str:
     return f'''
-    {_scoped_ctes(access_filter)}
+    {_scoped_ctes(filt)}
     SELECT
       COALESCE(sa."Output_Type", 'Unknown') AS output_type,
       COUNT(DISTINCT sa."Asset_ID")::bigint AS assets_created,
@@ -158,9 +268,9 @@ def _output_type_query(access_filter: dict) -> str:
     '''
 
 
-def _recent_rows_query(access_filter: dict) -> str:
+def _recent_rows_query(filt: dict) -> str:
     return f'''
-    {_scoped_ctes(access_filter)}
+    {_scoped_ctes(filt)}
     SELECT
       sd."Distribution_ID" AS distribution_id,
       sd."Post_ID" AS post_id,
@@ -193,26 +303,46 @@ def _recent_rows_query(access_filter: dict) -> str:
 @router.get("/")
 def get_user_journey(
     granularity: str = Query(default="week"),
+    company: Optional[List[str]] = Query(None),
+    channel: Optional[List[str]] = Query(None),
+    user: Optional[List[str]] = Query(None),
+    language: Optional[List[str]] = Query(None),
+    input_type: Optional[List[str]] = Query(None),
+    output_type: Optional[List[str]] = Query(None),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
     auth: AuthContext = Depends(require_auth),
 ):
     safe_granularity = granularity if granularity in VALID_GRANULARITIES else "week"
-    # start_index=1 for queries that don't use a leading granularity param
-    access_filter = build_access_filter(auth, 1, "rv")
-    # start_index=2 for the series query, where granularity occupies $1
-    access_filter_series = build_access_filter(auth, 2, "rv")
+
+    # Build filter for queries that DON'T have granularity as $1
+    filt = _build_journey_filter(
+        auth, 1,
+        company=company, channel=channel, user=user,
+        language=language, input_type=input_type, output_type=output_type,
+        date_from=date_from, date_to=date_to,
+    )
+
+    # Build filter for the series query where granularity occupies $1
+    filt_series = _build_journey_filter(
+        auth, 2,
+        company=company, channel=channel, user=user,
+        language=language, input_type=input_type, output_type=output_type,
+        date_from=date_from, date_to=date_to,
+    )
 
     try:
-        summary_rows = query(_summary_query(access_filter), access_filter["params"]).rows
+        summary_rows = query(_summary_query(filt), filt["params"]).rows
         summary = summary_rows[0] if summary_rows else {}
 
         series_rows = query(
-            _series_query(access_filter_series),
-            [safe_granularity, *access_filter_series["params"]],
+            _series_query(filt_series),
+            [safe_granularity, *filt_series["params"]],
         ).rows
 
-        platform_rows = query(_platform_query(access_filter), access_filter["params"]).rows
-        output_rows = query(_output_type_query(access_filter), access_filter["params"]).rows
-        recent_rows = query(_recent_rows_query(access_filter), access_filter["params"]).rows
+        platform_rows = query(_platform_query(filt), filt["params"]).rows
+        output_rows = query(_output_type_query(filt), filt["params"]).rows
+        recent_rows = query(_recent_rows_query(filt), filt["params"]).rows
 
         uploaded = int(summary.get("uploaded_videos") or 0)
         published = int(summary.get("published_posts") or 0)
