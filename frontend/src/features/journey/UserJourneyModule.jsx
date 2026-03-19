@@ -3,7 +3,7 @@ import { Doughnut, Line, Bar } from 'react-chartjs-2';
 import {
   X, AlertTriangle, Download, Image as ImageIcon,
   CircleDot, ChevronDown, SlidersHorizontal, History,
-  Maximize2, Minimize2, RotateCcw, Zap,
+  Maximize2, Minimize2, RotateCcw, Zap, Settings2,
 } from 'lucide-react';
 import { useApi } from '../../hooks/useApi';
 import { API_BASE } from '../../lib/constants';
@@ -116,18 +116,120 @@ function GranularityPills({ value, onChange }) {
   );
 }
 
+// ─── Top stat card definitions ───────────────────────────────────────────────
+const TOP_KPIS = [
+  // Row 1 — Engagement (defaults on)
+  { id: 'views',          label: 'Views',                    group: 'engagement', default: true },
+  { id: 'interactions',   label: 'Interactions',             group: 'engagement', default: true },
+  { id: 'er',             label: 'Engagement Rate',          group: 'engagement', default: true },
+  { id: 'virality',       label: 'Virality Score',           group: 'engagement', default: true },
+  // Row 2 — Pipeline (defaults on)
+  { id: 'uploaded',       label: 'Uploaded',                 group: 'pipeline',   default: true },
+  { id: 'published',      label: 'Published',                group: 'pipeline',   default: true },
+  { id: 'distributions',  label: 'Distributions',            group: 'pipeline',   default: true },
+  { id: 'avgvdist',       label: 'Avg Views / Dist',         group: 'pipeline',   default: true },
+  // Additional — Engagement breakdown (defaults off)
+  { id: 'likes',          label: 'Likes',                    group: 'engagement', default: false },
+  { id: 'comments',       label: 'Comments',                 group: 'engagement', default: false },
+  { id: 'shares',         label: 'Shares',                   group: 'engagement', default: false },
+  { id: 'likeRate',       label: 'Like Rate',                group: 'engagement', default: false },
+  { id: 'commentRate',    label: 'Comment Rate',             group: 'engagement', default: false },
+  { id: 'shareRate',      label: 'Share Rate',               group: 'engagement', default: false },
+  { id: 'likeToComment',  label: 'Like-to-Comment Ratio',   group: 'engagement', default: false },
+  // Additional — Pipeline & Reach (defaults off)
+  { id: 'publishRate',    label: 'Publish Rate',             group: 'pipeline',   default: false },
+  { id: 'distRate',       label: 'Distribution Rate',        group: 'pipeline',   default: false },
+  { id: 'contentYield',   label: 'Content Yield',            group: 'pipeline',   default: false },
+  { id: 'interactPerView', label: 'Interactions / View',     group: 'reach',      default: false },
+  { id: 'interactPerDist', label: 'Interactions / Dist',     group: 'reach',      default: false },
+  { id: 'amplification',  label: 'Amplification Potential',  group: 'reach',      default: false },
+];
+
+const TOP_GROUPS = { engagement: 'Engagement', pipeline: 'Pipeline', reach: 'Reach & Efficiency' };
+
+// ─── Sensitivity KPI definitions (id must match computation keys) ────────────
+const SENS_KPIS = [
+  { id: 'engagementRate',   label: 'Engagement Rate',           group: 'engagement', default: true },
+  { id: 'likeRate',         label: 'Like Rate',                  group: 'engagement', default: false },
+  { id: 'commentRate',      label: 'Comment Rate',               group: 'engagement', default: false },
+  { id: 'shareRate',        label: 'Share Rate',                  group: 'engagement', default: false },
+  { id: 'likeToComment',    label: 'Like-to-Comment Ratio',      group: 'engagement', default: false },
+  { id: 'virality',         label: 'Virality Score',              group: 'reach',      default: true },
+  { id: 'avgViewsDist',     label: 'Avg Views / Distribution',    group: 'reach',      default: true },
+  { id: 'amplification',    label: 'Amplification Potential',     group: 'reach',      default: false },
+  { id: 'publishRate',      label: 'Publish Rate',                group: 'pipeline',   default: true },
+  { id: 'contentYield',     label: 'Content Yield',               group: 'pipeline',   default: false },
+  { id: 'interactPerView',  label: 'Interactions / View',         group: 'pipeline',   default: true },
+  { id: 'interactPerDist',  label: 'Interactions / Distribution', group: 'pipeline',   default: false },
+];
+
+const SENS_GROUPS = { engagement: 'Engagement', reach: 'Reach & Virality', pipeline: 'Pipeline Efficiency' };
+
+// ─── KPI Toggle Dropdown ─────────────────────────────────────────────────────
+const ALL_GROUP_LABELS = { ...TOP_GROUPS, ...SENS_GROUPS };
+
+function KpiToggle({ items, active, onToggle, className = '' }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  // Group items if they have a group property
+  const hasGroups = items.some(i => i.group);
+  const groups = hasGroups
+    ? [...new Set(items.map(i => i.group))].map(g => ({ key: g, label: ALL_GROUP_LABELS[g] || g, items: items.filter(i => i.group === g) }))
+    : [{ key: 'all', label: null, items }];
+
+  return (
+    <div ref={ref} className={`relative ${className}`}>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        className={`inline-flex h-7 w-7 items-center justify-center rounded-lg border transition-colors ${open ? 'border-red-500/40 bg-red-500/10 text-red-400' : 'border-neutral-800 text-neutral-500 hover:text-white hover:border-neutral-600'}`}
+        title="Configure visible KPIs">
+        <Settings2 size={14} />
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-2 w-64 max-h-[400px] overflow-y-auto rounded-xl border border-neutral-800 bg-[#0d0d0d] backdrop-blur-xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] z-[100] p-1"
+          style={{ scrollbarWidth: 'thin', scrollbarColor: '#333 #0d0d0d' }}>
+          {groups.map(g => (
+            <div key={g.key}>
+              {g.label && <div className="px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.2em] text-neutral-600 bg-neutral-900/50">{g.label}</div>}
+              {g.items.map(item => {
+                const isOn = active.includes(item.id);
+                return (
+                  <button key={item.id} onClick={() => onToggle(item.id)}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all flex items-center gap-2.5 ${isOn ? 'text-white' : 'text-neutral-500 hover:text-neutral-300'}`}>
+                    <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-all ${isOn ? 'bg-red-500 border-red-500' : 'border-neutral-700 bg-neutral-900'}`}>
+                      {isOn && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                    </div>
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Sensitivity Slider ──────────────────────────────────────────────────────
 function SensSlider({ label, value, onChange, icon }) {
   const pct = value;
   const color = pct > 0 ? '#10b981' : pct < 0 ? '#ef4444' : '#525252';
   return (
     <div className="group">
-      <div className="flex items-center justify-between mb-1.5">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2.5">
           {icon}
-          <span className="text-xs font-semibold text-neutral-300">{label}</span>
+          <span className="text-sm font-semibold text-neutral-300">{label}</span>
         </div>
-        <span className="text-xs font-black tabular-nums" style={{ color }}>
+        <span className="text-sm font-black tabular-nums" style={{ color }}>
           {pct > 0 ? '+' : ''}{pct}%
         </span>
       </div>
@@ -149,17 +251,21 @@ function EffectRow({ label, oldVal, newVal, format = 'number', inverse = false }
   const delta = oldVal !== 0 ? ((newVal - oldVal) / oldVal) * 100 : 0;
   const improved = inverse ? delta < 0 : delta > 0;
   const color = Math.abs(delta) < 0.5 ? 'text-neutral-400' : improved ? 'text-emerald-400' : 'text-red-400';
-  const fmt = (v) => format === 'pct' ? `${Number(v).toFixed(2)}%` : formatNumber(Math.round(v));
+  const fmt = (v) => {
+    if (format === 'pct') return `${Number(v).toFixed(2)}%`;
+    if (format === 'ratio') return Number(v).toFixed(2);
+    return formatNumber(Math.round(v));
+  };
   return (
-    <div className="flex items-center justify-between py-2 border-b border-neutral-800/40 last:border-0">
+    <div className="flex items-center justify-between py-3 border-b border-neutral-800/40 last:border-0">
       <div>
-        <div className="text-xs font-semibold text-neutral-300">{label}</div>
-        <div className="text-[10px] text-neutral-600">was {fmt(oldVal)}</div>
+        <div className="text-sm font-semibold text-neutral-300">{label}</div>
+        {Math.abs(delta) >= 0.5 && <div className="text-xs text-neutral-600">was {fmt(oldVal)}</div>}
       </div>
       <div className="text-right">
-        <div className="text-sm font-black text-white">{fmt(newVal)}</div>
+        <div className="text-lg font-black text-white">{fmt(newVal)}</div>
         {Math.abs(delta) >= 0.5 && (
-          <div className={`text-[10px] font-bold ${color}`}>
+          <div className={`text-xs font-bold ${color}`}>
             {delta > 0 ? '+' : ''}{delta.toFixed(1)}%
           </div>
         )}
@@ -176,6 +282,14 @@ export default function UserJourneyModule({ authUser }) {
   const [granularity, setGranularity] = useState('week');
   const [activeChart, setActiveChart] = useState('engagement');
   const [selectedPlatform, setSelectedPlatform] = useState(null);
+  const [pipelineTab, setPipelineTab] = useState('conversion'); // 'conversion' | 'sensitivity'
+
+  // ── KPI visibility state ────────────────────────────────────────────────────
+  const [visibleTopKpis, setVisibleTopKpis] = useState(() => TOP_KPIS.filter(k => k.default).map(k => k.id));
+  const [visibleSensKpis, setVisibleSensKpis] = useState(() => SENS_KPIS.filter(k => k.default).map(k => k.id));
+
+  const toggleTopKpi = (id) => setVisibleTopKpis(prev => prev.includes(id) ? prev.filter(k => k !== id) : [...prev, id]);
+  const toggleSensKpi = (id) => setVisibleSensKpis(prev => prev.includes(id) ? prev.filter(k => k !== id) : [...prev, id]);
 
   // ── Filter state ────────────────────────────────────────────────────────────
   const [filters, setFilters] = useState({
@@ -299,6 +413,15 @@ export default function UserJourneyModule({ authUser }) {
   const spkPublish  = useMemo(() => timeseries.map(r => r.published_posts || 0), [timeseries]);
   const spkDist     = useMemo(() => timeseries.map(r => r.distributions || 0), [timeseries]);
   const spkAvgV     = useMemo(() => timeseries.map(r => (r.distributions||0) > 0 ? r.views/r.distributions : 0), [timeseries]);
+  const spkLikes    = useMemo(() => timeseries.map(r => r.likes || 0), [timeseries]);
+  const spkComments = useMemo(() => timeseries.map(r => r.comments || 0), [timeseries]);
+  const spkShares   = useMemo(() => timeseries.map(r => r.shares || 0), [timeseries]);
+  const spkLikeRate = useMemo(() => timeseries.map(r => (r.views||0) > 0 ? ((r.likes||0)/(r.views))*100 : 0), [timeseries]);
+  const spkCommentRate = useMemo(() => timeseries.map(r => (r.views||0) > 0 ? ((r.comments||0)/(r.views))*100 : 0), [timeseries]);
+  const spkShareRate = useMemo(() => timeseries.map(r => (r.views||0) > 0 ? ((r.shares||0)/(r.views))*100 : 0), [timeseries]);
+  const spkPubRate  = useMemo(() => timeseries.map(r => (r.uploaded_videos||0) > 0 ? ((r.published_posts||0)/(r.uploaded_videos))*100 : 0), [timeseries]);
+  const spkIPV      = useMemo(() => timeseries.map(r => (r.views||0) > 0 ? ((r.likes||0)+(r.comments||0)+(r.shares||0))/(r.views) : 0), [timeseries]);
+  const spkIPD      = useMemo(() => timeseries.map(r => (r.distributions||0) > 0 ? ((r.likes||0)+(r.comments||0)+(r.shares||0))/(r.distributions) : 0), [timeseries]);
 
   // ── Platform drill-down ─────────────────────────────────────────────────────
   const platformStats = useMemo(() => {
@@ -520,26 +643,73 @@ export default function UserJourneyModule({ authUser }) {
   };
 
   // ── Sensitivity analysis computations ───────────────────────────────────────
+  const uploaded   = Number(summary.uploaded_videos || 0);
+  const published  = Number(summary.published_posts || 0);
+  const distCount  = Number(summary.distributions || 0);
+
   const simViews    = totalViews    * (1 + sens.views / 100);
   const simLikes    = totalLikes    * (1 + sens.likes / 100);
   const simComments = totalComments * (1 + sens.comments / 100);
   const simShares   = totalShares   * (1 + sens.shares / 100);
-  const simUploaded = Number(summary.uploaded_videos || 0) * (1 + sens.uploaded / 100);
-  const simPublished= Number(summary.published_posts || 0) * (1 + sens.published / 100);
-  const simDist     = Number(summary.distributions || 0) * (1 + sens.distributions / 100);
+  const simUploaded = uploaded  * (1 + sens.uploaded / 100);
+  const simPublished= published * (1 + sens.published / 100);
+  const simDist     = distCount * (1 + sens.distributions / 100);
 
   const simInteract = simLikes + simComments + simShares;
   const simER       = simViews > 0 ? (simInteract / simViews) * 100 : 0;
   const simVirality = simViews > 0 ? (simShares / simViews) * 100 : 0;
   const simAvgVDist = simDist > 0 ? simViews / simDist : 0;
   const simPubRate  = simUploaded > 0 ? (simPublished / simUploaded) * 100 : 0;
+  const simLikeRate = simViews > 0 ? (simLikes / simViews) * 100 : 0;
+  const simCommentRate = simViews > 0 ? (simComments / simViews) * 100 : 0;
+  const simShareRate = simViews > 0 ? (simShares / simViews) * 100 : 0;
+  const simLikeToComment = simComments > 0 ? simLikes / simComments : 0;
+  const simCPV      = simViews > 0 ? simInteract / simViews : 0; // cost-per-view analogue
+  const simDistEfficiency = simDist > 0 ? simInteract / simDist : 0;
+  const simContentYield   = simUploaded > 0 ? simDist / simUploaded : 0;
+  const simAmplification  = simViews > 0 ? (simShares * simAvgVDist) : 0;
 
-  const origER       = totalViews > 0 ? (totalInteract / totalViews) * 100 : 0;
-  const origVirality = virality;
-  const origAvgVDist = avgViewsDist;
-  const origPubRate  = Number(summary.uploaded_videos || 0) > 0 ? (Number(summary.published_posts || 0) / Number(summary.uploaded_videos || 0)) * 100 : 0;
+  // Originals for delta display
+  const origER           = totalViews > 0 ? (totalInteract / totalViews) * 100 : 0;
+  const origVirality     = virality;
+  const origAvgVDist     = avgViewsDist;
+  const origPubRate      = uploaded > 0 ? (published / uploaded) * 100 : 0;
+  const origLikeRate     = totalViews > 0 ? (totalLikes / totalViews) * 100 : 0;
+  const origCommentRate  = totalViews > 0 ? (totalComments / totalViews) * 100 : 0;
+  const origShareRate    = totalViews > 0 ? (totalShares / totalViews) * 100 : 0;
+  const origLikeToComment = totalComments > 0 ? totalLikes / totalComments : 0;
+  const origCPV          = totalViews > 0 ? totalInteract / totalViews : 0;
+  const origDistEfficiency = distCount > 0 ? totalInteract / distCount : 0;
+  const origContentYield   = uploaded > 0 ? distCount / uploaded : 0;
+  const origAmplification  = totalViews > 0 ? (totalShares * origAvgVDist) : 0;
 
   const sensHasChanges = Object.values(sens).some(v => v !== 0);
+
+  // ── Sensitivity KPI value map (keyed by SENS_KPIS id) ──────────────────────
+  const sensKpiMap = {
+    engagementRate:  { oldVal: origER,              newVal: simER,              format: 'pct' },
+    likeRate:        { oldVal: origLikeRate,         newVal: simLikeRate,        format: 'pct' },
+    commentRate:     { oldVal: origCommentRate,      newVal: simCommentRate,     format: 'pct' },
+    shareRate:       { oldVal: origShareRate,        newVal: simShareRate,       format: 'pct' },
+    likeToComment:   { oldVal: origLikeToComment,    newVal: simLikeToComment,   format: 'ratio' },
+    virality:        { oldVal: origVirality,         newVal: simVirality,        format: 'pct' },
+    avgViewsDist:    { oldVal: origAvgVDist,         newVal: simAvgVDist,        format: 'number' },
+    amplification:   { oldVal: origAmplification,    newVal: simAmplification,   format: 'number' },
+    publishRate:     { oldVal: origPubRate,           newVal: simPubRate,         format: 'pct' },
+    contentYield:    { oldVal: origContentYield,      newVal: simContentYield,    format: 'ratio' },
+    interactPerView: { oldVal: origCPV,              newVal: simCPV,             format: 'ratio' },
+    interactPerDist: { oldVal: origDistEfficiency,    newVal: simDistEfficiency,  format: 'number' },
+  };
+
+  // Group visible sensitivity KPIs by their group
+  const visibleSensGrouped = useMemo(() => {
+    const grouped = {};
+    SENS_KPIS.filter(k => visibleSensKpis.includes(k.id)).forEach(k => {
+      if (!grouped[k.group]) grouped[k.group] = [];
+      grouped[k.group].push(k);
+    });
+    return grouped;
+  }, [visibleSensKpis]);
 
   // ── Loading / error ─────────────────────────────────────────────────────────
   if (loading) return <div className="h-full flex items-center justify-center text-sm text-neutral-500">Loading engagement metrics...</div>;
@@ -696,50 +866,164 @@ export default function UserJourneyModule({ authUser }) {
                   <h2 className="mt-1 text-2xl font-black tracking-tight">Engagement Metrics</h2>
                   <p className="mt-1 text-sm text-neutral-500">End-to-end content performance — upload to audience engagement.</p>
                 </div>
-                <GranularityPills value={granularity} onChange={setGranularity} />
+                <div className="flex items-center gap-3">
+                  <KpiToggle items={TOP_KPIS} active={visibleTopKpis} onToggle={toggleTopKpi} />
+                  <GranularityPills value={granularity} onChange={setGranularity} />
+                </div>
               </div>
 
-              {/* ── KPI Cards Row 1 ── */}
-              <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <StatCard title="VIEWS"            value={formatNumber(totalViews)}    subtitle={`${formatPct(summary.interaction_rate_pct||0)} engagement rate`} trendData={spkViews} />
-                <StatCard title="INTERACTIONS"     value={formatNumber(totalInteract)} subtitle={`${formatNumber(totalLikes)} likes · ${formatNumber(totalShares)} shares`} trendData={spkInteract} />
-                <StatCard title="ENGAGEMENT RATE"  value={`${Number(summary.interaction_rate_pct||0).toFixed(2)}%`} subtitle="(likes + comments + shares) / views" trendData={spkER} />
-                <StatCard title="VIRALITY SCORE"   value={`${virality.toFixed(2)}%`}   subtitle={`${formatNumber(totalShares)} shares total`} trendData={spkViral} />
-              </section>
+              {/* ── KPI Cards (dynamically filtered) ── */}
+              {(() => {
+                const topCardData = {
+                  // Engagement
+                  views:          { title: 'VIEWS',                  value: formatNumber(totalViews),                                        subtitle: `${formatPct(summary.interaction_rate_pct||0)} engagement rate`,                    trendData: spkViews },
+                  interactions:   { title: 'INTERACTIONS',           value: formatNumber(totalInteract),                                     subtitle: `${formatNumber(totalLikes)} likes · ${formatNumber(totalShares)} shares`,           trendData: spkInteract },
+                  er:             { title: 'ENGAGEMENT RATE',        value: `${Number(summary.interaction_rate_pct||0).toFixed(2)}%`,         subtitle: '(likes + comments + shares) / views',                                             trendData: spkER },
+                  virality:       { title: 'VIRALITY SCORE',         value: `${virality.toFixed(2)}%`,                                       subtitle: `${formatNumber(totalShares)} shares total`,                                       trendData: spkViral },
+                  likes:          { title: 'LIKES',                  value: formatNumber(totalLikes),                                        subtitle: `${formatPct(origLikeRate)} like rate`,                                            trendData: spkLikes },
+                  comments:       { title: 'COMMENTS',               value: formatNumber(totalComments),                                     subtitle: `${formatPct(origCommentRate)} comment rate`,                                      trendData: spkComments },
+                  shares:         { title: 'SHARES',                 value: formatNumber(totalShares),                                       subtitle: `${formatPct(origShareRate)} share rate`,                                          trendData: spkShares },
+                  likeRate:       { title: 'LIKE RATE',              value: `${origLikeRate.toFixed(2)}%`,                                    subtitle: 'likes / views',                                                                   trendData: spkLikeRate },
+                  commentRate:    { title: 'COMMENT RATE',           value: `${origCommentRate.toFixed(2)}%`,                                 subtitle: 'comments / views',                                                                trendData: spkCommentRate },
+                  shareRate:      { title: 'SHARE RATE',             value: `${origShareRate.toFixed(2)}%`,                                   subtitle: 'shares / views',                                                                  trendData: spkShareRate },
+                  likeToComment:  { title: 'LIKE-TO-COMMENT',        value: origLikeToComment.toFixed(1),                                     subtitle: 'likes per comment',                                                               trendData: spkLikes },
+                  // Pipeline
+                  uploaded:       { title: 'UPLOADED',               value: formatNumber(summary.uploaded_videos||0),                         subtitle: 'raw videos',                                                                      trendData: spkUploaded },
+                  published:      { title: 'PUBLISHED',              value: formatNumber(summary.published_posts||0),                         subtitle: `${formatPct(summary.publish_from_upload_pct||0)} of uploads`,                      trendData: spkPublish },
+                  distributions:  { title: 'DISTRIBUTIONS',          value: formatNumber(summary.distributions||0),                           subtitle: `${formatPct(summary.distribution_from_publish_pct||0)} from published`,            trendData: spkDist },
+                  avgvdist:       { title: 'AVG VIEWS / DIST',       value: formatNumber(Math.round(avgViewsDist)),                           subtitle: 'reach per distribution',                                                          trendData: spkAvgV },
+                  publishRate:    { title: 'PUBLISH RATE',           value: `${origPubRate.toFixed(1)}%`,                                     subtitle: 'published / uploaded',                                                            trendData: spkPubRate },
+                  distRate:       { title: 'DISTRIBUTION RATE',      value: `${Number(summary.distribution_from_publish_pct||0).toFixed(1)}%`, subtitle: 'distributed / published',                                                         trendData: spkDist },
+                  contentYield:   { title: 'CONTENT YIELD',          value: origContentYield.toFixed(2),                                      subtitle: 'distributions per upload',                                                        trendData: spkDist },
+                  // Reach & Efficiency
+                  interactPerView: { title: 'INTERACTIONS / VIEW',   value: origCPV.toFixed(2),                                               subtitle: 'engagement density',                                                              trendData: spkIPV },
+                  interactPerDist: { title: 'INTERACTIONS / DIST',   value: formatNumber(Math.round(origDistEfficiency)),                     subtitle: 'engagement per placement',                                                        trendData: spkIPD },
+                  amplification:  { title: 'AMPLIFICATION',          value: formatNumber(Math.round(origAmplification)),                      subtitle: 'shares × avg views/dist',                                                         trendData: spkShares },
+                };
+                const visible = TOP_KPIS.filter(k => visibleTopKpis.includes(k.id));
+                const cols = Math.min(visible.length, 4);
+                return visible.length > 0 && (
+                  <section className={`grid gap-4`} style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+                    {visible.map(k => {
+                      const d = topCardData[k.id];
+                      return d ? <StatCard key={k.id} {...d} /> : null;
+                    })}
+                  </section>
+                );
+              })()}
 
-              {/* ── KPI Cards Row 2 ── */}
-              <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <StatCard title="UPLOADED"         value={formatNumber(summary.uploaded_videos||0)}  subtitle="raw videos"                   trendData={spkUploaded} />
-                <StatCard title="PUBLISHED"        value={formatNumber(summary.published_posts||0)}   subtitle={`${formatPct(summary.publish_from_upload_pct||0)} of uploads`} trendData={spkPublish} />
-                <StatCard title="DISTRIBUTIONS"    value={formatNumber(summary.distributions||0)}     subtitle={`${formatPct(summary.distribution_from_publish_pct||0)} from published`} trendData={spkDist} />
-                <StatCard title="AVG VIEWS / DIST" value={formatNumber(Math.round(avgViewsDist))}     subtitle="reach per distribution"       trendData={spkAvgV} />
-              </section>
-
-              {/* ── Gauges + Insights ── */}
-              <section className="rounded-[28px] border border-neutral-800 bg-[#111111] p-6">
-                <div className="mb-6 text-xs font-bold uppercase tracking-[0.2em] text-neutral-500">Pipeline Conversion Rates</div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
-                  <div className="flex flex-wrap justify-around gap-6">
-                    <MetricGauge label="Publish Rate"      value={Number(summary.publish_from_upload_pct||0)}       max={100} note="% of uploads published" />
-                    <MetricGauge label="Distribution Rate" value={Number(summary.distribution_from_publish_pct||0)} max={100} note="% posts distributed" />
-                    <MetricGauge label="Engagement Rate"   value={Number(summary.interaction_rate_pct||0)}          max={100} note="% interactions per view" />
+              {/* ── Pipeline Conversion / Sensitivity (tabbed) ── */}
+              <section className="rounded-[28px] border border-neutral-800 bg-[#111111]">
+                {/* Sub-tabs */}
+                <div className="flex items-center justify-between border-b border-neutral-800 px-6 pt-4 pb-0">
+                  <div className="flex gap-1">
+                    <button onClick={() => setPipelineTab('conversion')}
+                      className={`px-5 py-2.5 text-sm font-semibold tracking-wide transition-colors ${pipelineTab === 'conversion' ? 'text-white border-b-2 border-red-500' : 'text-neutral-500 hover:text-neutral-300'}`}>
+                      Pipeline Conversion
+                    </button>
+                    <button onClick={() => setPipelineTab('sensitivity')}
+                      className={`px-5 py-2.5 text-sm font-semibold tracking-wide transition-colors flex items-center gap-2 ${pipelineTab === 'sensitivity' ? 'text-white border-b-2 border-red-500' : 'text-neutral-500 hover:text-neutral-300'}`}>
+                      <Zap size={14} /> Sensitivity Analysis
+                    </button>
                   </div>
-                  <div className="space-y-1 divide-y divide-neutral-800/60">
-                    {[
-                      { label: 'Top Platform by Views',  main: topByViews?.platform || '—',    sub: topByViews ? formatNumber(topByViews.views) + ' views' : '' },
-                      { label: 'Best Engagement Rate',   main: topByER?.platform || '—',       sub: topByER ? formatPct(topByER.engagement_rate_pct) + ' ER' : '' },
-                      { label: 'Top Output Type',        main: topOutput?.output_type || '—',  sub: topOutput ? formatNumber(topOutput.views_per_post) + ' views/post' : '' },
-                      { label: 'Virality',               main: `${virality.toFixed(2)}% share rate`, sub: formatNumber(totalShares) + ' shares' },
-                    ].map(({ label, main, sub }) => (
-                      <div key={label} className="flex items-center justify-between py-3">
-                        <div>
-                          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-neutral-600">{label}</div>
-                          <div className="mt-0.5 font-semibold text-white">{main}</div>
-                        </div>
-                        <div className="text-sm text-neutral-500 text-right">{sub}</div>
+                  <div className="flex items-center gap-2">
+                    {pipelineTab === 'sensitivity' && (
+                      <KpiToggle items={SENS_KPIS} active={visibleSensKpis} onToggle={toggleSensKpi} />
+                    )}
+                    {pipelineTab === 'sensitivity' && sensHasChanges && (
+                      <button onClick={() => setSens({ views: 0, likes: 0, comments: 0, shares: 0, uploaded: 0, published: 0, distributions: 0 })}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-700 text-xs font-bold text-neutral-400 hover:text-white hover:border-neutral-500 transition-colors">
+                        <RotateCcw size={12} /> Reset All
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-6">
+                  {/* ── Tab 1: Pipeline Conversion ── */}
+                  {pipelineTab === 'conversion' && (
+                    <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-8">
+                      <div className="flex flex-wrap justify-around gap-6 items-start">
+                        <MetricGauge label="Publish Rate"      value={Number(summary.publish_from_upload_pct||0)}       max={100} note="% of uploads published" />
+                        <MetricGauge label="Distribution Rate" value={Number(summary.distribution_from_publish_pct||0)} max={100} note="% posts distributed" />
+                        <MetricGauge label="Engagement Rate"   value={Number(summary.interaction_rate_pct||0)}          max={100} note="% interactions per view" />
                       </div>
-                    ))}
-                  </div>
+                      <div className="flex flex-col justify-center divide-y divide-neutral-800/60">
+                        {[
+                          { label: 'Top Platform by Views',  main: topByViews?.platform || '—',    sub: topByViews ? formatNumber(topByViews.views) + ' views' : '' },
+                          { label: 'Best Engagement Rate',   main: topByER?.platform || '—',       sub: topByER ? formatPct(topByER.engagement_rate_pct) + ' ER' : '' },
+                          { label: 'Top Output Type',        main: topOutput?.output_type || '—',  sub: topOutput ? formatNumber(topOutput.views_per_post) + ' views/post' : '' },
+                          { label: 'Virality',               main: `${virality.toFixed(2)}% share rate`, sub: formatNumber(totalShares) + ' shares' },
+                        ].map(({ label, main, sub }) => (
+                          <div key={label} className="flex items-center justify-between py-3">
+                            <div>
+                              <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-neutral-600">{label}</div>
+                              <div className="mt-0.5 font-semibold text-white">{main}</div>
+                            </div>
+                            <div className="text-sm text-neutral-500 text-right">{sub}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── Tab 2: Sensitivity Analysis ── */}
+                  {pipelineTab === 'sensitivity' && (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                      {/* Sliders */}
+                      <div className="space-y-5">
+                        <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-600 mb-3">Adjust Inputs</div>
+                        <SensSlider label="Views" value={sens.views} onChange={(v) => updateSens('views', v)}
+                          icon={<div className="w-2.5 h-2.5 rounded-full bg-red-500" />} />
+                        <SensSlider label="Likes" value={sens.likes} onChange={(v) => updateSens('likes', v)}
+                          icon={<div className="w-2.5 h-2.5 rounded-full bg-red-400" />} />
+                        <SensSlider label="Comments" value={sens.comments} onChange={(v) => updateSens('comments', v)}
+                          icon={<div className="w-2.5 h-2.5 rounded-full bg-neutral-400" />} />
+                        <SensSlider label="Shares" value={sens.shares} onChange={(v) => updateSens('shares', v)}
+                          icon={<div className="w-2.5 h-2.5 rounded-full bg-neutral-500" />} />
+                        <div className="border-t border-neutral-800/40 pt-4" />
+                        <SensSlider label="Uploaded Videos" value={sens.uploaded} onChange={(v) => updateSens('uploaded', v)}
+                          icon={<div className="w-2.5 h-2.5 rounded-full bg-blue-400" />} />
+                        <SensSlider label="Published Posts" value={sens.published} onChange={(v) => updateSens('published', v)}
+                          icon={<div className="w-2.5 h-2.5 rounded-full bg-emerald-400" />} />
+                        <SensSlider label="Distributions" value={sens.distributions} onChange={(v) => updateSens('distributions', v)}
+                          icon={<div className="w-2.5 h-2.5 rounded-full bg-amber-400" />} />
+                      </div>
+
+                      {/* Cascading effects — dynamic grouped KPIs */}
+                      <div className="space-y-4">
+                        {Object.entries(visibleSensGrouped).map(([group, kpis]) => (
+                          <div key={group}>
+                            <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-600 mb-2">{SENS_GROUPS[group]}</div>
+                            <div className="rounded-xl border border-neutral-800 bg-[#0d0d0d] p-4">
+                              {kpis.map(k => {
+                                const v = sensKpiMap[k.id];
+                                return v ? <EffectRow key={k.id} label={k.label} oldVal={v.oldVal} newVal={v.newVal} format={v.format} /> : null;
+                              })}
+                            </div>
+                          </div>
+                        ))}
+
+                        {/* Simulated Totals — always shown */}
+                        <div>
+                          <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-600 mb-2">Simulated Totals</div>
+                          <div className="rounded-xl border border-neutral-800 bg-[#0d0d0d] p-4">
+                            <div className="grid grid-cols-2 gap-4">
+                              {[
+                                ['Views', simViews], ['Likes', simLikes],
+                                ['Comments', simComments], ['Shares', simShares],
+                              ].map(([label, val]) => (
+                                <div key={label} className="text-center py-1">
+                                  <div className="text-xl font-black text-white">{formatNumber(Math.round(val))}</div>
+                                  <div className="text-xs text-neutral-500 uppercase">{label}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </section>
             </>
@@ -950,86 +1234,7 @@ export default function UserJourneyModule({ authUser }) {
                 </div>
               </section>
 
-              {/* ═══════════════════════════════════════════════════════════════
-                  SENSITIVITY ANALYSIS
-                 ═══════════════════════════════════════════════════════════════ */}
-              <section className="rounded-[28px] border border-neutral-800 bg-[#111111] p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-red-500/20 to-amber-500/20 border border-red-500/20">
-                      <Zap size={18} className="text-red-400" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-400">Sensitivity Analysis</div>
-                      <div className="text-[10px] text-neutral-600 mt-0.5">Adjust inputs to see cascading effects on KPIs</div>
-                    </div>
-                  </div>
-                  {sensHasChanges && (
-                    <button onClick={() => setSens({ views: 0, likes: 0, comments: 0, shares: 0, uploaded: 0, published: 0, distributions: 0 })}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-700 text-xs font-bold text-neutral-400 hover:text-white hover:border-neutral-500 transition-colors">
-                      <RotateCcw size={12} /> Reset All
-                    </button>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  {/* Sliders */}
-                  <div className="space-y-5">
-                    <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-600 mb-2">Adjust Inputs</div>
-                    <SensSlider label="Views" value={sens.views} onChange={(v) => updateSens('views', v)}
-                      icon={<div className="w-2 h-2 rounded-full bg-red-500" />} />
-                    <SensSlider label="Likes" value={sens.likes} onChange={(v) => updateSens('likes', v)}
-                      icon={<div className="w-2 h-2 rounded-full bg-red-400" />} />
-                    <SensSlider label="Comments" value={sens.comments} onChange={(v) => updateSens('comments', v)}
-                      icon={<div className="w-2 h-2 rounded-full bg-neutral-400" />} />
-                    <SensSlider label="Shares" value={sens.shares} onChange={(v) => updateSens('shares', v)}
-                      icon={<div className="w-2 h-2 rounded-full bg-neutral-500" />} />
-                    <div className="border-t border-neutral-800/40 pt-4" />
-                    <SensSlider label="Uploaded Videos" value={sens.uploaded} onChange={(v) => updateSens('uploaded', v)}
-                      icon={<div className="w-2 h-2 rounded-full bg-blue-400" />} />
-                    <SensSlider label="Published Posts" value={sens.published} onChange={(v) => updateSens('published', v)}
-                      icon={<div className="w-2 h-2 rounded-full bg-emerald-400" />} />
-                    <SensSlider label="Distributions" value={sens.distributions} onChange={(v) => updateSens('distributions', v)}
-                      icon={<div className="w-2 h-2 rounded-full bg-amber-400" />} />
-                  </div>
-
-                  {/* Cascading effects */}
-                  <div>
-                    <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-600 mb-2">Cascading Effects</div>
-                    <div className="rounded-xl border border-neutral-800 bg-[#0d0d0d] p-4">
-                      {!sensHasChanges ? (
-                        <div className="flex flex-col items-center justify-center py-8 text-center">
-                          <Zap size={28} className="text-neutral-800 mb-3" />
-                          <div className="text-sm text-neutral-500">Move the sliders to explore</div>
-                          <div className="text-xs text-neutral-600 mt-1">See how changes propagate across your KPIs</div>
-                        </div>
-                      ) : (
-                        <div className="space-y-0">
-                          <EffectRow label="Engagement Rate" oldVal={origER} newVal={simER} format="pct" />
-                          <EffectRow label="Virality Score" oldVal={origVirality} newVal={simVirality} format="pct" />
-                          <EffectRow label="Total Interactions" oldVal={totalInteract} newVal={simInteract} />
-                          <EffectRow label="Avg Views / Distribution" oldVal={origAvgVDist} newVal={simAvgVDist} />
-                          <EffectRow label="Publish Rate" oldVal={origPubRate} newVal={simPubRate} format="pct" />
-                          <div className="border-t border-neutral-700/40 mt-3 pt-3">
-                            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-600 mb-2">Simulated Totals</div>
-                            <div className="grid grid-cols-2 gap-3">
-                              {[
-                                ['Views', simViews], ['Likes', simLikes],
-                                ['Comments', simComments], ['Shares', simShares],
-                              ].map(([label, val]) => (
-                                <div key={label} className="text-center">
-                                  <div className="text-lg font-black text-white">{formatNumber(Math.round(val))}</div>
-                                  <div className="text-[10px] text-neutral-500 uppercase">{label}</div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </section>
+              {/* Old standalone sensitivity section removed — merged into pipeline tab above */}
             </>
           )}
         </div>
