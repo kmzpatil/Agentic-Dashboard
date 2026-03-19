@@ -13,6 +13,7 @@ import {
   groupSmallLinks,
   makeSankeyOptions,
   MAX_BREAKDOWN_SOURCES,
+  normalizeStageSankeyLinks,
   normalizeSankeyLinks,
 } from './utils/funnelFlow';
 
@@ -101,7 +102,7 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
     navigate(next);
   };
 
-  const stageLinks = useMemo(() => normalizeSankeyLinks(data?.sankeyLinks || []), [data?.sankeyLinks]);
+  const stageLinks = useMemo(() => normalizeStageSankeyLinks(data?.sankeyLinks || []), [data?.sankeyLinks]);
   const showAllCompositionSources = compositionSourceMode === 'all';
   const publishedPlatformTailLinks = useMemo(() => (
     (data?.compositionLinks || [])
@@ -180,18 +181,97 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
     return priority;
   }, [compositionLinks]);
 
-  const stageSankeyData = useMemo(() => ({
-    datasets: [{
-      data: stageLinks,
-      colorFrom: '#64748b',
-      colorTo: '#22c55e',
-      colorMode: 'gradient',
-      borderColor: 'rgba(0, 0, 0, 0)',
-      borderWidth: 0,
-      nodeWidth: 20,
-      nodePadding: 30,
-    }],
-  }), [stageLinks]);
+  const stageColumn = useMemo(() => {
+    if (!stageLinks.length) return undefined;
+    const column = {};
+    stageLinks.forEach((item) => {
+      const from = String(item?.from || '');
+      const to = String(item?.to || '');
+      if (!from || !to) return;
+
+      const toLower = to.toLowerCase();
+      const fromLower = from.toLowerCase();
+      const isPublishNode = toLower === 'published' || toLower === 'not published';
+      const isNotProcessedNode = toLower === 'not processed';
+      const fromIsNotProcessedNode = fromLower === 'not processed';
+
+      // Assign columns to ensure each stage has its own column
+      if (from === 'Uploaded') column[from] = 0;
+      else if (from === 'Processed') column[from] = 1;
+      else if (from === 'Asset Expansion') column[from] = 1;
+      else if (fromIsNotProcessedNode) column[from] = 1;
+      else if (from === 'Created') column[from] = 2;
+      else if (isPublishNode) column[from] = 3;
+      else if (from === 'Cross-post Expansion') column[from] = 3;
+      else if (from === 'Platform posts') column[from] = 4;
+
+      if (to === 'Processed') column[to] = 1;
+      else if (to === 'Asset Expansion') column[to] = 1;
+      else if (isNotProcessedNode) column[to] = 1;
+      else if (to === 'Created') column[to] = 2;
+      else if (isPublishNode) column[to] = 3;
+      else if (to === 'Cross-post Expansion') column[to] = 3;
+      else if (to === 'Platform posts') column[to] = 4;
+    });
+    return column;
+  }, [stageLinks]);
+
+  const stagePriority = useMemo(() => {
+    if (!stageLinks.length) return undefined;
+    const priority = {};
+    stageLinks.forEach((item) => {
+      const from = String(item?.from || '');
+      const to = String(item?.to || '');
+      const resolvePriority = (node) => {
+        if (node === 'Processed') return -10;
+        if (node === 'Not Processed') return 40;
+        if (node === 'Published') return -100;
+        if (node === 'Not Published') return -50;
+        if (node === 'Asset Expansion') return 10;
+        if (node === 'Cross-post Expansion') return -75;
+        if (node === 'Platform posts') return 100;
+        return 0;
+      };
+      if (from && priority[from] === undefined) priority[from] = resolvePriority(from);
+      if (to && priority[to] === undefined) priority[to] = resolvePriority(to);
+    });
+    return priority;
+  }, [stageLinks]);
+
+  const stageSankeyData = useMemo(() => {
+    const isExpansionEdge = (raw) => {
+      const edgeType = String(raw?.edgeType || '');
+      return edgeType === 'asset_expansion_to_created' || edgeType === 'cross_post_expansion_to_platform';
+    };
+
+    const stageColorFrom = (context) => {
+      const raw = context?.raw || {};
+      if (isExpansionEdge(raw)) return 'rgba(100, 116, 139, 0.22)';
+      return '#64748b';
+    };
+
+    const stageColorTo = (context) => {
+      const raw = context?.raw || {};
+      if (isExpansionEdge(raw)) return 'rgba(148, 163, 184, 0.36)';
+      return '#22c55e';
+    };
+
+    return {
+      datasets: [{
+        data: stageLinks,
+        column: stageColumn,
+        priority: stagePriority,
+        size: 'min',
+        colorFrom: stageColorFrom,
+        colorTo: stageColorTo,
+        colorMode: 'gradient',
+        borderColor: 'rgba(0, 0, 0, 0)',
+        borderWidth: 0,
+        nodeWidth: 20,
+        nodePadding: 30,
+      }],
+    };
+  }, [stageLinks, stageColumn, stagePriority]);
 
   const compositionNodeLabels = useMemo(() => {
     if (hiddenBreakdownSources > 0) {
@@ -205,6 +285,7 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
       data: compositionLinks,
       column: compositionColumn,
       priority: compositionPriority,
+      size: 'min',
       labels: compositionNodeLabels,
       colorFrom: '#f59e0b',
       colorTo: '#ef4444',
@@ -253,13 +334,25 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
   const hasActive = Object.values(effectiveFilters).some(Boolean);
 
   return (
-    <div className="h-full overflow-y-auto bg-[#050505]">
+    <div className="h-full overflow-y-auto bg-[#050505] frammer-scrollbar">
+      <style>{`
+        .frammer-scrollbar::-webkit-scrollbar,
+        .frammer-anomaly-scroll::-webkit-scrollbar { width: 4px; height: 4px; }
+        .frammer-scrollbar::-webkit-scrollbar-track,
+        .frammer-anomaly-scroll::-webkit-scrollbar-track { background: transparent; }
+        .frammer-scrollbar::-webkit-scrollbar-thumb,
+        .frammer-anomaly-scroll::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 9999px; }
+        .frammer-scrollbar::-webkit-scrollbar-thumb:hover,
+        .frammer-anomaly-scroll::-webkit-scrollbar-thumb:hover { background: #ef4444; }
+        .frammer-scrollbar, .frammer-anomaly-scroll { scrollbar-width: thin; scrollbar-color: #2a2a2a transparent; }
+        .frammer-scrollbar:hover, .frammer-anomaly-scroll:hover { scrollbar-color: #ef4444 transparent; }
+      `}</style>
       {/* Ambient glow blob */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
         <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[700px] h-[340px] rounded-full bg-violet-600/5 blur-[120px]" />
       </div>
 
-      <div className="relative mx-auto w-full max-w-[1440px] px-6 pt-6 pb-12 space-y-9">
+      <div className="relative mx-auto w-full max-w-[1440px] px-6 pt-5 pb-8 space-y-6">
 
         {/* ── Filter bar ── */}
         <FunnelFilterBar
@@ -277,15 +370,15 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
           <>
             {/* ── Tabs ── */}
             <div>
-              <div className="flex items-center gap-3 mb-5">
-                <span className="text-[9.5px] font-bold uppercase tracking-[0.2em] text-neutral-600">Views</span>
-                <div className="flex gap-1">
+              <div className="flex items-center gap-3 mb-4">
+                <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-neutral-500">Views</span>
+                <div className="flex gap-1.5">
                   {ANALYSIS_TABS.map((tab) => (
                     <button
                       key={tab.id}
                       onClick={() => setAnalysisTab(tab.id)}
                       className={[
-                        'relative px-3.5 py-1.5 rounded-full text-[11.5px] font-semibold transition-all duration-150',
+                        'relative px-3 py-1.5 rounded-full text-[12.5px] font-semibold transition-all duration-150',
                         analysisTab === tab.id
                           ? 'text-white'
                           : 'text-neutral-600 hover:text-neutral-300',
@@ -300,7 +393,7 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
                 </div>
                 <div className="flex-1 h-px bg-neutral-900" />
                 {hasActive && (
-                  <span className="text-[10px] text-violet-400 font-medium">Filtered</span>
+                  <span className="text-[11px] text-violet-400 font-medium">Filtered</span>
                 )}
               </div>
 

@@ -12,28 +12,82 @@ const ALL_VIEW_BY = [
   { label: 'Team',       value: 'team',      roles: ['website_admin', 'client_admin'] },
 ];
 
-/* Select styled as minimal underline with explicit dark background so the
-   browser dropdown list doesn't pop up white. */
-const selClass = [
-  'border-0 border-b border-neutral-800',
-  'bg-[#050505]',           /* same as page bg — prevents white flash */
-  'pl-0 pr-5 py-1',
-  'text-[12px] font-medium text-neutral-300',
-  'outline-none appearance-none cursor-pointer',
-  'hover:text-white hover:border-neutral-600 transition-colors',
-].join(' ');
+function FilterSelect({ label, value, options, onChange, disabled }) {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef(null);
 
-const CHEVRON = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='5'%3E%3Cpath d='M1 1l3.5 3L8 1' stroke='%23525252' stroke-width='1.3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E\")";
-const selStyle = { backgroundImage: CHEVRON, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 2px center' };
+  React.useEffect(() => {
+    if (!open) return undefined;
+    const handleClickOutside = (event) => {
+      if (ref.current && !ref.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [open]);
 
-/* Inline label + select pair */
-function FilterSelect({ label, value, onChange, children, disabled }) {
+  const selectedLabel = React.useMemo(() => {
+    const selected = options.find((item) => item.value === value);
+    return selected ? selected.label : 'All';
+  }, [options, value]);
+
+  const handleSelect = (nextValue) => {
+    onChange(nextValue);
+    setOpen(false);
+  };
+
   return (
-    <div className={`flex flex-col gap-0.5 ${disabled ? 'opacity-35 pointer-events-none' : ''}`}>
-      <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-neutral-600 select-none">{label}</span>
-      <select className={selClass} style={selStyle} value={value} onChange={onChange} disabled={disabled}>
-        {children}
-      </select>
+    <div ref={ref} className={`relative w-[100px] xl:w-[108px] 2xl:w-[116px] shrink-0 ${disabled ? 'opacity-45' : ''}`}>
+      <span className="mb-0.5 block text-[9px] font-semibold uppercase tracking-[0.1em] text-neutral-600 select-none">{label}</span>
+      <button
+        type="button"
+        onClick={() => { if (!disabled) setOpen((prev) => !prev); }}
+        disabled={disabled}
+        className={[
+          'w-full h-[30px] rounded-lg border px-2.5',
+          'flex items-center justify-between gap-2',
+          'text-[12px] font-medium transition-colors',
+          disabled
+            ? 'border-neutral-800 bg-[#0b0b0b] text-neutral-600 cursor-not-allowed'
+            : 'border-neutral-800 bg-[#0b0b0b] text-neutral-200 hover:border-neutral-700 hover:bg-[#111111]',
+        ].join(' ')}
+      >
+        <span className="truncate text-left">{selectedLabel}</span>
+        <svg
+          width="10"
+          height="6"
+          viewBox="0 0 10 6"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          className={`shrink-0 transition-transform ${open ? 'rotate-180 text-red-400' : 'text-neutral-500'}`}
+        >
+          <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+        </svg>
+      </button>
+
+      {open && !disabled && (
+        <div className="absolute left-0 right-0 mt-2 z-50 rounded-xl border border-neutral-800 bg-[#0f0f0f] shadow-[0_18px_40px_rgba(0,0,0,0.45)] p-1 max-h-[260px] overflow-y-auto frammer-anomaly-scroll">
+          {options.map((item) => {
+            const active = item.value === value;
+            return (
+              <button
+                key={item.value || 'all'}
+                type="button"
+                onClick={() => handleSelect(item.value)}
+                className={[
+                  'w-full rounded-lg px-2 py-1.5 text-left text-[12px] transition-colors',
+                  active
+                    ? 'bg-red-500/12 text-red-300'
+                    : 'text-neutral-300 hover:bg-neutral-800 hover:text-white',
+                ].join(' ')}
+              >
+                <span className="truncate block">{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -53,17 +107,20 @@ export default function FunnelFilterBar({ authUser, breakdown, filters, onBreakd
   const clear  = (key)        => onFiltersChange({ ...filters, [key]: '' });
   const reset  = ()           => onFiltersChange({ client: '', input_type: '', language: '', channel: '', user: '', team: '' });
 
-  const active = Object.entries(filters).filter(([, v]) => v);
+  const FILTER_ORDER = ['client', 'channel', 'input_type', 'user', 'team', 'language'];
+  const active = FILTER_ORDER
+    .filter((key) => filters[key])
+    .map((key) => [key, filters[key]]);
 
   return (
-    <div className="pb-4 border-b border-neutral-900 space-y-2.5">
+    <div className="pb-3 border-b border-neutral-900 space-y-2">
       {/* Row 1 */}
-      <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
+      <div className="flex flex-nowrap items-end gap-3">
 
         {/* View By */}
-        <div className="flex items-center gap-2">
-          <span className="text-[9.5px] font-bold uppercase tracking-[0.18em] text-neutral-600 select-none shrink-0">View by</span>
-          <div className="flex gap-0.5">
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-neutral-500 select-none shrink-0">View by</span>
+          <div className="flex gap-0.5 shrink-0">
             {allowedViewBy.map((item) => {
               const on = breakdown === item.value;
               return (
@@ -71,7 +128,7 @@ export default function FunnelFilterBar({ authUser, breakdown, filters, onBreakd
                   key={item.value}
                   onClick={() => onBreakdownChange(item.value)}
                   className={[
-                    'relative px-3 py-1 rounded-full text-[11px] font-semibold transition-all duration-150',
+                    'relative px-2.5 py-1 rounded-full text-[12px] font-semibold transition-all duration-150',
                     on ? 'text-white' : 'text-neutral-500 hover:text-neutral-300',
                   ].join(' ')}
                 >
@@ -85,51 +142,89 @@ export default function FunnelFilterBar({ authUser, breakdown, filters, onBreakd
 
         <div className="h-4 w-px bg-neutral-800 shrink-0" />
 
-        {/* Dropdowns */}
-        <FilterSelect label="Input type" value={filters.input_type || ''} onChange={(e) => update('input_type', e.target.value)} disabled={filtersDisabled}>
-          <option value="">All</option>
-          {options.input_types.map((v) => <option key={v} value={v}>{v}</option>)}
-        </FilterSelect>
+        <div className="flex flex-nowrap items-end gap-1.5 flex-1 min-w-0">
 
-        <FilterSelect label="Language" value={filters.language || ''} onChange={(e) => update('language', e.target.value)} disabled={filtersDisabled}>
-          <option value="">All</option>
-          {options.languages.map((v) => <option key={v} value={v}>{v}</option>)}
-        </FilterSelect>
-
-        <FilterSelect label="Channel" value={filters.channel || ''} onChange={(e) => update('channel', e.target.value)} disabled={filtersDisabled}>
-          <option value="">All</option>
-          {(options.channels || []).map((v) => <option key={v} value={v}>{v}</option>)}
-        </FilterSelect>
-
+        {/* Dropdowns (ordered to match View by) */}
         {isAdmin && (
-          <FilterSelect label="Client" value={filters.client || ''} onChange={(e) => update('client', e.target.value)} disabled={filtersDisabled}>
-            <option value="">All</option>
-            {options.clients.map((v) => <option key={v} value={v}>{v}</option>)}
-          </FilterSelect>
+          <FilterSelect
+            label="Client"
+            value={filters.client || ''}
+            onChange={(next) => update('client', next)}
+            disabled={filtersDisabled}
+            options={[
+              { label: 'All', value: '' },
+              ...options.clients.map((v) => ({ label: v, value: v })),
+            ]}
+          />
+        )}
+
+        <FilterSelect
+          label="Channel"
+          value={filters.channel || ''}
+          onChange={(next) => update('channel', next)}
+          disabled={filtersDisabled}
+          options={[
+            { label: 'All', value: '' },
+            ...(options.channels || []).map((v) => ({ label: v, value: v })),
+          ]}
+        />
+
+        <FilterSelect
+          label="Input type"
+          value={filters.input_type || ''}
+          onChange={(next) => update('input_type', next)}
+          disabled={filtersDisabled}
+          options={[
+            { label: 'All', value: '' },
+            ...options.input_types.map((v) => ({ label: v, value: v })),
+          ]}
+        />
+
+        {isAdminOrClientAdmin && (
+          <FilterSelect
+            label="User"
+            value={filters.user || ''}
+            onChange={(next) => update('user', next)}
+            disabled={filtersDisabled}
+            options={[
+              { label: 'All', value: '' },
+              ...(options.users || []).map((v) => ({ label: v, value: v })),
+            ]}
+          />
         )}
 
         {isAdminOrClientAdmin && (
-          <FilterSelect label="User" value={filters.user || ''} onChange={(e) => update('user', e.target.value)} disabled={filtersDisabled}>
-            <option value="">All</option>
-            {(options.users || []).map((v) => <option key={v} value={v}>{v}</option>)}
-          </FilterSelect>
+          <FilterSelect
+            label="Team"
+            value={filters.team || ''}
+            onChange={(next) => update('team', next)}
+            disabled={filtersDisabled}
+            options={[
+              { label: 'All', value: '' },
+              ...(options.teams || []).map((v) => ({ label: v, value: v })),
+            ]}
+          />
         )}
 
-        {isAdminOrClientAdmin && (
-          <FilterSelect label="Team" value={filters.team || ''} onChange={(e) => update('team', e.target.value)} disabled={filtersDisabled}>
-            <option value="">All</option>
-            {(options.teams || []).map((v) => <option key={v} value={v}>{v}</option>)}
-          </FilterSelect>
-        )}
+        <FilterSelect
+          label="Language"
+          value={filters.language || ''}
+          onChange={(next) => update('language', next)}
+          disabled={filtersDisabled}
+          options={[
+            { label: 'All', value: '' },
+            ...options.languages.map((v) => ({ label: v, value: v })),
+          ]}
+        />
 
-        <div className="flex-1" />
+        </div>
 
-        <span className="text-[9.5px] font-semibold tracking-wide text-neutral-700 uppercase shrink-0 self-center">
+        <span className="text-[11px] font-semibold tracking-wide text-neutral-600 uppercase shrink-0 self-center whitespace-nowrap">
           {role.replace(/_/g, ' ')}
         </span>
 
         {active.length > 0 && (
-          <button onClick={reset} className="text-[10.5px] font-medium text-neutral-600 hover:text-neutral-300 transition-colors underline underline-offset-2 self-center">
+          <button onClick={reset} className="text-[12px] font-medium text-neutral-500 hover:text-neutral-200 transition-colors underline underline-offset-2 self-center">
             Reset
           </button>
         )}

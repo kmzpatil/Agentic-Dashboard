@@ -2,6 +2,8 @@ import json
 import unittest
 from unittest.mock import patch
 
+from fastapi import HTTPException
+
 from backend.middleware.auth import AuthContext
 from backend.queries.analytics_shared import build_access_filter
 from backend.queries.funnel_queries import (
@@ -142,6 +144,98 @@ class FunnelHardeningTests(unittest.TestCase):
 
         self.assertEqual(payload["channelEfficiency"][0]["client_name"], None)
         self.assertEqual(payload["absoluteWasteTopChannels"][0]["client_name"], None)
+
+    def test_video_details_returns_relevant_header_and_assets(self):
+        auth = AuthContext(
+            auth_user_id="auth-3",
+            username="client-admin",
+            role="client_admin",
+            client_name="Client A",
+            user_id=12,
+        )
+
+        def query_side_effect(sql, params):
+            if sql == "HEADER":
+                self.assertEqual(params, [321, "Client A", "EN"])
+                return _MockResult([{
+                    "video_id": 321,
+                    "headline": "Test headline",
+                    "input_type": "Podcast",
+                    "language": "EN",
+                    "channels": ["Channel One"],
+                    "uploaded_duration": 120,
+                }])
+            if sql == "ASSETS":
+                self.assertEqual(params, [321, "Client A", "EN"])
+                return _MockResult([{
+                    "asset_id": 9001,
+                    "output_type": "Short",
+                    "created_duration": 45,
+                    "post_id": 555,
+                    "platforms": ["YouTube", "Instagram"],
+                }])
+            raise AssertionError(f"Unexpected SQL key in test: {sql}")
+
+        with (
+            patch.object(
+                funnel_routes,
+                "build_funnel_filter",
+                return_value={"join": "", "predicates": [], "params": ["Client A", "EN"], "next_index": 4},
+            ) as build_filter_mock,
+            patch.object(funnel_routes, "get_video_header_query", return_value="HEADER"),
+            patch.object(funnel_routes, "get_video_assets_query", return_value="ASSETS"),
+            patch.object(funnel_routes, "query", side_effect=query_side_effect),
+        ):
+            payload = funnel_routes.get_video_details(
+                video_id=321,
+                auth=auth,
+                client="Client A",
+                language="EN",
+            )
+
+        build_filter_mock.assert_called_once_with({"client": "Client A", "language": "EN"}, 2, auth)
+        self.assertEqual(payload["video"]["video_id"], 321)
+        self.assertEqual(payload["video"]["language"], "EN")
+        self.assertEqual(len(payload["assets"]), 1)
+        self.assertEqual(payload["assets"][0]["asset_id"], 9001)
+
+    def test_video_details_returns_404_when_video_not_in_scope(self):
+        auth = AuthContext(
+            auth_user_id="auth-4",
+            username="admin",
+            role="website_admin",
+            client_name=None,
+            user_id=None,
+        )
+
+        with (
+            patch.object(
+                funnel_routes,
+                "build_funnel_filter",
+                return_value={"join": "", "predicates": [], "params": [], "next_index": 2},
+            ),
+            patch.object(funnel_routes, "get_video_header_query", return_value="HEADER"),
+            patch.object(funnel_routes, "query", return_value=_MockResult([])),
+        ):
+            response = funnel_routes.get_video_details(video_id=999, auth=auth)
+
+        self.assertEqual(response.status_code, 404)
+        payload = json.loads(response.body.decode("utf-8"))
+        self.assertEqual(payload["error"], "Video not found")
+
+    def test_video_details_forbidden_for_user_role(self):
+        auth = AuthContext(
+            auth_user_id="auth-5",
+            username="scoped-user",
+            role="user",
+            client_name=None,
+            user_id=77,
+        )
+
+        with self.assertRaises(HTTPException) as context:
+            funnel_routes.get_video_details(video_id=77, auth=auth)
+
+        self.assertEqual(context.exception.status_code, 403)
 
 
 if __name__ == "__main__":
