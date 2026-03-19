@@ -26,7 +26,6 @@ import {
   Users,
   Globe,
   Filter,
-  ArrowRight,
   Play,
   Calendar,
 } from "lucide-react";
@@ -635,6 +634,7 @@ export default function UsageTrendsModule({
   const [showComparison, setShowComparison] = useState(false);
   const [comparisonOffset, setComparisonOffset] = useState(1);
   const chartRef = useRef(null);
+  const stlSectionRef = useRef(null);
   // Always-current anomaly lookup for use inside tooltip callbacks (avoids stale closure)
   const anomalyLookupRef = useRef(new Map());
 
@@ -796,14 +796,6 @@ export default function UsageTrendsModule({
     });
   }, []);
 
-  const handleApplyMultiDimFilters = () => {
-    applyMultiDimFilters({
-      company: clientFilter,
-      user: userFilter,
-      dateFrom: sliderDates[multiDimStartIndex] || "",
-      dateTo: sliderDates[multiDimEndIndex] || "",
-    });
-  };
 
   useEffect(() => {
     if (!sliderDates.length) return;
@@ -1213,13 +1205,20 @@ export default function UsageTrendsModule({
     ];
 
     if (isPredicting && predictionSeries.length > 0) {
+      // Bridge: include last history value at the cutoff so the forecast line
+      // starts exactly where the history line ends (no visual gap).
+      const bridgePredByDate = new Map(predictionByDate);
+      const bridgeDate = resolvedCutoff;
+      if (bridgeDate && historyByDate.has(bridgeDate) && !bridgePredByDate.has(bridgeDate)) {
+        bridgePredByDate.set(bridgeDate, historyByDate.get(bridgeDate));
+      }
       datasets.push({
         label: cutoffDate
           ? `Forecast (from ${cutoffDate})`
           : resolvedCutoff
             ? `Forecast (from ${resolvedCutoff})`
             : "Forecast",
-        data: labels.map((l) => predictionByDate.has(l) ? predictionByDate.get(l) : null),
+        data: labels.map((l) => bridgePredByDate.has(l) ? bridgePredByDate.get(l) : null),
         borderColor: "#38BDF8",
         backgroundColor: "rgba(56, 189, 248, 0.08)",
         borderWidth: 2,
@@ -1474,8 +1473,17 @@ export default function UsageTrendsModule({
       className={`h-full overflow-y-auto bg-[#050505] px-4 md:px-8 text-neutral-200 frammer-scrollbar ${isMaximized ? "fixed inset-0 z-50 overflow-hidden !p-8 bg-[#0a0a0a]" : "space-y-8"
         }`}
     >
-      {/* ── Custom scrollbar styles ── */}
+      {/* ── Custom scrollbar + forecast animation styles ── */}
       <style>{`
+          @keyframes chronosDot {
+            0%, 100% { transform: translateY(0); opacity: 0.4; }
+            50% { transform: translateY(-6px); opacity: 1; }
+          }
+          @keyframes forecastReveal {
+            0%   { opacity: 0.9; box-shadow: 0 0 0 0 rgba(56,189,248,0.5); }
+            40%  { opacity: 1;   box-shadow: 0 0 0 6px rgba(56,189,248,0.25); }
+            100% { opacity: 0;   box-shadow: 0 0 0 12px rgba(56,189,248,0); }
+          }
           .frammer-scrollbar::-webkit-scrollbar,
           .frammer-anomaly-scroll::-webkit-scrollbar { width: 4px; }
           .frammer-scrollbar::-webkit-scrollbar-track,
@@ -2066,15 +2074,23 @@ export default function UsageTrendsModule({
                 <ImageIcon size={18} />
               </button>
               <button
-                onClick={() => setShowStl(!showStl)}
-                className={`transition-colors ${
+                onClick={() => {
+                  const next = !showStl;
+                  setShowStl(next);
+                  if (next) {
+                    setTimeout(() => {
+                      stlSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }, 80);
+                  }
+                }}
+                className={`rounded-md px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.15em] transition-all border ${
                   showStl
-                    ? "text-amber-400 hover:text-amber-300"
-                    : "text-neutral-400 hover:text-white"
+                    ? "border-amber-500/40 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
+                    : "border-neutral-700 bg-transparent text-neutral-400 hover:border-neutral-500 hover:text-white"
                 }`}
                 title="Toggle STL Decomposition"
               >
-                <Layers size={18} />
+                STL
               </button>
               <div className="mx-1 h-5 w-px bg-neutral-800" />
               <button
@@ -2093,20 +2109,40 @@ export default function UsageTrendsModule({
 
           {/* Chart body — flex-1 fills all remaining height */}
           <div className="flex-1 min-h-0 p-6 flex flex-col">
-            <div className="flex-1 min-h-0 w-full">
+            <div className="relative flex-1 min-h-0 w-full">
               <Line
-                key={`trend-chart-${isMaximized ? "max" : "normal"}`}
+                key={`trend-chart-${isMaximized ? "max" : "normal"}-${isPredicting && predictionSeries.length > 0 ? predictionSeries[0]?.period : 'base'}`}
                 ref={chartRef}
                 data={chartData}
                 options={chartOptions}
               />
+
+              {/* ── Forecast loading overlay ── */}
+              {isPredicting && prediction.loading && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center rounded-2xl bg-[#050505]/75 backdrop-blur-[2px] z-10">
+                  <div className="flex gap-2 mb-4">
+                    {[0, 1, 2, 3, 4].map((i) => (
+                      <span
+                        key={i}
+                        className="block w-2 h-2 rounded-full bg-sky-400"
+                        style={{ animation: `chronosDot 1.2s ease-in-out ${i * 0.18}s infinite` }}
+                      />
+                    ))}
+                  </div>
+                  <p className="text-xs font-black uppercase tracking-[0.25em] text-sky-400">Chronos Computing</p>
+                  <p className="mt-1 text-[10px] text-neutral-500 tracking-wide">AI forecast model running…</p>
+                </div>
+              )}
+
+              {/* ── Forecast loaded flash ── */}
+              {isPredicting && !prediction.loading && predictionSeries.length > 0 && (
+                <div
+                  key={predictionSeries[0]?.period}
+                  className="pointer-events-none absolute inset-0 rounded-2xl border border-sky-500/30"
+                  style={{ animation: 'forecastReveal 1.2s ease-out forwards' }}
+                />
+              )}
             </div>
-            {isPredicting && prediction.loading && (
-              <div className="flex-shrink-0 mt-3 flex items-center gap-2 text-xs text-sky-400/70">
-                <span className="inline-block h-3 w-3 rounded-full border border-sky-400 border-t-transparent animate-spin" />
-                Loading forecast…
-              </div>
-            )}
           </div>
         </div>
 
@@ -2204,13 +2240,36 @@ export default function UsageTrendsModule({
       </section>
 
       {showStl && !isMaximized && (
-        <section className="rounded-[24px] border border-neutral-800/80 bg-[#101010]/80 backdrop-blur-md p-6 shadow-xl transition-all duration-300 hover:border-neutral-700/80">
-          <div className="mb-4 flex items-center gap-2">
-            <Layers size={16} className="text-amber-400" />
-            <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-300">
-              STL Decomposition
-            </h3>
+        <section ref={stlSectionRef} className="rounded-[24px] border border-neutral-800/80 bg-[#101010]/80 backdrop-blur-md p-6 shadow-xl transition-all duration-300 hover:border-neutral-700/80">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Layers size={16} className="text-amber-400" />
+              <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-300">
+                STL Decomposition
+              </h3>
+              {/* Info button with hover tooltip */}
+              <div className="relative group/info">
+                <button className="flex h-4 w-4 items-center justify-center rounded-full border border-neutral-700 bg-neutral-800 text-[9px] font-black text-neutral-400 hover:border-amber-500/50 hover:text-amber-400 transition-colors">
+                  i
+                </button>
+                <div className="pointer-events-none absolute left-1/2 top-6 z-50 w-72 -translate-x-1/2 rounded-xl border border-neutral-700 bg-[#0d0d0d] p-4 text-xs text-neutral-400 opacity-0 shadow-2xl transition-opacity duration-200 group-hover/info:opacity-100">
+                  <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-amber-400">What is STL?</div>
+                  <p className="leading-relaxed mb-2">
+                    <strong className="text-neutral-200">STL</strong> (Seasonal-Trend decomposition using LOESS) breaks a time series into three independent components:
+                  </p>
+                  <ul className="space-y-1.5">
+                    <li><span className="text-blue-400 font-bold">Trend</span> — the long-run direction of the metric, smoothed over time.</li>
+                    <li><span className="text-green-400 font-bold">Seasonal</span> — repeating periodic patterns (e.g. weekly or monthly cycles).</li>
+                    <li><span className="text-red-400 font-bold">Residual</span> — what remains after removing trend and seasonality; large residuals indicate anomalies or noise.</li>
+                  </ul>
+                  <p className="mt-2 leading-relaxed text-neutral-500">Use this to distinguish genuine growth from seasonal cycles, and to spot irregular events.</p>
+                </div>
+              </div>
+            </div>
           </div>
+          <p className="mb-5 text-[11px] text-neutral-500 leading-relaxed">
+            The metric is decomposed into <span className="text-blue-400 font-semibold">Trend</span>, <span className="text-green-400 font-semibold">Seasonal</span>, and <span className="text-red-400 font-semibold">Residual</span> components. Large residual spikes correspond to anomalies.
+          </p>
 
           {stl.loading && (
             <div className="space-y-4">
@@ -2415,16 +2474,6 @@ export default function UsageTrendsModule({
               </div>
             </div>
 
-            {/* Sync Action */}
-            <div className="flex flex-col items-center w-full lg:w-auto">
-              <button
-                onClick={handleApplyMultiDimFilters}
-                className="group/btn relative h-[46px] w-full lg:w-auto flex items-center justify-center gap-3 rounded-xl bg-red-500 px-6 lg:px-8 py-0 text-[11px] font-black uppercase tracking-[0.15em] text-white shadow-lg shadow-red-500/10 transition-all hover:bg-red-400 hover:shadow-red-500/20 hover:-translate-y-0.5 active:translate-y-0 active:scale-95"
-              >
-                <span>Add Filter</span>
-                <ArrowRight size={16} className="transition-transform group-hover/btn:translate-x-1" />
-              </button>
-            </div>
           </div>
 
             {/* Results Display Area */}
