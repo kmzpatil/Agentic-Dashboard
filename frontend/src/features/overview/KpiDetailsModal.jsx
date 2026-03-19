@@ -581,8 +581,9 @@ export default function KpiDetailsModal({ kpi, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 overflow-y-auto" onClick={onClose}>
-      <div 
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80" onClick={onClose}>
+      <div className="flex min-h-full items-center justify-center p-4">
+      <div
         className="relative w-full max-w-5xl my-8 rounded-3xl border border-neutral-800 bg-[#0d0d0d] p-8 shadow-2xl"
         onClick={e => e.stopPropagation()}
       >
@@ -631,6 +632,7 @@ export default function KpiDetailsModal({ kpi, onClose }) {
             renderCharts()
           )}
         </div>
+      </div>
       </div>
     </div>
   );
