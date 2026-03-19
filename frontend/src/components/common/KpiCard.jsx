@@ -1,6 +1,6 @@
 import React from 'react';
 import { Line } from 'react-chartjs-2';
-import { X, Plus } from 'lucide-react';
+import { X, Plus, Pencil } from 'lucide-react';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -20,7 +20,7 @@ ChartJS.register(
   Filler
 );
 
-export default function KpiCard({ title, value, subtitle, trendData, onRemove, onAdd, onClick }) {
+export default function KpiCard({ title, value, subtitle, trendData, onRemove, onAdd, onEdit, onClick }) {
   // Determine if trend is positive or negative for color
   const isTrendPositive = trendData && trendData.length > 0 && trendData[trendData.length - 1] >= trendData[0];
   const lineColor = isTrendPositive ? '#10b981' : '#ef4444'; // Green or Red
@@ -75,9 +75,20 @@ export default function KpiCard({ title, value, subtitle, trendData, onRemove, o
             e.stopPropagation();
             onRemove();
           }}
-          className="absolute top-3 right-3 text-neutral-500 hover:text-white transition-colors"
+          className="absolute top-3 right-3 text-neutral-500 hover:text-red-400 transition-colors"
         >
           <X size={16} />
+        </button>
+      )}
+      {onEdit && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit();
+          }}
+          className={`absolute top-3 transition-colors text-neutral-500 hover:text-blue-400 ${onRemove ? 'right-8' : 'right-3'}`}
+        >
+          <Pencil size={14} />
         </button>
       )}
       {onAdd && (
