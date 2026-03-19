@@ -313,9 +313,10 @@ async def get_funnel(breakdown: str = "Input_Type"):
     return {
         "stageCounts": stage_counts,
         "sankeyLinks": [
-            {"from": "Uploaded", "to": "Processed", "flow": stage_counts["processed_count"]},
+            {"from": "Uploaded", "to": "Processed", "flow": stage_counts["uploaded_count"]},
             {"from": "Processed", "to": "Created", "flow": stage_counts["created_count"]},
-            {"from": "Created", "to": "Published", "flow": stage_counts["published_count"]}
+            {"from": "Created", "to": "Published", "flow": stage_counts["published_count"]},
+            {"from": "Created", "to": "Not Published", "flow": max(0, stage_counts["created_count"] - stage_counts["published_count"])}
         ],
         "compositionLinks": [],
         "breakdownDimension": breakdown,

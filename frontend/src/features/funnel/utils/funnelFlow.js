@@ -22,6 +22,59 @@ export function normalizeSankeyLinks(links = []) {
     .sort(sankeyLinkSort);
 }
 
+export function normalizeLinksByIncomingCapacity(links = [], nodeOrder = []) {
+  const normalized = normalizeSankeyLinks(links);
+  if (!normalized.length || !nodeOrder.length) return normalized;
+
+  const outgoingByNode = new Map();
+  normalized.forEach((item) => {
+    if (!outgoingByNode.has(item.from)) outgoingByNode.set(item.from, []);
+    outgoingByNode.get(item.from).push(item);
+  });
+
+  const incomingByNode = new Map();
+  const adjusted = [];
+  const visited = new Set();
+
+  const processNode = (node) => {
+    const outgoing = outgoingByNode.get(node) || [];
+    if (!outgoing.length) {
+      visited.add(node);
+      return;
+    }
+
+    const totalOutgoing = outgoing.reduce((sum, item) => sum + Number(item.flow || 0), 0);
+    const incoming = Number(incomingByNode.get(node) || 0);
+
+    // Source nodes (no incoming) keep original magnitudes. Other nodes are capped by incoming flow.
+    let factor = 1;
+    if (incoming > 0 && totalOutgoing > incoming) {
+      factor = incoming / totalOutgoing;
+    }
+
+    outgoing.forEach((item) => {
+      const adjustedFlow = Number(item.flow || 0) * factor;
+      adjusted.push({
+        ...item,
+        flow: adjustedFlow,
+        rawFlow: Number(item.flow || 0),
+      });
+      incomingByNode.set(item.to, Number(incomingByNode.get(item.to) || 0) + adjustedFlow);
+    });
+
+    visited.add(node);
+  };
+
+  nodeOrder.forEach(processNode);
+
+  // Process any nodes not explicitly ordered.
+  outgoingByNode.forEach((_value, node) => {
+    if (!visited.has(node)) processNode(node);
+  });
+
+  return adjusted.sort(sankeyLinkSort);
+}
+
 export function groupSmallLinks(links = [], minShare = SMALL_FLOW_SHARE) {
   const normalized = normalizeSankeyLinks(links);
   if (!normalized.length) return [];
@@ -158,18 +211,22 @@ export function makeSankeyOptions(fromTotals = {}, extras = {}) {
         borderWidth: 1,
         titleColor: '#fafafa',
         bodyColor: '#d4d4d8',
-        padding: 10,
+        padding: 12,
+        titleFont: { size: 13, weight: 'bold' },
+        bodyFont: { size: 12 },
         callbacks: {
           title: (items) => {
             const raw = items?.[0]?.raw || {};
-            return `${raw.from || 'Source'} -> ${raw.to || 'Target'}`;
+            return `${raw.from || 'Source'} → ${raw.to || 'Target'}`;
           },
           label: (ctx) => {
             const raw = ctx?.raw || {};
             const flow = Number(raw.flow || 0);
-            const fromTotal = Number(fromTotals[raw.from] || 0);
-            const share = fromTotal > 0 ? (flow / fromTotal) * 100 : 0;
-            return `${formatNumber(Math.round(flow))} flow (${share.toFixed(1)}% of ${raw.from || 'source'})`;
+            const rawFlow = Number(raw.rawFlow || 0);
+            if (rawFlow > 0 && Math.abs(rawFlow - flow) > 0.5) {
+              return `Count: ${formatNumber(Math.round(flow))} (raw ${formatNumber(Math.round(rawFlow))})`;
+            }
+            return `Count: ${formatNumber(Math.round(flow))}`;
           },
         },
       },

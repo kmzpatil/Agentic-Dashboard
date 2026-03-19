@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Chart } from 'react-chartjs-2';
 
 const C = {
@@ -8,13 +8,29 @@ const C = {
 };
 
 const Card = ({ children, className = '' }) => (
-  <div className={`bg-[#111111] rounded-xl border border-neutral-800 p-5 ${className}`}>{children}</div>
+  <div className={`bg-[#111111] rounded-xl border border-neutral-800 p-4 ${className}`}>{children}</div>
 );
 
-const CardTitle = ({ title, desc }) => (
-  <div className="mb-4">
-    <h3 className="text-[13px] font-semibold text-white">{title}</h3>
-    {desc && <p className="mt-1 text-[11px] text-neutral-500 leading-relaxed">{desc}</p>}
+const CardTitle = ({ title, desc, infoTooltip }) => (
+  <div className="mb-3">
+    <div className="flex items-center justify-between gap-2">
+      <h3 className="text-[15px] font-semibold text-white">{title}</h3>
+      {infoTooltip ? (
+        <div className="group relative">
+          <button
+            type="button"
+            className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-neutral-700/80 text-[10px] font-semibold text-neutral-400 transition-colors hover:border-neutral-600 hover:text-neutral-200"
+            aria-label={`More information about ${title}`}
+          >
+            i
+          </button>
+          <div className="pointer-events-none absolute right-0 top-full z-20 mt-2 hidden w-80 rounded-lg border border-neutral-800 bg-[#0f0f10] p-2.5 text-[11px] text-neutral-300 shadow-2xl group-hover:block group-focus-within:block">
+            {infoTooltip}
+          </div>
+        </div>
+      ) : null}
+    </div>
+    {desc && <p className="mt-1 text-[12px] text-neutral-500 leading-relaxed">{desc}</p>}
   </div>
 );
 
@@ -22,8 +38,8 @@ const barOptions = {
   responsive: true, maintainAspectRatio: false,
   plugins: { legend: { display: false } },
   scales: {
-    x: { ticks: { color: '#a3a3a3', font: { size: 10 } }, grid: { display: false } },
-    y: { ticks: { color: '#a3a3a3', font: { size: 10 } }, grid: { color: C.grid } },
+    x: { ticks: { color: '#a3a3a3', font: { size: 12 } }, grid: { display: false } },
+    y: { ticks: { color: '#a3a3a3', font: { size: 12 } }, grid: { color: C.grid } },
   },
 };
 
@@ -32,6 +48,11 @@ const HIGH_VOLUME_PERCENTILE = 0.70;
 const LOW_YIELD_PERCENTILE = 0.30;
 const HIGH_VOLUME_LABEL = `P${Math.round(HIGH_VOLUME_PERCENTILE * 100)}`;
 const LOW_YIELD_LABEL = `P${Math.round(LOW_YIELD_PERCENTILE * 100)}`;
+const SCATTER_TICK_FONT_SIZE = 13;
+const SCATTER_TITLE_FONT_SIZE = 14;
+const SCATTER_TOOLTIP_TITLE_FONT_SIZE = 13;
+const SCATTER_TOOLTIP_BODY_FONT_SIZE = 13;
+const THIN_DIM_SCROLLBAR = '[scrollbar-width:thin] [scrollbar-color:rgba(115,115,115,0.35)_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-neutral-600/35 [&::-webkit-scrollbar-thumb]:transition-colors [&::-webkit-scrollbar-thumb]:duration-200 [&::-webkit-scrollbar-thumb:hover]:bg-neutral-400/65';
 
 const riskQuadrantPlugin = {
   id: 'riskQuadrant',
@@ -90,12 +111,55 @@ function percentile(values = [], p = 0.5) {
   return sorted[lower] + (sorted[upper] - sorted[lower]) * weight;
 }
 
+function normalizedRange(values = [], { minBound = 0, maxBound = 100, padding = 0.08 } = {}) {
+  if (!values.length) {
+    return { min: minBound, max: maxBound };
+  }
+
+  const rawMin = Math.min(...values);
+  const rawMax = Math.max(...values);
+  const span = rawMax - rawMin;
+  const pad = span > 0 ? span * padding : Math.max(Math.abs(rawMin) * padding, 1);
+
+  const min = Math.max(minBound, rawMin - pad);
+  const max = Math.min(maxBound, rawMax + pad);
+
+  if (min === max) {
+    return {
+      min: Math.max(minBound, min - 1),
+      max: Math.min(maxBound, max + 1),
+    };
+  }
+
+  return { min, max };
+}
+
 function pointKey(clientName, channelName) {
   return `${clientName || 'Unknown'}::${channelName || 'Unknown'}`;
 }
 
+function formatCompactNumber(value) {
+  return new Intl.NumberFormat('en-US', {
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(Number(value || 0));
+}
+
+function redToGrayGradient(context, startColor = 'rgba(239, 68, 68, 0.85)', endColor = 'rgba(115, 115, 115, 0.45)') {
+  const { chart } = context;
+  const { ctx, chartArea } = chart;
+  if (!chartArea) return startColor;
+  const gradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+  gradient.addColorStop(0, startColor);
+  gradient.addColorStop(1, endColor);
+  return gradient;
+}
+
 export default function ChannelEfficiencyTab({ authUser, data, breakdown, filters }) {
   const isAdmin = authUser?.role === 'website_admin';
+  const [scatterView, setScatterView] = useState('channels');
+  const [wasteView, setWasteView] = useState('channels');
+  const [isFlaggedDialogOpen, setIsFlaggedDialogOpen] = useState(false);
   const viewLabel = (breakdown || 'channel').replace('_', ' ');
   const activeFilters = Object.entries(filters || {}).filter(([, v]) => v);
   const rows = data?.channelEfficiency || [];
@@ -103,7 +167,16 @@ export default function ChannelEfficiencyTab({ authUser, data, breakdown, filter
 
   const segregation = useMemo(() => {
     if (!rows.length) {
-      return { volumeThreshold: 0, yieldThreshold: 0, xMin: 0, xMax: 1, riskKeys: new Set(), riskCount: 0 };
+      return {
+        volumeThreshold: 0,
+        yieldThreshold: 0,
+        xMin: 0,
+        xMax: 1,
+        yMin: 0,
+        yMax: 100,
+        riskKeys: new Set(),
+        riskCount: 0,
+      };
     }
 
     const volumes = rows.map((row) => Number(row.videos_assigned || 0));
@@ -112,6 +185,7 @@ export default function ChannelEfficiencyTab({ authUser, data, breakdown, filter
     const yieldThreshold = percentile(yields, LOW_YIELD_PERCENTILE);
     const xMin = Math.max(0, Math.min(...volumes) * 0.92);
     const xMax = Math.max(...volumes) * 1.08;
+    const { min: yMin, max: yMax } = normalizedRange(yields, { minBound: 0, maxBound: 100, padding: 0.08 });
 
     const riskKeys = new Set(
       rows
@@ -119,7 +193,7 @@ export default function ChannelEfficiencyTab({ authUser, data, breakdown, filter
         .map((row) => pointKey(row.client_name, row.channel_name)),
     );
 
-    return { volumeThreshold, yieldThreshold, xMin, xMax, riskKeys, riskCount: riskKeys.size };
+    return { volumeThreshold, yieldThreshold, xMin, xMax, yMin, yMax, riskKeys, riskCount: riskKeys.size };
   }, [rows]);
 
   const clientLegend = useMemo(
@@ -127,15 +201,25 @@ export default function ChannelEfficiencyTab({ authUser, data, breakdown, filter
     [rows],
   );
 
+  const clientLegendItems = useMemo(() => {
+    const counts = new Map();
+    rows.forEach((row) => {
+      const name = row.client_name || 'Unknown';
+      counts.set(name, (counts.get(name) || 0) + 1);
+    });
+    return clientLegend.map((client) => ({ client, count: counts.get(client) || 0 }));
+  }, [rows, clientLegend]);
+
   const teamSegregation = useMemo(() => {
     if (!teamRows.length) {
-      return { volumeThreshold: 0, yieldThreshold: 0, riskKeys: new Set(), riskCount: 0 };
+      return { volumeThreshold: 0, yieldThreshold: 0, yMin: 0, yMax: 100, riskKeys: new Set(), riskCount: 0 };
     }
 
     const volumes = teamRows.map((row) => Number(row.videos_assigned || 0));
     const yields = teamRows.map((row) => Number(row.yield_pct || 0));
     const volumeThreshold = percentile(volumes, HIGH_VOLUME_PERCENTILE);
     const yieldThreshold = percentile(yields, LOW_YIELD_PERCENTILE);
+    const { min: yMin, max: yMax } = normalizedRange(yields, { minBound: 0, maxBound: 100, padding: 0.08 });
 
     const riskKeys = new Set(
       teamRows
@@ -143,7 +227,7 @@ export default function ChannelEfficiencyTab({ authUser, data, breakdown, filter
         .map((row) => row.team_name || 'Unknown'),
     );
 
-    return { volumeThreshold, yieldThreshold, riskKeys, riskCount: riskKeys.size };
+    return { volumeThreshold, yieldThreshold, yMin, yMax, riskKeys, riskCount: riskKeys.size };
   }, [teamRows]);
 
   const channelEfficiencyScatterData = useMemo(() => {
@@ -201,10 +285,10 @@ export default function ChannelEfficiencyTab({ authUser, data, breakdown, filter
 
   const scatterOptions = {
     responsive: true, maintainAspectRatio: false,
+    layout: { padding: { top: 6, right: 6, bottom: 2, left: 2 } },
     plugins: {
       legend: {
-        display: isAdmin,
-        labels: { color: '#d4d4d4' },
+        display: false,
       },
       riskQuadrant: {
         enabled: rows.length > 0,
@@ -212,18 +296,24 @@ export default function ChannelEfficiencyTab({ authUser, data, breakdown, filter
         yCutoff: segregation.yieldThreshold,
       },
       tooltip: {
+        titleFont: { size: SCATTER_TOOLTIP_TITLE_FONT_SIZE },
+        bodyFont: { size: SCATTER_TOOLTIP_BODY_FONT_SIZE },
         callbacks: {
           label: (ctx) => `${ctx.raw?.channel_name || ''}: ${ctx.raw.x} videos, ${ctx.raw.y}% yield${ctx.raw?.risk ? ' [high volume + low yield]' : ''}`,
         },
       },
     },
     scales: {
-      x: { title: { display: true, text: 'Videos assigned', color: '#a3a3a3', font: { size: 10 } }, ticks: { color: '#a3a3a3', font: { size: 10 } }, grid: { color: C.grid } },
+      x: {
+        title: { display: true, text: 'Videos assigned', color: '#a3a3a3', font: { size: SCATTER_TITLE_FONT_SIZE } },
+        ticks: { color: '#a3a3a3', font: { size: SCATTER_TICK_FONT_SIZE } },
+        grid: { color: C.grid },
+      },
       y: {
-        min: 0,
-        max: 100,
-        title: { display: true, text: 'Yield %', color: '#a3a3a3', font: { size: 10 } },
-        ticks: { color: '#a3a3a3', font: { size: 10 }, callback: (v) => `${v}%` },
+        min: segregation.yMin,
+        max: segregation.yMax,
+        title: { display: true, text: 'Yield %', color: '#a3a3a3', font: { size: SCATTER_TITLE_FONT_SIZE } },
+        ticks: { color: '#a3a3a3', font: { size: SCATTER_TICK_FONT_SIZE }, callback: (v) => `${Number(v).toFixed(2)}%` },
         grid: { color: C.grid },
       },
     },
@@ -250,6 +340,7 @@ export default function ChannelEfficiencyTab({ authUser, data, breakdown, filter
 
   const teamScatterOptions = {
     responsive: true, maintainAspectRatio: false,
+    layout: { padding: { top: 6, right: 6, bottom: 2, left: 2 } },
     plugins: {
       legend: { display: false },
       riskQuadrant: {
@@ -258,18 +349,24 @@ export default function ChannelEfficiencyTab({ authUser, data, breakdown, filter
         yCutoff: teamSegregation.yieldThreshold,
       },
       tooltip: {
+        titleFont: { size: SCATTER_TOOLTIP_TITLE_FONT_SIZE },
+        bodyFont: { size: SCATTER_TOOLTIP_BODY_FONT_SIZE },
         callbacks: {
           label: (ctx) => `${ctx.raw?.team_name || ''}: ${ctx.raw.x} videos, ${ctx.raw.y}% yield${ctx.raw?.risk ? ' [high volume + low yield]' : ''}`,
         },
       },
     },
     scales: {
-      x: { title: { display: true, text: 'Videos assigned', color: '#a3a3a3', font: { size: 10 } }, ticks: { color: '#a3a3a3', font: { size: 10 } }, grid: { color: C.grid } },
+      x: {
+        title: { display: true, text: 'Videos assigned', color: '#a3a3a3', font: { size: SCATTER_TITLE_FONT_SIZE } },
+        ticks: { color: '#a3a3a3', font: { size: SCATTER_TICK_FONT_SIZE } },
+        grid: { color: C.grid },
+      },
       y: {
-        min: 0,
-        max: 100,
-        title: { display: true, text: 'Yield %', color: '#a3a3a3', font: { size: 10 } },
-        ticks: { color: '#a3a3a3', font: { size: 10 }, callback: (v) => `${v}%` },
+        min: teamSegregation.yMin,
+        max: teamSegregation.yMax,
+        title: { display: true, text: 'Yield %', color: '#a3a3a3', font: { size: SCATTER_TITLE_FONT_SIZE } },
+        ticks: { color: '#a3a3a3', font: { size: SCATTER_TICK_FONT_SIZE }, callback: (v) => `${Number(v).toFixed(2)}%` },
         grid: { color: C.grid },
       },
     },
@@ -285,177 +382,503 @@ export default function ChannelEfficiencyTab({ authUser, data, breakdown, filter
     () => Math.max(...teamWasteRanking.map((r) => Number(r.waste_slots || 0)), 1),
     [teamWasteRanking],
   );
+  const normalizedWasteScale = useMemo(
+    () => Math.max(maxWasteSlots, maxTeamWasteSlots, 1),
+    [maxWasteSlots, maxTeamWasteSlots],
+  );
+  const channelWasteTotal = useMemo(
+    () => wasteRanking.reduce((sum, row) => sum + Number(row.waste_slots || 0), 0),
+    [wasteRanking],
+  );
+  const teamWasteTotal = useMemo(
+    () => teamWasteRanking.reduce((sum, row) => sum + Number(row.waste_slots || 0), 0),
+    [teamWasteRanking],
+  );
+  const channelTopShare = channelWasteTotal > 0 ? (Number(wasteRanking[0]?.waste_slots || 0) / channelWasteTotal) * 100 : 0;
+  const teamTopShare = teamWasteTotal > 0 ? (Number(teamWasteRanking[0]?.waste_slots || 0) / teamWasteTotal) * 100 : 0;
+  const scatterViewOptions = useMemo(() => ([
+    { key: 'channels', label: 'Channels' },
+    { key: 'teams', label: 'Teams' },
+  ]), []);
+  const activeScatter = useMemo(() => {
+    if (scatterView === 'teams') {
+      return {
+        key: 'teams',
+        title: 'Team volume vs yield',
+        data: teamScatterData,
+        options: teamScatterOptions,
+        rows: teamRows,
+        flagged: teamSegregation.riskCount,
+        volumeThreshold: teamSegregation.volumeThreshold,
+        yieldThreshold: teamSegregation.yieldThreshold,
+        emptyText: 'Team-level volume vs yield is unavailable for the current role or filters.',
+      };
+    }
 
-  const publishLagData = useMemo(() => {
-    const rows = data?.publishLagDistribution || [];
     return {
-      labels: rows.map((r) => r.lag_bucket),
-      datasets: [{
-        label: 'Posts', data: rows.map((r) => Number(r.post_count || 0)),
-        backgroundColor: ['#22c55e', '#34d399', '#6ee7b7', '#f59e0b', '#fbbf24', '#fca5a5', '#ef4444'],
-        borderRadius: 4, barPercentage: 0.75,
-      }],
+      key: 'channels',
+      title: 'Volume vs yield',
+      data: channelEfficiencyScatterData,
+      options: scatterOptions,
+      rows,
+      flagged: segregation.riskCount,
+      volumeThreshold: segregation.volumeThreshold,
+      yieldThreshold: segregation.yieldThreshold,
+      emptyText: 'Channel-level volume vs yield is unavailable for the current role or filters.',
     };
-  }, [data]);
+  }, [scatterView, teamScatterData, teamScatterOptions, teamRows, teamSegregation, channelEfficiencyScatterData, scatterOptions, rows, segregation]);
+  const flaggedEntities = useMemo(() => {
+    if (scatterView === 'teams') {
+      return teamRows
+        .filter((row) => teamSegregation.riskKeys.has(row.team_name || 'Unknown'))
+        .map((row) => ({
+          key: row.team_name || 'Unknown',
+          name: row.team_name || 'Unknown',
+          subLabel: '',
+          videosAssigned: Number(row.videos_assigned || 0),
+          yieldPct: Number(row.yield_pct || 0),
+        }))
+        .sort((a, b) => b.videosAssigned - a.videosAssigned);
+    }
 
-  const teamEfficiencyData = useMemo(() => {
-    const rows = data?.teamEfficiency || [];
+    return rows
+      .filter((row) => segregation.riskKeys.has(pointKey(row.client_name, row.channel_name)))
+      .map((row) => ({
+        key: pointKey(row.client_name, row.channel_name),
+        name: row.channel_name || 'Unknown',
+        subLabel: isAdmin ? (row.client_name || 'Unknown') : '',
+        videosAssigned: Number(row.videos_assigned || 0),
+        yieldPct: Number(row.yield_pct || 0),
+      }))
+      .sort((a, b) => b.videosAssigned - a.videosAssigned);
+  }, [scatterView, teamRows, teamSegregation, rows, segregation, isAdmin]);
+  const scatterLegendItems = useMemo(() => {
+    if (scatterView === 'channels' && isAdmin) {
+      return clientLegendItems.map(({ client, count }, idx) => ({
+        key: `${client}-${idx}`,
+        label: client,
+        count,
+        color: CLIENT_COLORS[idx % CLIENT_COLORS.length],
+      }));
+    }
+
+    if (scatterView === 'teams') {
+      return [{ key: 'teams', label: 'Teams', color: C.c3 }];
+    }
+
+    return [{ key: 'channels', label: 'Channels', color: C.c2 }];
+  }, [scatterView, isAdmin, clientLegendItems]);
+  const wasteViewOptions = useMemo(() => ([
+    { key: 'channels', label: 'Channels' },
+    { key: 'teams', label: 'Teams' },
+  ]), []);
+  const activeWaste = useMemo(() => {
+    if (wasteView === 'teams') {
+      return {
+        key: 'teams',
+        title: 'Team',
+        entries: teamWasteRanking,
+        total: teamWasteTotal,
+        topShare: teamTopShare,
+        emptyText: 'No team waste ranking data available for the current role or filters.',
+      };
+    }
+
     return {
-      labels: rows.map((r) => r.team_name),
-      datasets: [
-        { label: 'Upload→asset ratio', data: rows.map((r) => Number(r.upload_to_asset_ratio || 0)), backgroundColor: C.c2 + '99', borderRadius: 3 },
-        { label: 'Asset→publish ×100', data: rows.map((r) => Number(r.asset_to_publish_ratio_x100 || 0)), backgroundColor: C.c3 + '99', borderRadius: 3 },
-      ],
+      key: 'channels',
+      title: isAdmin ? 'Channel / Client' : 'Channel',
+      entries: wasteRanking,
+      total: channelWasteTotal,
+      topShare: channelTopShare,
+      emptyText: 'No channel waste ranking data available for the current role or filters.',
     };
-  }, [data]);
+  }, [wasteView, isAdmin, wasteRanking, channelWasteTotal, channelTopShare, teamWasteRanking, teamWasteTotal, teamTopShare]);
+
+  const publishLagRows = data?.publishLagDistribution || [];
+  const publishLagStats = useMemo(() => {
+    const totalPosts = publishLagRows.reduce((sum, row) => sum + Number(row.post_count || 0), 0);
+    const dominantBucket = publishLagRows.reduce(
+      (best, row) => {
+        const count = Number(row.post_count || 0);
+        return count > best.count ? { bucket: row.lag_bucket || 'N/A', count } : best;
+      },
+      { bucket: 'N/A', count: 0 },
+    );
+
+    const stalePosts = publishLagRows
+      .filter((row) => />\s*10|10\+|stale/i.test(String(row.lag_bucket || '')))
+      .reduce((sum, row) => sum + Number(row.post_count || 0), 0);
+    const staleShare = totalPosts > 0 ? (stalePosts / totalPosts) * 100 : 0;
+
+    return { totalPosts, dominantBucket, staleShare };
+  }, [publishLagRows]);
+
+  const publishLagData = useMemo(() => ({
+    labels: publishLagRows.map((r) => r.lag_bucket),
+    datasets: [{
+      label: 'Posts',
+      data: publishLagRows.map((r) => Number(r.post_count || 0)),
+      backgroundColor: (ctx) => redToGrayGradient(ctx, 'rgba(248, 113, 113, 0.9)', 'rgba(115, 115, 115, 0.38)'),
+      borderColor: 'rgba(248, 113, 113, 0.92)',
+      borderWidth: 1,
+      borderRadius: 5,
+      borderSkipped: false,
+      barThickness: 18,
+      maxBarThickness: 22,
+      categoryPercentage: 0.7,
+      barPercentage: 0.9,
+    }],
+  }), [publishLagRows]);
+
+  const publishLagOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        titleFont: { size: 11 },
+        bodyFont: { size: 11 },
+        callbacks: {
+          label: (ctx) => `${ctx.raw} posts`,
+        },
+      },
+    },
+    scales: {
+      x: {
+        ticks: { color: '#a3a3a3', font: { size: 10 }, maxRotation: 0, minRotation: 0 },
+        grid: { display: false },
+      },
+      y: {
+        beginAtZero: true,
+        ticks: { color: '#a3a3a3', font: { size: 10 } },
+        grid: { color: C.grid },
+      },
+    },
+  };
+
+  const teamEfficiencyRows = data?.teamEfficiency || [];
+  const teamEfficiencyStats = useMemo(() => {
+    if (!teamEfficiencyRows.length) {
+      return { avgPublishRatio: 0, topTeam: 'N/A', topPublishRatio: 0 };
+    }
+
+    const publishRatios = teamEfficiencyRows.map((r) => Number(r.asset_to_publish_ratio_x100 || 0));
+    const avgPublishRatio = publishRatios.reduce((sum, v) => sum + v, 0) / publishRatios.length;
+    const best = teamEfficiencyRows.reduce(
+      (current, row) => {
+        const ratio = Number(row.asset_to_publish_ratio_x100 || 0);
+        return ratio > current.ratio ? { team: row.team_name || 'Unknown', ratio } : current;
+      },
+      { team: 'N/A', ratio: 0 },
+    );
+
+    return { avgPublishRatio, topTeam: best.team, topPublishRatio: best.ratio };
+  }, [teamEfficiencyRows]);
+
+  const teamEfficiencyData = useMemo(() => ({
+    labels: teamEfficiencyRows.map((r) => r.team_name),
+    datasets: [
+      {
+        label: 'Upload→asset ratio',
+        data: teamEfficiencyRows.map((r) => Number(r.upload_to_asset_ratio || 0)),
+        backgroundColor: (ctx) => redToGrayGradient(ctx, 'rgba(59, 130, 246, 0.82)', 'rgba(100, 116, 139, 0.38)'),
+        borderColor: 'rgba(59, 130, 246, 0.96)',
+        borderWidth: 1,
+        borderRadius: 6,
+        borderSkipped: false,
+        maxBarThickness: 16,
+      },
+      {
+        label: 'Asset→publish ×100',
+        data: teamEfficiencyRows.map((r) => Number(r.asset_to_publish_ratio_x100 || 0)),
+        backgroundColor: (ctx) => redToGrayGradient(ctx, 'rgba(244, 63, 94, 0.84)', 'rgba(107, 114, 128, 0.28)'),
+        borderColor: 'rgba(251, 113, 133, 0.98)',
+        borderWidth: 1.5,
+        borderRadius: 6,
+        borderSkipped: false,
+        maxBarThickness: 16,
+      },
+    ],
+  }), [teamEfficiencyRows]);
+
+  const teamEfficiencyOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        titleFont: { size: 11 },
+        bodyFont: { size: 11 },
+      },
+    },
+    scales: {
+      x: {
+        ticks: { color: '#a3a3a3', font: { size: 10 }, maxRotation: 0, minRotation: 0 },
+        grid: { display: false },
+      },
+      y: {
+        beginAtZero: true,
+        ticks: { color: '#a3a3a3', font: { size: 10 } },
+        grid: { color: C.grid },
+      },
+    },
+  };
 
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2 flex-wrap">
-        <span className="inline-flex items-center rounded-full border border-neutral-700/80 bg-neutral-900/70 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
+        <span className="inline-flex items-center rounded-full border border-neutral-700/80 bg-neutral-900/70 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
           View context: {viewLabel}
         </span>
         {activeFilters.length > 0 && (
-          <span className="inline-flex items-center rounded-full border border-violet-500/30 bg-violet-500/10 px-2.5 py-1 text-[10px] font-semibold text-violet-300">
+          <span className="inline-flex items-center rounded-full border border-violet-500/30 bg-violet-500/10 px-2.5 py-1 text-[11px] font-semibold text-violet-300">
             {activeFilters.length} filter{activeFilters.length > 1 ? 's' : ''} active
           </span>
         )}
       </div>
-      <div className="grid grid-cols-1 xl:grid-cols-[1.5fr_1fr] gap-3">
-        <Card>
-          <CardTitle title="Volume vs yield — the effort wasted quadrant" desc="Each dot = 1 channel. Bottom-right = high volume, low yield = wasted processing cost." />
-          <div className="relative h-[250px]">
-            <Chart type="scatter" data={channelEfficiencyScatterData} options={scatterOptions} plugins={[riskQuadrantPlugin]} />
-            <div className="pointer-events-none absolute right-2 top-2 rounded border border-neutral-700/80 bg-[#0b0b0bcc] px-2 py-1 text-[10px] leading-tight text-neutral-300">
-              <div>Volume cutoff: {HIGH_VOLUME_LABEL}</div>
-              <div>Yield cutoff: {LOW_YIELD_LABEL}</div>
-            </div>
-          </div>
-          <div className="mt-2 flex flex-wrap gap-3 text-[10.5px] text-neutral-500">
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full border-2 border-red-400" />
-              flagged: {segregation.riskCount} high-volume + low-yield channels
-            </span>
-            <span>high-volume cutoff ({HIGH_VOLUME_LABEL}): {Math.round(segregation.volumeThreshold)} videos</span>
-            <span>low-yield cutoff ({LOW_YIELD_LABEL}): {segregation.yieldThreshold.toFixed(1)}%</span>
-          </div>
-          {isAdmin && (
-            <div className="flex gap-4 mt-3 flex-wrap">
-              {clientLegend.map((client, idx) => (
-                <div key={client} className="flex items-center gap-1.5 text-[11px] text-neutral-400">
-                  <div className="w-2 h-2 rounded-sm" style={{ background: CLIENT_COLORS[idx % CLIENT_COLORS.length] }} />
-                  {client}
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-
-        <Card>
-          <CardTitle title="Absolute waste — top 10 channels" desc="videos_assigned × (1 − yield). Volume × inefficiency = true cost." />
-          <div className="space-y-2.5 mt-2">
-            {wasteRanking.map((row, idx) => {
-              const pct = (Number(row.waste_slots || 0) / maxWasteSlots) * 100;
-              return (
-                <div key={row.channel_name} className="flex items-center gap-2.5">
-                  <div className="w-4 text-[10px] text-neutral-600 font-mono">{idx + 1}</div>
-                  <div className="min-w-[100px] text-[12px] font-medium text-neutral-200">{row.channel_name}</div>
-                  {isAdmin && <div className="text-[10px] text-neutral-600 min-w-[60px]">{row.client_name}</div>}
-                  <div className="flex-1 h-[5px] bg-neutral-800 rounded overflow-hidden">
-                    <div className="h-full bg-red-500 rounded" style={{ width: `${pct}%` }} />
-                  </div>
-                  <div className="w-9 text-right text-[11px] font-semibold text-red-400 font-mono">{row.waste_slots}</div>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-[1.5fr_1fr] gap-3">
-        <Card>
-          <CardTitle title="Team volume vs yield" desc="Each dot = 1 team. Bottom-right zone flags teams carrying high volume with low publish yield." />
-          {teamRows.length > 0 ? (
-            <>
-              <div className="relative h-[230px]">
-                <Chart type="scatter" data={teamScatterData} options={teamScatterOptions} plugins={[riskQuadrantPlugin]} />
-                <div className="pointer-events-none absolute right-2 top-2 rounded border border-neutral-700/80 bg-[#0b0b0bcc] px-2 py-1 text-[10px] leading-tight text-neutral-300">
-                  <div>Volume cutoff: {HIGH_VOLUME_LABEL}</div>
-                  <div>Yield cutoff: {LOW_YIELD_LABEL}</div>
-                </div>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-3 text-[10.5px] text-neutral-500">
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full border-2 border-red-400" />
-                  flagged: {teamSegregation.riskCount} high-volume + low-yield teams
-                </span>
-                <span>high-volume cutoff ({HIGH_VOLUME_LABEL}): {Math.round(teamSegregation.volumeThreshold)} videos</span>
-                <span>low-yield cutoff ({LOW_YIELD_LABEL}): {teamSegregation.yieldThreshold.toFixed(1)}%</span>
-              </div>
-            </>
-          ) : (
-            <div className="text-[11.5px] text-neutral-500 rounded-lg border border-neutral-800 bg-[#0a0a0a] px-3 py-2">
-              Team-level volume vs yield is unavailable for the current role or filters.
-            </div>
-          )}
-        </Card>
-
-        <Card>
-          <CardTitle title="Absolute waste — top teams" desc="Teams with largest non-publishing video load (videos assigned minus published videos)." />
-          {teamWasteRanking.length > 0 ? (
-            <div className="space-y-2.5 mt-2">
-              {teamWasteRanking.map((row, idx) => {
-                const pct = (Number(row.waste_slots || 0) / maxTeamWasteSlots) * 100;
+      <div className="grid grid-cols-1 items-start xl:grid-cols-[1.5fr_1fr] gap-3">
+        <div className="space-y-3">
+          <Card className="p-2.5 md:p-3 h-[430px] md:h-[460px] flex flex-col">
+            <CardTitle
+              title="Volume vs yield"
+              desc="Switch between channel and team distributions with shared risk highlighting."
+              infoTooltip="Scatter chart where x-axis is assigned videos and y-axis is yield percentage. Points in the lower-right risk zone represent high volume but low yield entities."
+            />
+            <div className="mb-2 inline-flex w-fit self-start rounded-md border border-neutral-800 bg-black/30 p-0.5">
+              {scatterViewOptions.map((option) => {
+                const active = option.key === scatterView;
                 return (
-                  <div key={row.team_name} className="flex items-center gap-2.5">
-                    <div className="w-4 text-[10px] text-neutral-600 font-mono">{idx + 1}</div>
-                    <div className="min-w-[130px] text-[12px] font-medium text-neutral-200">{row.team_name}</div>
-                    <div className="flex-1 h-[5px] bg-neutral-800 rounded overflow-hidden">
-                      <div className="h-full bg-red-500 rounded" style={{ width: `${pct}%` }} />
-                    </div>
-                    <div className="w-9 text-right text-[11px] font-semibold text-red-400 font-mono">{row.waste_slots}</div>
-                  </div>
+                  <button
+                    key={option.key}
+                    type="button"
+                    onClick={() => setScatterView(option.key)}
+                    aria-pressed={active}
+                    className={`rounded px-2.5 py-1 text-[12px] font-semibold whitespace-nowrap transition-colors ${active ? 'bg-neutral-200 text-neutral-900' : 'text-neutral-400 hover:text-neutral-200'}`}
+                  >
+                    {option.label}
+                  </button>
                 );
               })}
             </div>
-          ) : (
-            <div className="text-[11.5px] text-neutral-500 rounded-lg border border-neutral-800 bg-[#0a0a0a] px-3 py-2">
-              No team waste ranking data available for the current role or filters.
+            {activeScatter.rows.length > 0 ? (
+              <>
+                <div className="relative h-[205px] md:h-[225px]">
+                  <Chart type="scatter" data={activeScatter.data} options={activeScatter.options} plugins={[riskQuadrantPlugin]} />
+                </div>
+                <div className="mt-2 grid grid-cols-1 gap-1.5 text-[12px] text-neutral-400 sm:grid-cols-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsFlaggedDialogOpen(true)}
+                    className="rounded-md border border-neutral-800 bg-black/30 px-2.5 py-1.5 text-left transition-colors hover:border-red-400/40 hover:bg-red-500/5"
+                  >
+                    <span className="text-neutral-500">Flagged</span>
+                    <div className="mt-0.5 font-semibold text-red-300">{activeScatter.flagged} {activeScatter.key === 'teams' ? 'teams' : 'channels'}</div>
+                  </button>
+                  <div className="rounded-md border border-neutral-800 bg-black/30 px-2.5 py-1.5">
+                    <span className="text-neutral-500">High-volume ({HIGH_VOLUME_LABEL})</span>
+                    <div className="mt-0.5 font-semibold text-neutral-200">{Math.round(activeScatter.volumeThreshold)} videos</div>
+                  </div>
+                  <div className="rounded-md border border-neutral-800 bg-black/30 px-2.5 py-1.5">
+                    <span className="text-neutral-500">Low-yield ({LOW_YIELD_LABEL})</span>
+                    <div className="mt-0.5 font-semibold text-neutral-200">{activeScatter.yieldThreshold.toFixed(1)}%</div>
+                  </div>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <div className={`flex max-h-[50px] flex-wrap gap-1 overflow-y-auto pr-1 ${THIN_DIM_SCROLLBAR}`}>
+                    {scatterLegendItems.map((item) => (
+                      <div key={item.key} className="inline-flex items-center gap-1 rounded-md border border-neutral-800 bg-black/30 px-1.5 py-0.5 text-[10px] text-neutral-300">
+                        <div className="h-2 w-2 rounded-sm" style={{ background: item.color }} />
+                        <span>{item.label}</span>
+                        {typeof item.count === 'number' ? <span className="text-neutral-500">({item.count})</span> : null}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="inline-flex items-center gap-1 rounded-md border border-neutral-800 bg-black/30 px-1.5 py-0.5 text-[10px] text-neutral-300">
+                    <span className="h-2 w-2 rounded-full border border-red-300 bg-red-500/15" />
+                    <span>Risk point</span>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="text-[13px] text-neutral-500 rounded-lg border border-neutral-800 bg-[#0a0a0a] px-3 py-2">
+                {activeScatter.emptyText}
+              </div>
+            )}
+          </Card>
+        </div>
+
+        <div className="space-y-3">
+          <Card className="p-2.5 md:p-3 h-[430px] md:h-[460px] flex flex-col">
+            <CardTitle
+              title="Absolute waste"
+              desc="Ranked by waste slots."
+              infoTooltip="Waste slots = assigned videos - published outputs. Higher waste indicates more assigned work that did not result in published output."
+            />
+            <div className="mb-2 inline-flex w-fit self-start rounded-md border border-neutral-800 bg-black/30 p-0.5">
+              {wasteViewOptions.map((option) => {
+                const active = option.key === wasteView;
+                return (
+                  <button
+                    key={option.key}
+                    type="button"
+                    onClick={() => setWasteView(option.key)}
+                    aria-pressed={active}
+                    className={`rounded px-2.5 py-1 text-[12px] font-semibold whitespace-nowrap transition-colors ${active ? 'bg-neutral-200 text-neutral-900' : 'text-neutral-400 hover:text-neutral-200'}`}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
             </div>
-          )}
-        </Card>
+
+            {activeWaste.entries.length > 0 ? (
+              <>
+                <div className="mb-1 text-[11px] text-neutral-500">Entries shown: {activeWaste.entries.length}</div>
+                <div className="overflow-hidden rounded-lg border border-neutral-800 bg-[#0c0c0c]">
+                  <div className="grid grid-cols-[44px_minmax(0,1fr)_84px] border-b border-neutral-800 bg-black/30 px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+                    <span>Rank</span>
+                    <span>{activeWaste.title}</span>
+                    <span className="text-right">Waste</span>
+                  </div>
+                  <div className={`h-[190px] overflow-y-auto md:h-[210px] ${THIN_DIM_SCROLLBAR}`}>
+                    {activeWaste.entries.map((row, idx) => {
+                      const waste = Number(row.waste_slots || 0);
+                      const pct = (waste / normalizedWasteScale) * 100;
+                      const primaryName = activeWaste.key === 'channels' ? row.channel_name : row.team_name;
+                      const secondaryName = activeWaste.key === 'channels' && isAdmin ? row.client_name : '';
+                      const rowKey = activeWaste.key === 'channels'
+                        ? `${row.channel_name || 'Unknown'}::${row.client_name || 'Unknown'}::${idx}`
+                        : `${row.team_name || 'Unknown'}::${idx}`;
+
+                      return (
+                        <div key={rowKey} className="relative isolate border-b border-neutral-900/80 px-2 py-1.5 last:border-b-0 hover:bg-white/[0.02]">
+                          <div className="absolute inset-y-0 left-0 z-0 bg-red-500/15" style={{ width: `${pct}%` }} />
+                          <div className="relative z-10 grid grid-cols-[44px_minmax(0,1fr)_84px] items-center gap-2">
+                            <span className="inline-flex w-8 items-center justify-center rounded bg-neutral-800/80 text-[11px] font-mono text-neutral-300">#{idx + 1}</span>
+                            <div className="min-w-0">
+                              <div className="truncate text-[13px] font-medium text-neutral-100" title={primaryName}>{primaryName}</div>
+                              {secondaryName ? <div className="truncate text-[10.5px] text-neutral-500" title={secondaryName}>{secondaryName}</div> : null}
+                            </div>
+                            <div className="text-right text-[12px] font-semibold text-red-300 font-mono">{formatCompactNumber(waste)}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="mt-1.5 grid grid-cols-2 gap-1 text-[11px]">
+                  <div className="rounded-md border border-neutral-800 bg-black/30 px-2 py-1.5 text-neutral-400">
+                    <div className="text-neutral-500">Total waste</div>
+                    <div className="mt-0.5 text-[12px] font-semibold text-neutral-200">{formatCompactNumber(activeWaste.total)}</div>
+                  </div>
+                  <div className="rounded-md border border-neutral-800 bg-black/30 px-2 py-1.5 text-neutral-400">
+                    <div className="text-neutral-500">Top contributor share</div>
+                    <div className="mt-0.5 text-[12px] font-semibold text-neutral-200">{activeWaste.topShare.toFixed(1)}%</div>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="text-[13px] text-neutral-500 rounded-lg border border-neutral-800 bg-[#0a0a0a] px-3 py-2">
+                {activeWaste.emptyText}
+              </div>
+            )}
+          </Card>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-        <Card>
-          <CardTitle title="Publish lag distribution" desc="Days from asset creation to first published post." />
-          <div className="h-[200px]">
-            <Chart type="bar" data={publishLagData} options={barOptions} />
+        <Card className="p-2.5 md:p-3">
+          <CardTitle
+            title="Publish lag distribution"
+            desc="Days from asset creation to first published post."
+            infoTooltip="Distribution of how long it takes assets to become published posts. Bars to the right indicate slower publish turnaround."
+          />
+          <div className="h-[185px] md:h-[200px]">
+            <Chart type="bar" data={publishLagData} options={publishLagOptions} />
           </div>
-          <div className="flex gap-3 mt-2">
-            {[{ label: 'Fast (<2d)', color: '#22c55e' }, { label: 'Normal (2-10d)', color: '#f59e0b' }, { label: 'Stale (>10d)', color: '#ef4444' }].map((l) => (
-              <div key={l.label} className="flex items-center gap-1.5 text-[10.5px] text-neutral-500">
-                <div className="w-2 h-2 rounded-sm" style={{ background: l.color }} />{l.label}
-              </div>
-            ))}
-          </div>
+          
         </Card>
 
-        <Card>
-          <CardTitle title="Team efficiency comparison" desc="Upload to asset ratio and asset to publish ratio by team." />
-          <div className="h-[200px]">
-            <Chart type="bar" data={teamEfficiencyData} options={barOptions} />
+        <Card className="p-2.5 md:p-3">
+          <CardTitle
+            title="Team efficiency comparison"
+            desc="Upload to asset ratio and asset to publish ratio by team."
+            infoTooltip="Compares two efficiency ratios per team: upload-to-asset conversion and asset-to-publish conversion. Taller bars indicate stronger conversion performance."
+          />
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-[10px] text-neutral-400">
+            <div className="inline-flex items-center gap-1.5 rounded-md border border-neutral-800 bg-black/30 px-2 py-1">
+              <span className="h-2.5 w-2.5 rounded-sm border border-blue-300/80 bg-blue-500/80" />
+              <span>Upload→asset ratio</span>
+            </div>
+            <div className="inline-flex items-center gap-1.5 rounded-md border border-neutral-800 bg-black/30 px-2 py-1">
+              <span className="h-2.5 w-2.5 rounded-[2px] border border-rose-300/90 bg-rose-500/80" />
+              <span>Asset→publish ×100</span>
+            </div>
           </div>
-          <div className="flex gap-3 mt-2">
-            <div className="flex items-center gap-1.5 text-[10.5px] text-neutral-500">
-              <div className="w-2 h-2 rounded-sm" style={{ background: C.c2 }} />Upload to asset ratio
-            </div>
-            <div className="flex items-center gap-1.5 text-[10.5px] text-neutral-500">
-              <div className="w-2 h-2 rounded-sm" style={{ background: C.c3 }} />Asset to publish x100
-            </div>
+          
+          <div className="h-[185px] md:h-[200px]">
+            <Chart type="bar" data={teamEfficiencyData} options={teamEfficiencyOptions} />
           </div>
         </Card>
       </div>
+
+      {isFlaggedDialogOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 px-3"
+          onClick={() => setIsFlaggedDialogOpen(false)}
+        >
+          <div
+            className="w-full max-w-2xl rounded-xl border border-neutral-800 bg-[#111111] p-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-[16px] font-semibold text-white">
+                  Flagged {scatterView === 'teams' ? 'teams' : 'channels'}
+                </h3>
+                <p className="mt-1 text-[11px] text-neutral-500">
+                  High volume ({'>='} {HIGH_VOLUME_LABEL}) and low yield ({'<='} {LOW_YIELD_LABEL}) entities.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsFlaggedDialogOpen(false)}
+                className="rounded border border-neutral-700 px-2 py-1 text-[11px] font-semibold text-neutral-300 hover:border-neutral-500 hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+
+            {flaggedEntities.length > 0 ? (
+              <div className="overflow-hidden rounded-lg border border-neutral-800 bg-black/30">
+                <div className="grid grid-cols-[minmax(0,1fr)_96px_80px] border-b border-neutral-800 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+                  <span>{scatterView === 'teams' ? 'Team' : (isAdmin ? 'Channel / Client' : 'Channel')}</span>
+                  <span className="text-right">Videos</span>
+                  <span className="text-right">Yield</span>
+                </div>
+                <div className={`max-h-[300px] overflow-y-auto ${THIN_DIM_SCROLLBAR}`}>
+                  {flaggedEntities.map((entity) => (
+                    <div key={entity.key} className="grid grid-cols-[minmax(0,1fr)_96px_80px] items-center gap-2 border-b border-neutral-900/70 px-3 py-2 text-[12px] last:border-b-0">
+                      <div className="min-w-0">
+                        <div className="truncate font-medium text-neutral-100" title={entity.name}>{entity.name}</div>
+                        {entity.subLabel ? (
+                          <div className="truncate text-[11px] text-neutral-500" title={entity.subLabel}>{entity.subLabel}</div>
+                        ) : null}
+                      </div>
+                      <div className="text-right font-mono text-neutral-300">{entity.videosAssigned}</div>
+                      <div className="text-right font-mono text-red-300">{entity.yieldPct.toFixed(2)}%</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-neutral-800 bg-black/30 px-3 py-2 text-[12px] text-neutral-400">
+                No flagged entities found for the current view.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

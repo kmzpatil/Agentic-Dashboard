@@ -247,6 +247,11 @@ def get_funnel(
                     "flow": float(stage_counts.get("processed_count") or 0),
                 },
                 {
+                    "from": "Uploaded",
+                    "to": "Not Processed",
+                    "flow": max(0, float(stage_counts.get("uploaded_count") or 0) - float(stage_counts.get("processed_count") or 0)),
+                },
+                {
                     "from": "Processed",
                     "to": "Created",
                     "flow": float(stage_counts.get("created_count") or 0),
@@ -255,6 +260,16 @@ def get_funnel(
                     "from": "Created",
                     "to": "Published",
                     "flow": float(stage_counts.get("published_count") or 0),
+                },
+                {
+                    "from": "Created",
+                    "to": "Not Published",
+                    "flow": max(0, float(stage_counts.get("created_count") or 0) - float(stage_counts.get("published_count") or 0)),
+                },
+                {
+                    "from": "Published",
+                    "to": "Platform posts",
+                    "flow": float(pipeline_strip.get("platform_posts") or 0),
                 },
             ],
             "compositionLinks": composition_links,
