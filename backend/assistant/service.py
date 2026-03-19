@@ -127,6 +127,7 @@ async def chat(
     auth: AuthContext,
     filters: dict[str, Any] | None = None,
     conversation_id: str | None = None,
+    report_mode: bool = False,
 ) -> ChatEnvelope:
     modules = _legacy_modules()
     conversation_api = modules["conversations"]
@@ -147,7 +148,7 @@ async def chat(
 
     scoped_prompt = f"{_normalise_filter_prompt(filters)}{message}"
     prior_messages = conversation.get("messages", [])
-    result = await agent_api.run_agent(scoped_prompt, auth=auth, working_memory=working_memory, history=prior_messages)
+    result = await agent_api.run_agent(scoped_prompt, auth=auth, working_memory=working_memory, history=prior_messages, report_mode=report_mode)
 
     # Build artifacts from multiple charts (new architecture) or fall back to legacy single chart
     all_datasets = []
@@ -258,6 +259,7 @@ async def chat_stream(
     auth: AuthContext,
     filters: dict[str, Any] | None = None,
     conversation_id: str | None = None,
+    report_mode: bool = False,
 ) -> Any:
     """
     Streaming version of chat(). Yields SSE event dicts as the agent progresses.
@@ -291,7 +293,7 @@ async def chat_stream(
     # Stream agent events
     final_message = None
     async for event in agent_api.run_agent_stream(
-        scoped_prompt, auth=auth, working_memory=working_memory, history=prior_messages
+        scoped_prompt, auth=auth, working_memory=working_memory, history=prior_messages, report_mode=report_mode
     ):
         if event.get("type") == "complete":
             final_message = event.get("message", {})

@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   ChevronRight,
   Database,
+  FileText,
   Loader2,
   MessageSquare,
   Mic,
@@ -25,6 +26,8 @@ import remarkGfm from 'remark-gfm';
 import { API_BASE } from '../../lib/constants';
 import useVoiceInput from '../../hooks/useVoiceInput';
 import ArtifactCanvas from '../../components/artifacts/ArtifactCanvas';
+import { parseReportXml, isReportXml } from '../../lib/reportXmlParser';
+import ReportRenderer from '../../components/reports/ReportRenderer';
 
 const markdownComponents = {
   p: ({ children }) => <p className="mb-3 last:mb-0 leading-[1.75] text-[15px]">{children}</p>,
@@ -43,6 +46,9 @@ const PHASE_LABELS = {
   executing: 'Running queries...',
   repairing: 'Fixing queries...',
   synthesizing: 'Composing response...',
+  report_planning: 'Decomposing into sub-analyses...',
+  report_gathering: 'Gathering data for report...',
+  report_synthesizing: 'Synthesizing analytical report...',
 };
 
 const SUGGESTIONS = [
@@ -151,6 +157,25 @@ function ErrorBanner({ error }) {
 }
 
 function AssistantMessageItem({ message, onOpenCanvas, onNavigate }) {
+  // Report mode rendering
+  if (message.intent === 'report' && message.parsedReport) {
+    return (
+      <div className="max-w-[820px]">
+        <div className="mb-2.5 flex items-center gap-2.5">
+          <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-red-500/10">
+            <FileText size={13} className="text-red-400" />
+          </div>
+          <span className="text-[12px] font-semibold text-neutral-600">Frammer Copilot</span>
+          <span className="ml-2 rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-red-400">Report</span>
+        </div>
+        <div className="pl-[34px]">
+          <ThinkingTrace actions={message.actions} />
+          <ReportRenderer report={message.parsedReport} />
+        </div>
+      </div>
+    );
+  }
+
   const artifacts = message.artifacts || [];
   const hasChart = artifacts.some(a => a.kind === 'chart');
   const kpiArtifact = !hasChart ? artifacts.find(a => a.kind === 'kpi-grid') : null;
@@ -216,8 +241,9 @@ function UserMessage({ message }) {
   );
 }
 
-function StreamingIndicator({ phase, planSteps, completedSteps }) {
+function StreamingIndicator({ phase, planSteps, completedSteps, reportSubQuestions, reportStepStatus }) {
   const phaseLabel = PHASE_LABELS[phase] || 'Working...';
+  const isReportMode = phase?.startsWith('report_');
 
   return (
     <div className="max-w-[780px]">
@@ -226,6 +252,9 @@ function StreamingIndicator({ phase, planSteps, completedSteps }) {
           <Loader2 size={13} className="animate-spin text-red-400" />
         </div>
         <span className="text-[12px] font-semibold text-neutral-600">Frammer Copilot</span>
+        {isReportMode && (
+          <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-red-400">Report</span>
+        )}
       </div>
       <div className="pl-[34px]">
         <div className="flex items-center gap-2.5 text-sm text-neutral-500 mb-3">
@@ -233,6 +262,40 @@ function StreamingIndicator({ phase, planSteps, completedSteps }) {
           <span className="transition-all duration-300">{phaseLabel}</span>
         </div>
 
+        {/* Report sub-questions progress */}
+        {reportSubQuestions.length > 0 && (
+          <div className="rounded-xl border border-neutral-800/60 bg-[#0D0D0D] overflow-hidden mb-3">
+            <div className="px-3 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-600 border-b border-neutral-800/60">
+              Report Sub-Analyses
+            </div>
+            <div className="px-3 py-2 space-y-1.5">
+              {reportSubQuestions.map((sq) => {
+                const status = reportStepStatus.get(sq.id);
+                const isComplete = !!status;
+                const isFailed = status === 'error';
+                return (
+                  <div key={sq.id} className="flex items-center gap-2 text-[12px]">
+                    {isComplete ? (
+                      isFailed ? (
+                        <AlertTriangle size={11} className="text-red-400 shrink-0" />
+                      ) : (
+                        <CheckCircle2 size={11} className="text-emerald-400 shrink-0" />
+                      )
+                    ) : (
+                      <div className="h-[11px] w-[11px] rounded-full border border-neutral-700 shrink-0" />
+                    )}
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-600 shrink-0">{sq.type}</span>
+                    <span className={`truncate ${isComplete ? (isFailed ? 'text-red-400' : 'text-neutral-400') : 'text-neutral-600'}`}>
+                      {sq.question}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Normal plan steps progress */}
         {planSteps.length > 0 && (
           <div className="rounded-xl border border-neutral-800/60 bg-[#0D0D0D] overflow-hidden">
             <div className="px-3 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-600 border-b border-neutral-800/60">
@@ -389,6 +452,9 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
   const [streamPhase, setStreamPhase] = useState('');
   const [planSteps, setPlanSteps] = useState([]);
   const [completedSteps, setCompletedSteps] = useState(new Map());
+  const [reportMode, setReportMode] = useState(false);
+  const [reportSubQuestions, setReportSubQuestions] = useState([]);
+  const [reportStepStatus, setReportStepStatus] = useState(new Map());
   const endRef = useRef(null);
 
   const voice = useVoiceInput({
@@ -457,6 +523,8 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
     setStreamPhase('');
     setPlanSteps([]);
     setCompletedSteps(new Map());
+    setReportSubQuestions([]);
+    setReportStepStatus(new Map());
 
     try {
       const res = await fetch(`${API_BASE}/chat/stream`, {
@@ -465,7 +533,7 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
           'Content-Type': 'application/json',
           ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         },
-        body: JSON.stringify({ message: text, filters: {}, conversation_id: conversationId }),
+        body: JSON.stringify({ message: text, filters: {}, conversation_id: conversationId, report_mode: reportMode }),
       });
 
       if (!res.ok) {
@@ -514,28 +582,51 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
                 });
                 break;
 
+              case 'report_plan':
+                setReportSubQuestions(event.sub_questions || []);
+                break;
+
+              case 'report_step':
+                setReportStepStatus(prev => {
+                  const next = new Map(prev);
+                  next.set(event.step_id, event.status);
+                  return next;
+                });
+                break;
+
               case 'complete': {
                 const msg = event.message || {};
+                const responseText = msg.markdown || msg.response || event.response || '';
+                const intent = msg.intent || 'analytics';
+
+                // Check if this is a report response
+                const isReport = intent === 'report' || isReportXml(msg.report_xml || responseText);
+                const reportXml = msg.report_xml || (isReport ? responseText : '');
+
                 const assistantMessage = {
                   role: 'assistant',
-                  content: msg.markdown || event.response || '',
-                  markdown: msg.markdown || event.response || '',
+                  content: isReport ? '' : responseText,
+                  markdown: isReport ? '' : responseText,
                   artifacts: msg.artifacts || [],
                   datasets: msg.datasets || [],
                   suggested_actions: msg.suggested_actions || [],
                   actions: msg.actions || event.actions || [],
-                  intent: msg.intent || 'analytics',
+                  intent: isReport ? 'report' : intent,
                   sql: msg.sql || '',
                   error: msg.error || '',
+                  reportXml: reportXml,
+                  parsedReport: isReport ? parseReportXml(reportXml) : null,
                 };
                 setMessages(curr => [...curr, assistantMessage]);
-                if (shouldAutoOpenCanvas(assistantMessage.artifacts)) {
+                if (!isReport && shouldAutoOpenCanvas(assistantMessage.artifacts)) {
                   setCanvasMessage(assistantMessage);
                 }
                 // Reset streaming state
                 setStreamPhase('');
                 setPlanSteps([]);
                 setCompletedSteps(new Map());
+                setReportSubQuestions([]);
+                setReportStepStatus(new Map());
                 fetchConversations();
                 break;
               }
@@ -575,27 +666,34 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
             'Content-Type': 'application/json',
             ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
           },
-          body: JSON.stringify({ message: text, filters: {}, conversation_id: conversationId }),
+          body: JSON.stringify({ message: text, filters: {}, conversation_id: conversationId, report_mode: reportMode }),
         });
         const payload = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(payload.detail || payload.error || `Request failed: ${res.status}`);
 
         if (payload.conversation_id) setConversationId(payload.conversation_id);
 
+        const fbResponse = payload.response || '';
+        const fbIntent = payload.message?.intent || 'analytics';
+        const fbIsReport = fbIntent === 'report' || isReportXml(payload.report_xml || fbResponse);
+        const fbReportXml = payload.report_xml || (fbIsReport ? fbResponse : '');
+
         const assistantMessage = {
           role: 'assistant',
-          content: payload.response || '',
-          markdown: payload.message?.markdown || payload.response || '',
+          content: fbIsReport ? '' : fbResponse,
+          markdown: fbIsReport ? '' : (payload.message?.markdown || fbResponse),
           artifacts: payload.message?.artifacts || [],
           datasets: payload.message?.datasets || [],
           suggested_actions: payload.message?.suggested_actions || [],
           actions: payload.actions || [],
-          intent: payload.message?.intent || 'analytics',
+          intent: fbIsReport ? 'report' : fbIntent,
           sql: payload.message?.sql || '',
           error: payload.message?.error || payload.error || '',
+          reportXml: fbReportXml,
+          parsedReport: fbIsReport ? parseReportXml(fbReportXml) : null,
         };
         setMessages(curr => [...curr, assistantMessage]);
-        if (shouldAutoOpenCanvas(assistantMessage.artifacts)) {
+        if (!fbIsReport && shouldAutoOpenCanvas(assistantMessage.artifacts)) {
           setCanvasMessage(assistantMessage);
         }
         fetchConversations();
@@ -656,6 +754,8 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
                   phase={streamPhase}
                   planSteps={planSteps}
                   completedSteps={completedSteps}
+                  reportSubQuestions={reportSubQuestions}
+                  reportStepStatus={reportStepStatus}
                 />
               )}
               <div ref={endRef} />
@@ -675,12 +775,25 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
                 disabled={loading}
                 className="flex-1 bg-transparent px-5 py-4 text-[15px] text-white placeholder-neutral-600 focus:outline-none disabled:opacity-50"
               />
+              <button
+                onClick={() => setReportMode(r => !r)}
+                disabled={loading}
+                type="button"
+                title={reportMode ? 'Report mode ON — click to disable' : 'Enable report mode for detailed analysis'}
+                className={`mr-1 rounded-xl p-2.5 transition-all ${
+                  reportMode
+                    ? 'bg-red-500/15 text-red-400 ring-1 ring-red-500/30'
+                    : 'bg-[#1A1A1A] text-neutral-500 hover:bg-neutral-700 hover:text-neutral-300'
+                }`}
+              >
+                <FileText size={15} />
+              </button>
               {voice.supported && (
                 <button
                   onClick={voice.toggle}
                   disabled={loading}
                   type="button"
-                  className={`mr-2 rounded-xl p-2.5 transition-all ${
+                  className={`mr-1 rounded-xl p-2.5 transition-all ${
                     voice.listening
                       ? 'bg-red-500 text-white'
                       : 'bg-[#1A1A1A] text-neutral-400 hover:bg-neutral-700 hover:text-white'
