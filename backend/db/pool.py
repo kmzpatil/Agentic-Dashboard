@@ -22,13 +22,23 @@ def init_pool(db: DBConfig) -> None:
     if _engine is not None:
         return
 
-    # Construct the SQLAlchemy URL. 
-    # db.dsn uses postgresql://, we explicitly use postgresql+psycopg://
+    # When PGHOST is a Unix socket directory (starts with '/'), passing it in
+    # the URL mangles the database name.  Use connect_args instead so psycopg2
+    # receives host/port through its own keyword arguments.
     password_part = f":{db.password}" if db.password else ""
-    url = f"postgresql+psycopg://{db.user}{password_part}@{db.host}:{db.port}/{db.database}"
-    
+    is_socket = db.host.startswith("/")
+
+    if is_socket:
+        # URL has no host — psycopg2 gets it via connect_args
+        url = f"postgresql+psycopg2://{db.user}{password_part}@/{db.database}"
+        connect_args: dict = {"host": db.host, "port": db.port}
+    else:
+        url = f"postgresql+psycopg2://{db.user}{password_part}@{db.host}:{db.port}/{db.database}"
+        connect_args = {}
+
     _engine = create_engine(
         url,
+        connect_args=connect_args,
         pool_size=10,
         max_overflow=5,
         pool_pre_ping=True,
