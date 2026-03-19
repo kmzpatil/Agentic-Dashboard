@@ -312,7 +312,7 @@ function CutoffDatePicker({ value, onChange, maxDate }) {
     <div className="relative flex items-center">
       <CalendarDays
         size={14}
-        className="absolute left-3 text-sky-400 pointer-events-none"
+        className="absolute left-3 text-sky-400 pointer-events-none z-10"
       />
       <input
         type="date"
@@ -321,7 +321,7 @@ function CutoffDatePicker({ value, onChange, maxDate }) {
         onChange={(e) => onChange(e.target.value)}
         className="pl-8 pr-8 py-3 rounded-xl border border-sky-500/30 bg-sky-500/5 text-sky-100 text-sm font-bold
                     focus:outline-none focus:ring-2 focus:ring-sky-500/40 transition-all
-                    [color-scheme:dark] w-[160px]"
+                    [color-scheme:dark] w-[180px]"
         title="Forecast start date (cutoff)"
       />
       {value && (
@@ -546,6 +546,36 @@ function buildFilterParams(filters) {
   return params.toString();
 }
 
+// ─── Anomaly insight helper ────────────────────────────────────────────────────
+function getAnomalyInsight(anomaly) {
+  const method = anomaly.method || 'zscore';
+  const direction = anomaly.direction || 'spike';
+  const severity = anomaly.severity || 'medium';
+  const absZ = Math.abs(Number(anomaly.zScore || 0));
+
+  const definition =
+    method === 'seasonal_deviation'
+      ? `Seasonal deviation: the value diverges from its expected seasonal pattern.`
+      : method === 'trend_reversal'
+      ? `Trend reversal: momentum changed direction at this point.`
+      : `Z-score ${Number(anomaly.zScore || 0).toFixed(2)}: the value is ${absZ.toFixed(1)} standard deviations from the historical mean.`;
+
+  let inference = '';
+  if (method === 'trend_reversal') {
+    inference = 'A structural shift was detected — monitor whether this reversal is sustained or a one-off.';
+  } else if (direction === 'drop') {
+    inference = severity === 'high'
+      ? 'Sharp decline — investigate possible data gaps, outages, or a sudden loss of activity.'
+      : 'Moderate dip — worth tracking; may recover naturally or signal an emerging issue.';
+  } else {
+    inference = severity === 'high'
+      ? 'Unusual spike — likely driven by a campaign, event, bulk upload, or data influx.'
+      : 'Mild uptick — could be organic growth or a minor event; watch subsequent periods.';
+  }
+
+  return { definition, inference };
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function UsageTrendsModule({
   authUser,
@@ -605,6 +635,8 @@ export default function UsageTrendsModule({
   const [showComparison, setShowComparison] = useState(false);
   const [comparisonOffset, setComparisonOffset] = useState(1);
   const chartRef = useRef(null);
+  // Always-current anomaly lookup for use inside tooltip callbacks (avoids stale closure)
+  const anomalyLookupRef = useRef(new Map());
 
   // ── Side effects ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1081,8 +1113,11 @@ export default function UsageTrendsModule({
         byPeriod.set(key, { ...a, period: key });
       }
     });
-    return Array.from(byPeriod.values())
+    const result = Array.from(byPeriod.values())
       .sort((a, b) => Math.abs(b.zScore || 0) - Math.abs(a.zScore || 0));
+    // Keep ref in sync for tooltip callbacks
+    anomalyLookupRef.current = new Map(result.map(a => [String(a.period || '').slice(0, 10), a]));
+    return result;
   }, [computedAnomalies, trends.data]);
 
   const chartData = useMemo(() => {
@@ -1259,6 +1294,58 @@ export default function UsageTrendsModule({
       interaction: { mode: "index", intersect: false },
       plugins: {
         legend: { labels: { color: "#d1d5db" } },
+        tooltip: {
+          callbacks: {
+            afterBody(tooltipItems) {
+              const label = tooltipItems[0]?.label;
+              if (!label) return [];
+              const date = String(label).slice(0, 10);
+              const anomaly = anomalyLookupRef.current.get(date);
+              if (!anomaly) return [];
+
+              const z = Number(anomaly.zScore || 0).toFixed(2);
+              const absZ = Math.abs(Number(anomaly.zScore || 0));
+              const method = anomaly.method || 'zscore';
+              const direction = anomaly.direction || 'spike';
+              const severity = anomaly.severity || 'medium';
+
+              // Z-score definition line
+              const methodLabel =
+                method === 'seasonal_deviation' ? 'Seasonal Deviation' :
+                method === 'trend_reversal' ? 'Trend Reversal' : 'Z-Score';
+              const defLine =
+                method === 'seasonal_deviation'
+                  ? `Seasonal Dev: value diverges from the expected seasonal pattern`
+                  : method === 'trend_reversal'
+                  ? `Trend Reversal: momentum changed direction at this point`
+                  : `Z-Score ${z}: value is ${absZ.toFixed(1)}σ from the mean`;
+
+              // Short inference
+              let insight = '';
+              if (direction === 'drop') {
+                insight = severity === 'high'
+                  ? 'Sharp decline — possible data gap, outage, or lost activity.'
+                  : 'Moderate dip — worth monitoring for a continued downtrend.';
+              } else {
+                insight = severity === 'high'
+                  ? 'Unusual spike — likely an event, campaign, or data burst.'
+                  : 'Mild uptick — may be organic growth or a small event effect.';
+              }
+              if (method === 'trend_reversal') {
+                insight = 'Structural shift detected — the trend changed direction here.';
+              }
+
+              return ['', `⚠ ${methodLabel.toUpperCase()}`, defLine, `→ ${insight}`];
+            },
+          },
+          backgroundColor: 'rgba(15,15,15,0.97)',
+          titleColor: '#e5e7eb',
+          bodyColor: '#9ca3af',
+          borderColor: 'rgba(239,68,68,0.4)',
+          borderWidth: 1,
+          padding: 12,
+          boxPadding: 4,
+        },
         // Draw a subtle cross marker inside trend reversal anomaly dots.
         anomalyReversalMarker: {
           id: "anomalyReversalMarker",
@@ -1494,11 +1581,10 @@ export default function UsageTrendsModule({
 
               {/* Forecast toggle + controls */}
               <div className="group shrink-0">
-                <div className="h-5 mb-2 flex items-end justify-between gap-3">
+                <div className="h-5 mb-2 flex items-center gap-3">
                   <label className="text-[10px] font-bold uppercase tracking-[0.2em] leading-none text-neutral-500 group-hover:text-neutral-300 transition-colors">
                     Forecast
                   </label>
-                  {/* Toggle */}
                   <button
                     type="button"
                     aria-pressed={isPredicting}
@@ -1509,15 +1595,15 @@ export default function UsageTrendsModule({
                         return next;
                       });
                     }}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full border transition-all ${
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full border transition-all ${
                       isPredicting
                         ? "border-red-500/60 bg-red-500/20"
                         : "border-neutral-700 bg-[#0a0a0a]/90"
                     }`}
                   >
                     <span
-                      className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
-                        isPredicting ? "translate-x-6" : "translate-x-1"
+                      className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                        isPredicting ? "translate-x-[18px]" : "translate-x-0.5"
                       }`}
                     />
                   </button>
@@ -1526,13 +1612,12 @@ export default function UsageTrendsModule({
                 {/* Forecast sub-controls — only visible when predicting */}
                 <div className="min-h-[46px]">
                   {isPredicting && (
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {/* Period length */}
+                    <div className="flex items-center gap-3">
                       <FloatingDropdown
                         value={predictionLength}
                         onChange={setPredictionLength}
                         themeColor="forecast"
-                        minWidth="150px"
+                        minWidth="130px"
                         options={[
                           { value: 7, label: "7 Periods" },
                           { value: 30, label: "30 Periods" },
@@ -1540,15 +1625,11 @@ export default function UsageTrendsModule({
                           { value: 90, label: "90 Periods" },
                         ]}
                       />
-
-                      {/* Cutoff date picker */}
-                      <div className="flex flex-col gap-1">
-                        <CutoffDatePicker
-                          value={cutoffDate}
-                          onChange={setCutoffDate}
-                          maxDate={todayIso()}
-                        />
-                      </div>
+                      <CutoffDatePicker
+                        value={cutoffDate}
+                        onChange={setCutoffDate}
+                        maxDate={todayIso()}
+                      />
                     </div>
                   )}
                 </div>
@@ -2090,6 +2171,18 @@ export default function UsageTrendsModule({
                         </div>
                       </div>
                     </div>
+                    {/* Insight — revealed on hover */}
+                    {(() => {
+                      const { definition, inference } = getAnomalyInsight(anomaly);
+                      return (
+                        <div className="mt-0 max-h-0 overflow-hidden group-hover:max-h-40 group-hover:mt-3 transition-all duration-300 ease-in-out">
+                          <div className="border-t border-neutral-800/70 pt-3 space-y-1.5">
+                            <p className="text-[11px] text-neutral-500 leading-relaxed">{definition}</p>
+                            <p className="text-[11px] text-neutral-300 leading-relaxed">→ {inference}</p>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 ))}
               {!trends.loading && !anomalies.length && (
