@@ -26,8 +26,8 @@ const GRANULARITIES = [
 
 // ─── Chart tooltip / scale base ──────────────────────────────────────────────
 const TOOLTIP = { backgroundColor: '#111', borderColor: '#2a2a2a', borderWidth: 1, titleColor: '#fff', bodyColor: '#737373', padding: 10 };
-const SCALE_X = { ticks: { color: '#404040', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' } };
-const SCALE_Y = { ticks: { color: '#404040', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' } };
+const SCALE_X = { ticks: { color: '#9ca3af', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.06)' } };
+const SCALE_Y = { ticks: { color: '#9ca3af', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.06)' } };
 
 // ─── Stat Card ───────────────────────────────────────────────────────────────
 function StatCard({ title, value, subtitle, trendData }) {
