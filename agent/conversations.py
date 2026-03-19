@@ -75,17 +75,29 @@ _SessionLocal = None
 
 def _init_engine():
     global _engine, _SessionLocal
-    if _engine is None:
-        url = resolve_database_url()
-        _engine = create_engine(url, pool_pre_ping=True, future=True)
+    if _engine is not None and _SessionLocal is not None:
+        return
+
+    try:
+        if _engine is None:
+            url = resolve_database_url()
+            _engine = create_engine(url, pool_pre_ping=True, future=True)
+
         Base.metadata.create_all(_engine)
         _SessionLocal = sessionmaker(bind=_engine)
+    except Exception:
+        # Avoid half-initialized globals causing TypeError on later requests.
+        _engine = None
+        _SessionLocal = None
+        raise
 
 
 @contextmanager
 def _session_scope():
     """Context manager that commits on success, rolls back on failure."""
     _init_engine()
+    if _SessionLocal is None:
+        raise RuntimeError("Conversation database session factory is not initialized")
     session = _SessionLocal()
     try:
         yield session
