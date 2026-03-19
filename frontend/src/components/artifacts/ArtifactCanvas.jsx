@@ -61,7 +61,10 @@ function buildDatasetMap(datasets) {
 }
 
 // ── Smart chart type availability ───────────────────────────────────────────
-function getAvailableTypes(dataset) {
+function getAvailableTypes(dataset, agentValidTypes = []) {
+  if (agentValidTypes && agentValidTypes.length > 0) {
+    return agentValidTypes;
+  }
   const cols = dataset?.schema || [];
   const rows = dataset?.rows || [];
   const numericCols = cols.filter(c => c.type === 'number').map(c => c.key);
@@ -722,7 +725,7 @@ function VisualizeTab({ artifact, dataset }) {
 
   useEffect(() => { setChartType(artifact?.spec?.chartType || 'bar'); }, [artifact?.spec?.chartType]);
 
-  const available = useMemo(() => getAvailableTypes(dataset), [dataset]);
+  const available = useMemo(() => getAvailableTypes(dataset, artifact?.spec?.validChartTypes), [dataset, artifact?.spec?.validChartTypes]);
   const data = useMemo(() => buildChartData(chartType, artifact, dataset), [chartType, artifact, dataset]);
   const options = useMemo(() => buildChartOptions(chartType), [chartType]);
 
