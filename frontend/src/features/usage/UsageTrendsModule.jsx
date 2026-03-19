@@ -1085,6 +1085,15 @@ export default function UsageTrendsModule({
       trend_reversal: 3,
     };
     const anomalyDates = new Map();
+    (computedAnomalies || []).forEach((a) => {
+      const key = String(a.period || "").slice(0, 10);
+      if (!key) return;
+      anomalyDates.set(key, {
+        direction: a.direction,
+        method: "zscore",
+        severity: a.severity || "medium",
+      });
+    });
     (trends.data?.anomalies || []).forEach((a) => {
       const key = String(a.period || "").slice(0, 10);
       const next = {
@@ -1195,10 +1204,9 @@ export default function UsageTrendsModule({
 
     return { labels, datasets };
   }, [
-
     historySeries, resolvedMetric, predictionSeries,
     isPredicting, showPoints, cutoffDate, resolvedCutoff,
-    computedAnomalies, showComparison, comparisonOffset,
+    computedAnomalies, trends.data, showComparison, comparisonOffset,
   ]);
 
   const multiDimChartData = useMemo(() => {
@@ -2241,74 +2249,41 @@ export default function UsageTrendsModule({
 
             {/* Scope Boundaries */}
             {needsClientFilter && authUser?.role === "website_admin" && (
-              <div className="w-full lg:flex-1 lg:min-w-[180px] group">
+              <div className="flex-1 min-w-[180px] group">
                 <label className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-500 mb-2 block group-hover:text-neutral-300 transition-colors">
-                  Comparison Type
+                  Client Scope
                 </label>
                 <FloatingDropdown
-                  value={multiDim}
-                  onChange={setMultiDim}
-                  options={MULTI_DIM_OPTIONS}
+                  value={clientFilter}
+                  onChange={(val) => {
+                    setClientFilter(val);
+                    setUserFilter(["All"]);
+                  }}
+                  options={toOptionList(filterOptions.company)}
+                  multiSelect={true}
                   minWidth=""
                   className="w-full"
                 />
               </div>
+            )}
 
-              {/* Scope Boundaries */}
-              {needsClientFilter && authUser?.role === "website_admin" && (
-                <div className="flex-1 min-w-[180px] group">
-                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-500 mb-2 block group-hover:text-neutral-300 transition-colors">
-                    Client Scope
-                  </label>
-                  <FloatingDropdown
-                    value={clientFilter}
-                    onChange={(val) => {
-                      setClientFilter(val);
-                      setUserFilter(["All"]);
-                    }}
-                    options={toOptionList(filterOptions.company)}
-                    multiSelect={true}
-                    minWidth=""
-                    className="w-full"
-                  />
-                </div>
-              )}
-
-              {needsUserFilter && authUser?.role !== "user" && (
-                <div className="flex-1 min-w-[180px] group">
-                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-500 mb-2 block group-hover:text-neutral-300 transition-colors">
-                    User Scope
-                  </label>
-                  <FloatingDropdown
-                    value={userFilter}
-                    onChange={setUserFilter}
-                    options={toOptionList(
-                      multiDimFilterOptionsData?.filters?.user || ["All"],
-                    )}
-                    multiSelect={true}
-                    minWidth=""
-                    className="w-full"
-                  />
-                </div>
-              )}
-
-              {/* Time Horizon Slider */}
-              <div className="flex-[2] min-w-[240px]">
+            {needsUserFilter && authUser?.role !== "user" && (
+              <div className="flex-1 min-w-[180px] group">
                 <label className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-500 mb-2 block group-hover:text-neutral-300 transition-colors">
-                  Date window
+                  User Scope
                 </label>
-                <div className="h-full flex flex-col justify-end">
-                  <DateRangeSlider
-                    dates={sliderDates}
-                    startIndex={multiDimStartIndex}
-                    endIndex={multiDimEndIndex}
-                    onChange={(start, end) => {
-                      setMultiDimStartIndex(start);
-                      setMultiDimEndIndex(end);
-                    }}
-                  />
-                </div>
+                <FloatingDropdown
+                  value={userFilter}
+                  onChange={setUserFilter}
+                  options={toOptionList(
+                    multiDimFilterOptionsData?.filters?.user || ["All"],
+                  )}
+                  multiSelect={true}
+                  minWidth=""
+                  className="w-full"
+                />
               </div>
+            )}
 
             {/* Time Horizon Slider */}
             <div className="w-full lg:flex-[2] lg:min-w-[240px]">
