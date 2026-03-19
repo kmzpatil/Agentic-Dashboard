@@ -1,22 +1,28 @@
 """
 agent.py
 -------------
-Frammer Analytics Agent.
+Frammer Analytics Agent — Plan-Execute-Synthesize Architecture.
 
 Architecture:
-  1. Client: Anthropic Claude 3 Haiku via client.py.
-  2. Tools:  Loaded from the local MCP server (AgentToolModule).
-  3. Loop:   LangGraph ReAct StateGraph.
+  1. Planner:     Single LLM call produces a structured execution plan (SQL queries, charts).
+  2. Executor:    Runs plan steps in parallel (no LLM calls needed).
+  3. Synthesizer: Single LLM call summarizes results into a concise response.
+  4. Repair:      Optional — fixes failed SQL steps (max 2 retries).
+
+Token budget: ~20-30k total (down from 150-200k with the old ReAct loop).
 """
 
+import asyncio
 import json
 import logging
+import re
 import sys
 import time
+import uuid as _uuid
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any, Dict, List, Optional, TypedDict
-import re
+from typing import Any, AsyncGenerator, Dict, List, Optional, TypedDict
 
 from dotenv import load_dotenv
 
@@ -30,19 +36,6 @@ load_dotenv(_AGENT_DIR.parent / ".env")
 load_dotenv()
 
 try:
-    from logger_setup import setup_logging
-except ImportError:
-    from agent.logger_setup import setup_logging
-setup_logging()
-
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langgraph.graph import END, StateGraph
-from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode
-from langchain_core.tools import tool
-import uuid as _uuid
-
-try:
     from client import LLMClient
 except ImportError:
     from agent.client import LLMClient
@@ -51,32 +44,28 @@ except ImportError:
 try:
     from mcp_server.config import ServerSettings
     from mcp_server.database import DatabaseClient, QueryValidationError
-    from tools.metric_definitions import retrieve_metric_definitions
+    from tools.metric_definitions import retrieve_metric_definitions, METRIC_DICTIONARY
     from tools.chart import generate_plotly_chart
     from tools import get_frammer_schema, execute_sql_query, get_db
-    from tools.sql_query import execute_exploration_queries
 except ImportError:
     from agent.mcp_server.config import ServerSettings
     from agent.mcp_server.database import DatabaseClient, QueryValidationError
-    from agent.tools.metric_definitions import retrieve_metric_definitions
+    from agent.tools.metric_definitions import retrieve_metric_definitions, METRIC_DICTIONARY
     from agent.tools.chart import generate_plotly_chart
     from agent.tools import get_frammer_schema, execute_sql_query, get_db
-    from agent.tools.sql_query import execute_exploration_queries
 
 logger = logging.getLogger("frammer.agent")
 
 _THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
-_THINK_OPEN_RE  = re.compile(r"<think>.*", re.DOTALL)   # unclosed think tag
-_THINK_CLOSE    = "</think>"
+_THINK_OPEN_RE = re.compile(r"<think>.*", re.DOTALL)
+_THINK_CLOSE = "</think>"
+
 
 def _clean(text: str) -> str:
-    """Strip all <think>...</think> blocks and return the remainder."""
     return _THINK_BLOCK_RE.sub("", text).strip()
 
+
 def _extract_response(text: str) -> str:
-    """
-    Extracts the final answer. Claude Haiku rarely uses <think> tags, but kept for compatibility.
-    """
     if _THINK_CLOSE in text:
         after = text.split(_THINK_CLOSE, 1)[-1].strip()
         if after:
@@ -86,245 +75,68 @@ def _extract_response(text: str) -> str:
             return match.group(1).strip()
     return _THINK_OPEN_RE.sub("", text).strip() or text.strip()
 
-# ── Per-request context ──────────────────────────────────────────────────────
-from contextvars import ContextVar
-_ctx: ContextVar[dict] = ContextVar("agent_ctx")
-
-def _new_ctx(auth: Optional[Any] = None) -> dict:
-    return {
-        "sql": "", "records": [], "query_results": {}, "latest_result_id": "",
-        "chart_xml": "", "chart_data": {}, "actions": [], "plan": "", "auth": auth
-    }
-
-def _get_ctx() -> dict:
-    try:
-        return _ctx.get()
-    except LookupError:
-        ctx = _new_ctx()
-        _ctx.set(ctx)
-        return ctx
 
 # ── Result dataclass ─────────────────────────────────────────────────────────
+
+@dataclass
+class ChartResult:
+    chart_xml: str = ""
+    data_records: List[Dict] = field(default_factory=list)
+    sql: str = ""
+    title: str = ""
+    chart_type: str = ""
+    size_column: str = ""
+    group_column: str = ""
+
 
 @dataclass
 class AgentResult:
     intent: str = "analytics"
     response: str = ""
     actions: List[str] = field(default_factory=list)
-    chart_xml: str = ""
-    chart_data: Dict = field(default_factory=dict)
+    charts: List[ChartResult] = field(default_factory=list)
     sql: str = ""
     error: str = ""
     plan: str = ""
+    # Legacy compat
+    chart_xml: str = ""
+    chart_data: Dict = field(default_factory=dict)
+
+
+# ── Plan Step Types ──────────────────────────────────────────────────────────
+
+class PlanStep(TypedDict, total=False):
+    id: str           # "s1", "s2", ...
+    action: str       # "run_sql" | "build_chart" | "get_column_values" | "get_time" | "explore"
+    params: Dict      # action-specific parameters
+    depends_on: List[str]  # step IDs this depends on
+    description: str  # human-readable description
+
 
 # ── Schema cache ─────────────────────────────────────────────────────────────
 _schema_cache: Optional[str] = None
 
-# ── Tool definitions (LangChain-compatible, backed by MCP module logic) ───────
+# ── LLM client ───────────────────────────────────────────────────────────────
+_llm_client = LLMClient()
 
-@tool
-def get_schema() -> str:
-    """Retrieve the full database schema — table names, column names and types.
-    ALWAYS call this FIRST before writing any SQL."""
-    global _schema_cache
-    ctx = _get_ctx()
-    if not _schema_cache:
-        _schema_cache = get_frammer_schema()
-    ctx["actions"].append("Retrieved database schema")
-    logger.info("[tool] get_schema → %d chars", len(_schema_cache))
-    return _schema_cache
+# ── System Prompts (split for token efficiency) ──────────────────────────────
 
-@tool
-def get_metric_definitions(query: str) -> str:
-    """Look up business metric definitions, formulas, table names, join paths, and example SQL.
-    Args:
-        query: Keyword describing the metric (e.g. 'conversion', 'publish', 'duration').
-    """
-    ctx = _get_ctx()
-    result = retrieve_metric_definitions(query)
-    ctx["actions"].append("Looked up metric definitions")
-    logger.info("[tool] get_metric_definitions(%r) → %d chars", query[:40], len(result))
-    return result
+PLANNER_PROMPT = """\
+You are Frammer AI, an analytics planner for a media production platform.
+Your job is to analyze the user's question and produce an EXECUTION PLAN — a list of steps (SQL queries, charts) that will answer the question.
 
-@tool
-def search_relevant_schemas(query: str) -> str:
-    """Semantic CHESS-RAG search for relevant tables and columns.
-    Args:
-        query: Natural language description of the data you need.
-    """
-    ctx = _get_ctx()
-    try:
-        db = get_db()
-        results = db.search_table_schemas(query, limit=5)
-        ctx["actions"].append(f"Schema search — {len(results)} match(es)")
-        logger.info("[tool] search_relevant_schemas(%r) → %d results", query[:40], len(results))
-        return json.dumps(results, indent=2, default=str)
-    except Exception as exc:
-        ctx["actions"].append("Schema search failed")
-        return f"Schema search error: {exc}. Use get_schema instead."
+## How to Plan
 
-@tool
-def run_sql_query(sql: str, limit: int = 200) -> str:
-    """Execute a read-only PostgreSQL SELECT. Returns JSON with row_count, columns, result_id, sample_rows.
-    On failure returns an error — fix the SQL and retry.
+1. First, understand what the user is asking:
+   - If it's conversational (greeting, thanks, small talk) → respond with `"conversational": true` and a brief reply. No plan needed.
+   - If it's a data question → create a plan with SQL queries and optional charts.
 
-    SQL RULES:
-    - Double-quote mixed-case columns: "Upload_Date", "User_Name"
-    - Cast text dates: to_date("Upload_Date", 'YYYY-MM-DD')
-    - Monthly grouping: date_trunc('month', to_date("Upload_Date",'YYYY-MM-DD'))::date AS month
-    Args:
-        sql: Valid PostgreSQL SELECT statement.
-        limit: Max rows to return.
-    """
-    ctx = _get_ctx()
-    logger.info("[tool] run_sql_query: %s…", sql[:120])
-    raw = execute_sql_query(sql, limit=limit, auth=ctx.get("auth"))
-    parsed = json.loads(raw)
+2. For data questions, plan ALL needed queries upfront:
+   - Each query should be independent where possible (so they can run in parallel)
+   - Use the schema and metrics below to write correct SQL
+   - Plan charts for results that benefit from visualization
 
-    if "error" in parsed:
-        ctx["actions"].append(f"SQL failed — {parsed['error'][:60]}")
-        logger.warning("[tool] SQL error: %s", parsed["error"][:200])
-        return f"SQL Error: {parsed['error']}\n\nFix the query and retry."
-
-    records = parsed.get("data", [])
-    result_id = str(_uuid.uuid4())[:8]
-    ctx["sql"] = sql
-    ctx["records"] = records
-    ctx["query_results"][result_id] = records
-    ctx["latest_result_id"] = result_id
-    ctx["chart_data"]["query_result"] = records
-
-    cols = list(records[0].keys()) if records else []
-    ctx["actions"].append(f"SQL OK — {len(records)} rows, {len(cols)} cols")
-    logger.info("[tool] SQL OK: %d rows, cols=%s", len(records), cols)
-
-    sample_size = 50
-    return json.dumps({
-        "status": "success",
-        "result_id": result_id,
-        "total_row_count": len(records),
-        "columns": cols,
-        "data": records[:sample_size],
-        "note": f"Showing first {sample_size} rows only." if len(records) > sample_size else "Showing all rows."
-    }, default=str)
-
-@tool
-def build_chart(chart_type: str, x_column: str, y_columns: str, title: str, result_id: str = "") -> str:
-    """Build a chart from SQL query results. Call AFTER run_sql_query.
-    Args:
-        chart_type: 'bar', 'line', or 'pie'.
-        x_column: Exact column name for X axis.
-        y_columns: Column name(s) for Y axis (comma-separated for multi-series).
-        title: Short chart title, max 8 words.
-        result_id: Optional result_id from a prior run_sql_query. Uses latest if empty.
-    """
-    ctx = _get_ctx()
-    records = (
-        ctx["query_results"].get(result_id)
-        if result_id
-        else ctx.get("records", [])
-    )
-    if not records:
-        ctx["actions"].append("Chart skipped — no data")
-        return "No data available. Run a SQL query first."
-
-    attrs = {"type": chart_type, "x_axis": x_column, "y_axis": y_columns, "title": title}
-    xml = generate_plotly_chart(data_records=records, chart_attributes=attrs)
-
-    if xml and xml.startswith("<?xml"):
-        ctx["chart_xml"] = xml
-        ctx["actions"].append(f"Chart: {chart_type} — {title}")
-        logger.info("[tool] build_chart OK (%d chars)", len(xml))
-        return f"Chart created: {title} ({chart_type}, {len(records)} points)"
-
-    ctx["actions"].append("Chart generation failed")
-    logger.warning("[tool] build_chart failed: %s", str(xml)[:100])
-    return f"Chart failed: {xml or 'Unknown error'}"
-
-@tool
-def get_current_time() -> str:
-    """Return the current local date and time.
-    ALWAYS call this if the user uses relative time terms like 'today', 'yesterday', 'last week', or 'last month'
-    to calculate the exact date range for SQL."""
-    from datetime import datetime
-    now = datetime.now()
-    ctx = _get_ctx()
-    ctx["actions"].append("Checked current time")
-    return now.strftime("%Y-%m-%d %H:%M:%S")
-
-@tool
-def execute_exploration_queries_tool(json_queries: str) -> str:
-    """Run multiple simple SELECTs in batch (e.g. check distinct values or min/max dates).
-    Args:
-        json_queries: A JSON array of string SQL queries.
-    """
-    import json as json_lib
-    ctx = _get_ctx()
-    try:
-        queries = json_lib.loads(json_queries)
-        if not isinstance(queries, list):
-            return "Expected a JSON list of strings."
-        results = []
-        for q in queries:
-            try:
-                res = json_lib.loads(execute_sql_query(q, 5))
-                if "error" in res:
-                    results.append({"query": q, "error": res["error"]})
-                else:
-                    results.append({"query": q, "data": res.get("data", [])})
-            except Exception as ex:
-                results.append({"query": q, "error": str(ex)})
-        ctx["actions"].append(f"Ran {len(queries)} exploration queries")
-        return json.dumps(results, default=str)
-    except Exception as e:
-        return f"failed to parse json_queries: {e}"
-
-@tool
-def get_data_profile(result_id: str = "") -> str:
-    """Returns descriptive statistics for a previously run query result.
-    Use this to understand the distribution of large datasets (e.g. 10,000+ rows) without retrieving all rows.
-    Includes: Count, Mean, Median, StdDev, Min/Max, and Top 5 unique values per column.
-    Args:
-        result_id: Optional result_id from a prior run_sql_query. Uses latest if empty.
-    """
-    import pandas as pd
-    ctx = _get_ctx()
-    records = (
-        ctx["query_results"].get(result_id)
-        if result_id
-        else ctx.get("records", [])
-    )
-    if not records:
-        return "No data available. Run a SQL query first."
-
-    df = pd.DataFrame(records)
-    
-    # Basic numeric stats
-    numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-    profile = {
-        "total_rows": len(df),
-        "columns": list(df.columns),
-        "numeric_stats": df.describe().to_dict(),
-        "top_values": {
-            col: df[col].value_counts().head(5).to_dict()
-            for col in df.columns
-        }
-    }
-    
-    ctx["actions"].append(f"Profiled data — {len(df)} rows")
-    return json.dumps(profile, default=str, indent=2)
-
-# ── LLM clients ──────────────────────────────────────────────────────────────
-TOOLS = [get_schema, get_metric_definitions, search_relevant_schemas, execute_exploration_queries_tool, run_sql_query, build_chart, get_current_time, get_data_profile]
-
-_fast_client  = LLMClient.fast()
-_creat_client = LLMClient.creative()
-_loop_client  = LLMClient()
-_llm_with_tools = _loop_client.llm.bind_tools(TOOLS)
-
-# ── System prompt ─────────────────────────────────────────────────────────────
-SYSTEM_PROMPT = """\
-You are Frammer AI, an analytics assistant for a media production platform.
+3. Mark dependencies: if a chart needs data from a specific query, set `depends_on` to that query's step ID.
 
 ## Database Schema
 {schema_block}
@@ -334,331 +146,881 @@ You are Frammer AI, an analytics assistant for a media production platform.
 
 ## Dataset Overview
 The dataset tracks a media content pipeline:
-1. **Upload Phase** (`raw_videos`): Raw footage is uploaded. Each record has a `Language`, `Input_Type` (e.g., 'speech', 'interview'), and `Uploaded_Duration`.
-2. **Processing Phase** (`created_assets`): AI-generated assets (clips, summaries, chapters) are created from raw videos. One video can produce multiple assets of different `Output_Type` values.
-3. **Publication Phase** (`published_posts`): Assets are distributed to platforms. An asset is 'published' only if it appears in this table.
-4. **Distribution context** (`post_distribution`): Tracks where a post was published (`Published_Platform`).
-5. **Ownership context** (`raw_video_channel`, `users`, `channels`, `clients`): Videos are mapped to specific channels and users.
+1. **Upload Phase** (`raw_videos`): Raw footage is uploaded. Each record has a `Language`, `Input_Type`, and `Uploaded_Duration`.
+2. **Processing Phase** (`created_assets`): AI-generated assets (clips, summaries, chapters). One video → multiple assets of different `Output_Type`.
+3. **Publication Phase** (`published_posts`): Assets distributed to platforms. An asset is 'published' only if it appears here.
+4. **Distribution** (`post_distribution`): Where a post was published (`Published_Platform`).
+5. **Ownership** (`raw_video_channel`, `users`, `channels`, `clients`): Videos mapped to channels and users.
 
 ## Dataset Statistics
-- **raw_videos**: ~10.7k rows. Track uploads by language and type.
-- **created_assets**: ~53.7k rows. Track generation of clips/summaries.
-- **published_posts**: ~1.3k rows. Track distribution to platforms.
-- **Join Rule**: rv (Video) -> ca (Asset) -> pp (Post) -> pd (Platform).
-
-## Tools
-1. **execute_exploration_queries_tool** — Evaluate distinct categories or data availability early.
-2. **run_sql_query** — Execute a PostgreSQL SELECT (retry on error).
-3. **build_chart** — Visualise query results.
-
-## Execution Plan
-{plan_block}
-
-## Workflow
-1. Read the provided Schema and Metrics exactly as written.
-2. run_sql_query → retrieve data (fix and retry on error).
-3. build_chart → visualise.
-4. Write a VERY CONCISE business markdown summary (MAX 2-3 SENTENCES). Do not over-explain.
-
-## Shift-Left: Server-Side Aggregation
-The most efficient way to handle large data is to ensure you never retrieve raw rows for large datasets.
-- **Aggregation is Mandatory**: If a query is likely to return >100 rows, you MUST use `GROUP BY`, `SUM`, `AVG`, or `COUNT` in SQL.
-- **Statistical Profiling**: For understanding the "shape" and distribution of a large result set without seeing all rows, ALWAYS call `get_data_profile`.
-
-## Metric Recipes
-Use these SQL patterns for complex calculations:
-- **WoW Growth**: `(count_this_week::float - count_last_week) / NULLIF(count_last_week, 0)` using CTEs for each period.
-- **Rolling 7-Day Average**: `AVG(count) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW)`
-- **Conversion Rate**: `COUNT(DISTINCT pp."Asset_ID")::float / NULLIF(COUNT(DISTINCT ca."Asset_ID"), 0)`
-- **Retention**: Join `raw_videos` with itself on `User_ID` and `Upload_Date` intervals.
-
-## Response Rules
-- **Extreme Brevity**: Your final answer MUST be 2-3 sentences maximum. Get straight to the point. No fluff.
-- **Data Integrity**: ONLY use numbers and facts present in the tool output. Never estimate or hallucinate values.
-- **Sample Handling**: If `total_row_count` > provided `data` rows, explicitly state you are summarizing a sample.
-- **Data Profiling**: Mention key statistics (mean, median, top values) from `get_data_profile` if you used it.
-- **Chart Tool**: When calling `build_chart`, you MUST provide BOTH `x_column` and `y_columns` arguments. Never omit `y_columns`.
-- **Formatting**: **Bold** key numbers and terms.
-- **Privacy**: Never expose SQL or internal technical IDs to the user.
-- **No Images**: Do NOT generate markdown image tags.
-- **No Thinking**: Do NOT wrap final responses in <think> tags.
+- **raw_videos**: ~10.7k rows  |  **created_assets**: ~53.7k rows  |  **published_posts**: ~1.3k rows
 
 ## Critical SQL Rules
-- ALWAYS double-quote mixed-case column names: pp."Post_ID", rv."Input_Type", pd."Channel_Name"
-- ALWAYS double-quote mixed-case table aliases too when referencing columns
-- Keep SQL concise — avoid unnecessary subqueries
+- ALWAYS double-quote mixed-case column names: pp."Post_ID", rv."Input_Type"
 - Cast text dates: to_date("Upload_Date", 'YYYY-MM-DD')
+- Monthly grouping: date_trunc('month', to_date("Upload_Date",'YYYY-MM-DD'))::date AS month
+- Join chain: raw_videos (rv) -> created_assets (ca) -> published_posts (pp) -> post_distribution (pd)
+- For conversion rates: group by channel/user through rv/rvc, NOT through post_distribution
+- Count published volume with COUNT(DISTINCT pp."Asset_ID"), not Post_ID
+- NEVER guess filter values. The schema above has sample values — check them. If uncertain, add a `get_column_values` step.
+- If >100 rows expected, use GROUP BY / aggregations in SQL
+{auth_block}
+{memory_block}
 
-## Common SQL Pitfalls (AVOID)
-- **Join Error**: Joining `published_posts.Asset_ID` directly to `raw_videos.Video_ID`. Use `created_assets` (ca) as the bridge.
-- **Cartesian Product**: Adding tables without an explicit `ON` join condition.
-- **Case Error**: Querying `Input_Type = 'Interview'`. Use `lower("Input_Type") = 'interview'`.
+## System Environment
+Current System Time: {now_str}
 
-## Join Integrity Safety Check
-- Correct Chain: `raw_videos` (rv) -> `created_assets` (ca) -> `published_posts` (pp) -> `post_distribution` (pd)
-{memory_block}"""
+## Output Format
 
-# ── LangGraph StateGraph ─────────────────────────────────────────────────────
+You MUST call the `create_plan` tool with your execution plan. The plan is a JSON object with:
+- `conversational`: boolean — true if this is just a greeting/chat (no data needed)
+- `reply`: string — only if conversational, the response text
+- `reasoning`: string — brief explanation of your approach
+- `steps`: array of step objects, each with:
+  - `id`: string like "s1", "s2", ...
+  - `action`: "run_sql" | "build_chart" | "get_column_values" | "get_time" | "explore"
+  - `params`: object with action-specific params
+  - `depends_on`: array of step IDs this depends on (empty if independent)
+  - `description`: brief human-readable description
 
-class _AgentState(TypedDict):
-    messages: Annotated[list, add_messages]
+### Action params:
+- `run_sql`: {{ "sql": "SELECT ...", "description": "what this query computes" }}
+- `build_chart`: see Chart Type Selection Guide below
+- `get_column_values`: {{ "table_name": "table", "column_name": "column" }}
+- `get_time`: {{}}  (returns current datetime)
+- `explore`: {{ "queries": ["SELECT DISTINCT ...", "SELECT MIN(...) ..."] }}  (lightweight exploration)
 
-def _call_model(state: _AgentState):
-    msg_count = len(state["messages"])
-    logger.info("--- LOOP ITER: Calling LLM (Context: %d messages) ---", msg_count)
-    start = time.time()
+### Chart Type Selection Guide
 
-    try:
-        resp = _llm_with_tools.invoke(state["messages"])
-        duration = time.time() - start
-        
-        usage = getattr(resp, "usage_metadata", {})
-        input_tokens = usage.get("input_tokens", 0)
-        output_tokens = usage.get("output_tokens", 0)
-        total_tokens = usage.get("total_tokens", 0)
-        
-        logger.info(
-            "--- LLM STEP DONE ---\n"
-            "  Duration     : %.2fs\n"
-            "  Input Tokens : %d\n"
-            "  Output Tokens: %d\n"
-            "  Total Tokens : %d\n"
-            "  Response Raw : %s",
-            duration, input_tokens, output_tokens, total_tokens, resp.content[:1000]
-        )
+Pick the chart type that best matches the DATA SHAPE and ANALYTICAL INTENT:
 
-        tool_count = len(getattr(resp, "tool_calls", []))
-        if tool_count:
-            for tc in resp.tool_calls:
-                args_preview = json.dumps(tc.get("args", {}))
-                logger.info("--- TOOL CALL: %s(%s) ---", tc.get("name", "?"), args_preview)
-        return {"messages": [resp]}
-    except Exception as e:
-        logger.error("--- LOOP ERROR: %s ---", e)
-        raise
+#### Comparison Charts
+- `bar` — Compare values across categories (e.g. uploads by channel). Best for ≤15 categories, 1-2 metrics.
+- `stacked-bar` — Show composition AND total across categories (e.g. uploads by channel, broken down by language). Use when you have 2+ metrics that sum to a meaningful total.
+- `horizontal-bar` — Rank items or compare categories with long labels (e.g. "Top 10 users by upload count").
 
-def _should_continue(state: _AgentState) -> str:
-    last = state["messages"][-1]
-    if hasattr(last, "tool_calls") and last.tool_calls:
-        return "tools"
-    return END
+#### Trend Charts
+- `line` — Show change over time for 1-2 metrics (e.g. monthly upload trend). X-axis MUST be a date/time column.
+- `area` — Show composition over time with stacked filled regions (e.g. monthly uploads by language stacked). Use when 2+ metrics should show both individual trends AND their cumulative total.
 
-_tool_node = ToolNode(TOOLS)
-_builder = StateGraph(_AgentState)
-_builder.add_node("agent", _call_model)
-_builder.add_node("tools", _tool_node)
-_builder.set_entry_point("agent")
-_builder.add_conditional_edges("agent", _should_continue, {"tools": "tools", END: END})
-_builder.add_edge("tools", "agent")
-_graph = _builder.compile()
+#### Proportion Charts
+- `pie` — Show parts of a whole (e.g. share of uploads by language). ONLY when ≤6 categories and 1 metric.
+- `doughnut` — Same as pie but cleaner. Prefer over pie for a modern look.
+- `polar-area` — Compare magnitudes across categories on a radial layout. Good for 4-8 categories.
 
-# ── Planner ───────────────────────────────────────────────────────────────────
+#### Distribution Charts
+- `box` — Show statistical distribution (min, Q1, median, Q3, max). SQL MUST return columns: category, min_val, q1, median, q3, max_val.
+  SQL pattern: `SELECT category, MIN(val) AS min_val, PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY val) AS q1, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY val) AS median, PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY val) AS q3, MAX(val) AS max_val FROM ... GROUP BY category`
+- `violin` — Same as box but shows distribution shape. Same SQL pattern.
 
-def _generate_plan(question: str, schema_text: str, metrics_text: str, intent_info: dict) -> str:
-    """Fast LLM pass to generate a numbered execution plan before the ReAct loop."""
-    logger.info("Planner: Building plan for %s", intent_info.get("sub_intent"))
-    start = time.time()
+#### Correlation Charts
+- `scatter` — Show relationship between two numeric variables. X and Y must both be numeric. Use `group_column` to color-code by category.
+- `bubble` — Like scatter but adds a third dimension via bubble size. Use `size_column` param.
 
-    prompt = (
-        "You are a data analytics planner. Given the user's question, database schema, and metric definitions, write a short numbered plan "
-        "(max 5 steps) describing exactly which database tables to query, which joins to use, "
-        "and what type of chart to generate. Be concise and precise — no explanation, just steps.\n\n"
-        "## Perceived User Intent:\n"
-        f"- Intent: {intent_info.get('intent')}\n"
-        f"- Sub-Intent: {intent_info.get('sub_intent')}\n"
-        f"- Reasoning: {intent_info.get('reasoning')}\n\n"
-        f"Schema:\n{schema_text[:3000]}\n\n"
-        f"Metric Rules:\n{metrics_text[:2000]}\n\n"
-        f"Question: {question}\n\nPlan:"
-    )
-    try:
-        resp = _fast_client.invoke(prompt, label="planner")
-        plan = _clean(resp.content).strip()
-        duration = time.time() - start
-        logger.info("Planner: OK in %.2fs", duration)
-        return plan
-    except Exception as exc:
-        logger.warning("Planner: Fail (%s)", exc)
-        return ""
+#### Multi-dimensional
+- `radar` — Compare entities across multiple metrics on a spider web (e.g. compare 3 channels across uploads, assets, publish rate). Best for 4-8 metrics, ≤5 entities. SQL should return one row per entity with metrics as columns.
+- `heatmap` — Show intensity across two categorical dimensions (e.g. output_type × channel). SQL must return x_dim, y_dim, value columns. For correlation heatmaps, use PostgreSQL CORR(x, y) to compute Pearson correlation values between numeric columns.
 
-# ── Intent classifier ─────────────────────────────────────────────────────────
+#### Hierarchical
+- `treemap` — Show hierarchical proportions (e.g. uploads by client > channel). SQL should return label, value, and optionally group columns.
 
-def _classify(message: str, memory: str = "") -> dict:
-    """
-    Enhanced intent classifier for Frammer AI.
-    Returns a structured dictionary with intent, sub_intent, reasoning, and requirements.
-    """
-    logger.info("Classifying: %r", message[:80])
-    mem_ctx = f"\nConversation History Summary:\n{memory}" if memory else "This is a new conversation."
-    
-    prompt = f"""\
-You are the Intent Classification engine for Frammer AI. Analyze the user message and return a JSON object.
-
-### Intent Categories:
-1. **analytics**: Calculating metrics, identifying trends, performing joins.
-2. **discovery**: Asking about system capabilities, definitions, or table structures.
-3. **visualisation**: Explicit request for charts or graphs.
-4. **conversational**: Greetings, thanks, small talk.
-5. **assistance**: Troubleshooting or asking for help with queries.
-
-### JSON Fields:
-- `intent`: [analytics, discovery, visualisation, conversational, assistance]
-- `sub_intent`: technical tag
-- `confidence`: 0.0 to 1.0
-- `reasoning`: one-sentence explanation
-- `requires_sql`: boolean
-- `requires_chart`: boolean
-
-### Context:
-{mem_ctx}
-User Question: "{message}"
-
-Return ONLY valid JSON.
+### build_chart params:
+{{
+  "chart_type": "bar"|"stacked-bar"|"horizontal-bar"|"line"|"area"|"pie"|"doughnut"|"polar-area"|"scatter"|"bubble"|"radar"|"heatmap"|"box"|"violin"|"treemap",
+  "x_column": "column for X axis or category axis",
+  "y_columns": "col1,col2",
+  "size_column": "col3",              // ONLY for bubble charts
+  "group_column": "col4",             // for scatter color groups or radar entities
+  "title": "Short descriptive title",
+  "source_step": "s1"
+}}
 """
-    try:
-        resp = _fast_client.invoke(prompt, label="intent-classifier")
-        content = resp.content
-        if "```json" in content:
-            content = content.split("```json")[-1].split("```")[0]
-        elif "```" in content:
-            content = content.split("```")[-1].split("```")[0]
-        data = json.loads(content.strip())
-        
-        valid_intents = ["analytics", "discovery", "visualisation", "conversational", "assistance"]
-        if data.get("intent") not in valid_intents:
-            data["intent"] = "analytics"
-        data["flow"] = "conversational" if data["intent"] in ("conversational", "assistance") else "analytics"
-        
-        logger.info("Intent: %s | Flow: %s", data["intent"].upper(), data["flow"])
-        return data
-    except Exception as e:
-        logger.error("Classification fail: %s. Fallback used.", e)
-        is_chat = any(w in message.lower() for w in ["hi", "hello", "thanks", "hey", "bye", "how are you"])
+
+SYNTHESIZER_PROMPT = """\
+You are Frammer AI. Summarize the analysis results below into a clear, concise response.
+
+## Rules
+- **Extreme Brevity**: 2-3 sentences max. No fluff.
+- **Data Integrity**: ONLY use numbers from the results. Never estimate or hallucinate.
+- **Formatting**: **Bold** key numbers and terms. Use markdown.
+- **Privacy**: Never expose SQL, internal IDs, database table names (e.g. raw_videos, created_assets, published_posts, post_distribution, raw_video_channel), column names (e.g. Video_ID, Asset_ID, Input_Type, Output_Type, User_ID), or any technical schema details.
+- **Business Language**: Always translate technical terms to business language — uploads (not raw_videos), generated content/assets (not created_assets), published content (not published_posts), content format (not Input_Type), asset type (not Output_Type), channel (not Channel_Name), user (not User_ID).
+- **No Images**: Do NOT generate markdown image tags.
+- If results show trends or comparisons, highlight the most important finding.
+- If multiple datasets were queried, synthesize the overall story.
+
+## User Question
+{question}
+
+## Analysis Results
+{results_block}
+"""
+
+REPAIR_PROMPT = """\
+The following SQL query failed. Fix the SQL and return ONLY the corrected query.
+
+## Error
+{error}
+
+## Failed SQL
+```sql
+{sql}
+```
+
+## Schema Context
+{schema_block}
+
+## Rules
+- Double-quote mixed-case columns: "Upload_Date", "Video_ID"
+- Check table/column names against the schema
+- Return ONLY the corrected SQL, nothing else.
+"""
+
+
+# ── Tool: create_plan (for structured LLM output) ───────────────────────────
+
+from langchain_core.tools import tool
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+
+@tool
+def create_plan(
+    conversational: bool = False,
+    reply: str = "",
+    reasoning: str = "",
+    steps: Optional[List[Dict]] = None,
+) -> str:
+    """Create an execution plan for answering the user's data question.
+    Args:
+        conversational: True if this is just a greeting/chat (no data queries needed).
+        reply: If conversational, the response text.
+        reasoning: Brief explanation of your analytical approach.
+        steps: List of execution steps. Each step has: id, action, params, depends_on, description.
+    """
+    return json.dumps({
+        "conversational": conversational,
+        "reply": reply,
+        "reasoning": reasoning,
+        "steps": steps or [],
+    })
+
+
+# ── LLM with plan tool ──────────────────────────────────────────────────────
+_planner_llm = _llm_client.llm.bind_tools([create_plan])
+_synthesizer_llm = _llm_client.llm
+_repair_llm = _llm_client.llm
+
+
+# ── Step Executors ───────────────────────────────────────────────────────────
+
+async def _execute_sql_step(params: Dict, auth: Any = None) -> Dict:
+    """Execute a SQL query step."""
+    sql = params.get("sql", "")
+    raw = await asyncio.to_thread(execute_sql_query, sql, limit=200, auth=auth)
+    parsed = json.loads(raw)
+
+    if "error" in parsed:
+        return {"status": "error", "error": parsed["error"], "sql": sql}
+
+    records = parsed.get("data", [])
+    result_id = str(_uuid.uuid4())[:8]
+    cols = list(records[0].keys()) if records else []
+
+    return {
+        "status": "success",
+        "result_id": result_id,
+        "row_count": len(records),
+        "columns": cols,
+        "data": records,
+        "sql": sql,
+        "sample": records[:30],
+    }
+
+
+async def _execute_chart_step(params: Dict, results: Dict) -> Dict:
+    """Execute a chart-building step."""
+    source_step = params.get("source_step", "")
+    source_data = results.get(source_step, {})
+    records = source_data.get("data", [])
+
+    if not records:
+        return {"status": "error", "error": f"No data from step {source_step}"}
+
+    attrs = {
+        "type": params.get("chart_type", "bar"),
+        "x_axis": params.get("x_column", ""),
+        "y_axis": params.get("y_columns", ""),
+        "title": params.get("title", "Chart"),
+    }
+    if params.get("size_column"):
+        attrs["size_field"] = params["size_column"]
+    if params.get("group_column"):
+        attrs["group_field"] = params["group_column"]
+
+    xml = await asyncio.to_thread(generate_plotly_chart, data_records=records, chart_attributes=attrs)
+
+    if xml and xml.startswith("<?xml"):
         return {
-            "intent": "conversational" if is_chat else "analytics",
-            "flow": "conversational" if is_chat else "analytics",
-            "sub_intent": "fallback",
-            "confidence": 0.5,
-            "reasoning": "Fallback used due to error",
-            "requires_sql": not is_chat,
-            "requires_chart": "chart" in message.lower()
+            "status": "success",
+            "chart_xml": xml,
+            "chart_type": params.get("chart_type", "bar"),
+            "data_records": records,
+            "sql": source_data.get("sql", ""),
+            "title": params.get("title", "Chart"),
+            "size_column": params.get("size_column", ""),
+            "group_column": params.get("group_column", ""),
         }
 
-def _conversational_reply(question: str, memory: str = "", current_time: str = "") -> AgentResult:
-    mem = f"\nConversation context:\n{memory}\n" if memory else ""
-    time_ctx = f"\nCurrent System Time: {current_time}\n" if current_time else ""
-    prompt = (
-        "You are Frammer AI, a helpful analytics assistant.\n"
-        f"{time_ctx}{mem}\nUser: {question}\n\nRespond in markdown. Be concise."
-    )
-    resp = _creat_client.invoke(prompt, label="chat")
-    return AgentResult(intent="conversational", response=_extract_response(resp.content), actions=["Conversational reply"])
+    return {"status": "error", "error": f"Chart generation failed: {xml}"}
 
-# ── Main entry point ──────────────────────────────────────────────────────────
 
-async def run_agent(question: str, auth: Optional[Any] = None, working_memory: str = "") -> AgentResult:
-    from datetime import datetime
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    logger.info("--- AGENT START --- @ %s", now_str)
+async def _execute_column_values_step(params: Dict) -> Dict:
+    """Execute a column values lookup step."""
+    table = params.get("table_name", "")
+    column = params.get("column_name", "")
+    try:
+        db = get_db()
+        profile = db.get_schema_profile()
+        col_info = profile.get(table, {}).get(column, {})
+        values = col_info.get("values")
+        if values is None:
+            return {"status": "success", "note": "Column not in profile (high-cardinality or non-text)"}
+        return {"status": "success", "table": table, "column": column, "values": values}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
 
-    ctx = _new_ctx(auth=auth)
-    _ctx.set(ctx)
+
+async def _execute_time_step() -> Dict:
+    """Return current time."""
+    return {"status": "success", "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+
+async def _execute_explore_step(params: Dict, auth: Any = None) -> Dict:
+    """Execute lightweight exploration queries."""
+    queries = params.get("queries", [])
+    results = []
+    for q in queries:
+        try:
+            raw = await asyncio.to_thread(execute_sql_query, q, limit=5, auth=auth)
+            parsed = json.loads(raw)
+            if "error" in parsed:
+                results.append({"query": q, "error": parsed["error"]})
+            else:
+                results.append({"query": q, "data": parsed.get("data", [])})
+        except Exception as e:
+            results.append({"query": q, "error": str(e)})
+    return {"status": "success", "explorations": results}
+
+
+async def _execute_step(step: PlanStep, results: Dict, auth: Any = None) -> Dict:
+    """Dispatch a plan step to the appropriate executor."""
+    action = step.get("action", "")
+    params = step.get("params", {})
+    step_id = step.get("id", "?")
+
+    logger.info("--- STEP %s: %s (%s) ---", step_id, action, step.get("description", "")[:60])
+    start = time.time()
 
     try:
-        # 1. Classification
-        classification = _classify(question, working_memory)
-        if classification["flow"] == "conversational":
-            return _conversational_reply(question, working_memory, current_time=now_str)
+        if action == "run_sql":
+            result = await _execute_sql_step(params, auth=auth)
+        elif action == "build_chart":
+            result = await _execute_chart_step(params, results)
+        elif action == "get_column_values":
+            result = await _execute_column_values_step(params)
+        elif action == "get_time":
+            result = await _execute_time_step()
+        elif action == "explore":
+            result = await _execute_explore_step(params, auth=auth)
+        else:
+            result = {"status": "error", "error": f"Unknown action: {action}"}
 
-        # 2. Context
+        duration = time.time() - start
+        status = result.get("status", "unknown")
+        logger.info("--- STEP %s DONE (%.2fs) → %s ---", step_id, duration, status)
+        return result
+
+    except Exception as e:
+        logger.error("--- STEP %s FAILED: %s ---", step_id, e)
+        return {"status": "error", "error": str(e)}
+
+
+# ── Parallel Executor ────────────────────────────────────────────────────────
+
+async def _execute_plan(
+    steps: List[PlanStep],
+    auth: Any = None,
+) -> Dict[str, Any]:
+    """
+    Execute plan steps with topological ordering and parallelism.
+    Steps with no unresolved dependencies run concurrently.
+    """
+    results: Dict[str, Any] = {}
+    remaining = list(steps)
+    actions_log: List[str] = []
+
+    while remaining:
+        # Find steps whose dependencies are all satisfied
+        ready = [s for s in remaining if all(d in results for d in s.get("depends_on", []))]
+        if not ready:
+            # All remaining steps have unresolved deps — break to avoid infinite loop
+            for s in remaining:
+                results[s["id"]] = {"status": "error", "error": "Unresolved dependencies"}
+                actions_log.append(f"Step {s['id']} skipped — unresolved deps")
+            break
+
+        # Execute ready steps in parallel
+        logger.info("=== EXECUTING BATCH: %s ===", [s["id"] for s in ready])
+        tasks = [_execute_step(s, results, auth=auth) for s in ready]
+        step_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for step, result in zip(ready, step_results):
+            if isinstance(result, Exception):
+                result = {"status": "error", "error": str(result)}
+
+            results[step["id"]] = result
+            remaining.remove(step)
+
+            # Build action log
+            action = step.get("action", "")
+            desc = step.get("description", action)
+            status = result.get("status", "unknown")
+            if action == "run_sql" and status == "success":
+                actions_log.append(f"SQL OK — {result.get('row_count', 0)} rows ({desc})")
+            elif action == "build_chart" and status == "success":
+                actions_log.append(f"Chart: {result.get('title', 'chart')}")
+            elif status == "error":
+                actions_log.append(f"Failed: {desc} — {result.get('error', '')[:60]}")
+            else:
+                actions_log.append(f"{desc}")
+
+    return {"results": results, "actions": actions_log}
+
+
+# ── SQL Repair ───────────────────────────────────────────────────────────────
+
+async def _repair_sql(failed_steps: List[tuple], schema: str) -> List[tuple]:
+    """
+    Attempt to fix failed SQL steps. Returns list of (step, fixed_sql) tuples.
+    """
+    repaired = []
+    for step, error_result in failed_steps:
+        sql = step.get("params", {}).get("sql", "")
+        error_msg = error_result.get("error", "")
+
+        prompt = REPAIR_PROMPT.format(
+            error=error_msg,
+            sql=sql,
+            schema_block=schema[:3000],  # Condensed schema for repair
+        )
+
+        logger.info("--- REPAIR: Fixing SQL for step %s ---", step["id"])
+        try:
+            resp = await asyncio.to_thread(_repair_llm.invoke, prompt)
+            fixed_sql = _extract_response(resp.content).strip()
+            # Strip markdown fences
+            fixed_sql = re.sub(r"^```(?:sql)?\s*\n?", "", fixed_sql, flags=re.IGNORECASE)
+            fixed_sql = re.sub(r"\n?```\s*$", "", fixed_sql).strip()
+
+            if fixed_sql and fixed_sql.upper().startswith("SELECT"):
+                repaired.append((step, fixed_sql))
+            else:
+                logger.warning("--- REPAIR: Invalid fix for step %s ---", step["id"])
+        except Exception as e:
+            logger.error("--- REPAIR FAILED for step %s: %s ---", step["id"], e)
+
+    return repaired
+
+
+# ── Planner ──────────────────────────────────────────────────────────────────
+
+async def _run_planner(
+    question: str,
+    schema: str,
+    metrics: str,
+    auth: Any = None,
+    history: Optional[List[Dict]] = None,
+    working_memory: str = "",
+) -> Dict:
+    """Run the planner LLM to produce an execution plan."""
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    auth_block = ""
+    if auth:
+        role = getattr(auth, "role", "user")
+        username = getattr(auth, "username", "Unknown")
+        client_name = getattr(auth, "client_name", None)
+        user_id = getattr(auth, "user_id", None)
+
+        auth_block = f"\n## USER PROFILE\n- User: **{username}** | Role: **{role}**"
+        if role != "website_admin":
+            if client_name:
+                auth_block += f"\n- RESTRICTION: Only client **{client_name}** data. Use: `COALESCE(ch.\"Client_Name\", u.\"Client_Name\") = '{client_name}'`"
+            elif role == "user" and user_id:
+                auth_block += f"\n- RESTRICTION: Only data for user ID **{user_id}**. Use: `rv.\"User_ID\" = {user_id}`"
+
+    memory_block = f"\n## Conversation Memory\n{working_memory}" if working_memory else ""
+
+    system = PLANNER_PROMPT.format(
+        schema_block=schema or "",
+        metrics_block=metrics or "",
+        auth_block=auth_block,
+        memory_block=memory_block,
+        now_str=now_str,
+    )
+
+    # Build message history (limited to last 4 for planner)
+    history_messages = []
+    for msg in (history or [])[-4:]:
+        role = msg.get("role", "")
+        content = msg.get("content", "") or ""
+        if role == "user":
+            history_messages.append(HumanMessage(content=content))
+        elif role == "assistant":
+            history_messages.append(AIMessage(content=content))
+
+    messages = [SystemMessage(content=system)] + history_messages + [HumanMessage(content=question)]
+
+    logger.info("=== PLANNER: Calling LLM (%d messages) ===", len(messages))
+    start = time.time()
+    resp = await asyncio.to_thread(_planner_llm.invoke, messages)
+    duration = time.time() - start
+
+    usage = getattr(resp, "usage_metadata", {})
+    logger.info(
+        "=== PLANNER DONE (%.2fs) — %d input, %d output tokens ===",
+        duration,
+        usage.get("input_tokens", 0),
+        usage.get("output_tokens", 0),
+    )
+
+    # Extract plan from tool call
+    tool_calls = getattr(resp, "tool_calls", [])
+    if tool_calls:
+        tc = tool_calls[0]
+        args = tc.get("args", {})
+        return {
+            "conversational": args.get("conversational", False),
+            "reply": args.get("reply", ""),
+            "reasoning": args.get("reasoning", ""),
+            "steps": args.get("steps", []),
+        }
+
+    # Fallback: try to parse from text content
+    content = _extract_response(resp.content)
+    try:
+        parsed = json.loads(content)
+        return parsed
+    except json.JSONDecodeError:
+        # If the LLM just responded conversationally without using the tool
+        return {
+            "conversational": True,
+            "reply": content,
+            "reasoning": "",
+            "steps": [],
+        }
+
+
+# ── Synthesizer ──────────────────────────────────────────────────────────────
+
+async def _run_synthesizer(question: str, results: Dict[str, Any], plan_steps: List[PlanStep]) -> str:
+    """Run the synthesizer LLM to produce the final response."""
+    # Build results block — only include data summaries, not full datasets
+    results_parts = []
+    for step in plan_steps:
+        step_id = step.get("id", "")
+        desc = step.get("description", step.get("action", ""))
+        result = results.get(step_id, {})
+        action = step.get("action", "")
+
+        if action == "run_sql" and result.get("status") == "success":
+            sample = result.get("sample", result.get("data", []))[:20]
+            display_cols = [c.replace('_', ' ').title() for c in result.get('columns', [])]
+            results_parts.append(
+                f"### {desc}\n"
+                f"Rows: {result.get('row_count', 0)} | Columns: {display_cols}\n"
+                f"Sample data:\n```json\n{json.dumps(sample, default=str, indent=1)}\n```"
+            )
+        elif action == "build_chart" and result.get("status") == "success":
+            results_parts.append(f"### Chart: {result.get('title', 'Chart')} — created successfully")
+        elif action == "get_column_values" and result.get("status") == "success":
+            results_parts.append(f"### Available values for {desc}: {result.get('values', [])}")
+        elif action == "explore" and result.get("status") == "success":
+            results_parts.append(f"### Exploration:\n{json.dumps(result.get('explorations', []), default=str, indent=1)}")
+        elif result.get("status") == "error":
+            results_parts.append(f"### {desc} — FAILED: {result.get('error', '')[:100]}")
+
+    results_block = "\n\n".join(results_parts) if results_parts else "No data was retrieved."
+
+    prompt = SYNTHESIZER_PROMPT.format(
+        question=question,
+        results_block=results_block,
+    )
+
+    logger.info("=== SYNTHESIZER: Calling LLM ===")
+    start = time.time()
+    resp = await asyncio.to_thread(_synthesizer_llm.invoke, prompt)
+    duration = time.time() - start
+
+    usage = getattr(resp, "usage_metadata", {})
+    logger.info(
+        "=== SYNTHESIZER DONE (%.2fs) — %d input, %d output tokens ===",
+        duration,
+        usage.get("input_tokens", 0),
+        usage.get("output_tokens", 0),
+    )
+
+    return _extract_response(resp.content)
+
+
+# ── Main Entry Point ─────────────────────────────────────────────────────────
+
+async def run_agent(
+    question: str,
+    auth: Optional[Any] = None,
+    working_memory: str = "",
+    history: Optional[List[Dict]] = None,
+) -> AgentResult:
+    """
+    Main agent entry point. Runs the plan-execute-synthesize pipeline.
+    """
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    logger.info("=== AGENT START === @ %s", now_str)
+    overall_start = time.time()
+
+    actions_log: List[str] = []
+
+    try:
+        # 1. Load schema + metrics
         global _schema_cache
         if not _schema_cache:
             _schema_cache = get_frammer_schema()
-            
-        from tools.metric_definitions import METRIC_DICTIONARY, retrieve_metric_definitions
+
         all_metrics = "\n".join(f"- **{k}**: {v}" for k, v in METRIC_DICTIONARY.items())
         all_metrics += "\n\n" + retrieve_metric_definitions("XYZ_FAIL")
 
-        # 3. Planning
-        plan = _generate_plan(question, _schema_cache, all_metrics, intent_info=classification)
-        ctx["plan"] = plan
-        plan_block = f"## Recommended Execution Plan:\n{plan}" if plan else ""
-        memory_block = f"\n## Conversation Memory\n{working_memory}" if working_memory else ""
+        # 2. Run Planner
+        actions_log.append("Planning analysis...")
+        plan = await _run_planner(
+            question=question,
+            schema=_schema_cache,
+            metrics=all_metrics,
+            auth=auth,
+            history=history,
+            working_memory=working_memory,
+        )
 
-        # 4. Prompt Assembly
-        system = SYSTEM_PROMPT.replace("{schema_block}", _schema_cache or "")
-        system = system.replace("{metrics_block}", all_metrics or "")
-        system = system.replace("{plan_block}", plan_block or "")
-        system = system.replace("{memory_block}", memory_block or "")
-        
-        system += f"\n\n## ASSISTANT GOAL\n- **Detected Intent**: {classification['intent']} ({classification['sub_intent']})"
-        system += f"\n- **Reasoning**: {classification['reasoning']}"
-        if classification.get("requires_chart"):
-            system += "\n- **Note**: User requested a visual. Ensure `build_chart` is used."
-        
-        # 5. Client Scoping
-        if auth:
-            role = getattr(auth, "role", "user")
-            username = getattr(auth, "username", "Unknown")
-            client_name = getattr(auth, "client_name", None)
-            user_id = getattr(auth, "user_id", None)
-            
-            scoping = f"\n\n## USER PROFILE\n- User: **{username}** | Role: **{role}**"
-            if role != "website_admin":
-                if client_name:
-                    scoping += f"\n- RESTRICTION: Only client **{client_name}** data. Use: `COALESCE(ch.\"Client_Name\", u.\"Client_Name\") = '{client_name}'`"
-                elif role == "user" and user_id:
-                    scoping += f"\n- RESTRICTION: Only data for user ID **{user_id}**. Use: `rv.\"User_ID\" = {user_id}`"
-            system += scoping
+        # Handle conversational responses (no data needed)
+        if plan.get("conversational"):
+            logger.info("=== AGENT COMPLETE (conversational, %.2fs) ===", time.time() - overall_start)
+            return AgentResult(
+                intent="conversational",
+                response=plan.get("reply", ""),
+                actions=["Conversational response"],
+            )
 
-        system += f"\n\n## System Environment\nCurrent System Time: {now_str}\n"
-        messages = [SystemMessage(content=system), HumanMessage(content=question)]
+        steps = plan.get("steps", [])
+        reasoning = plan.get("reasoning", "")
+        actions_log.append(f"Plan: {len(steps)} steps — {reasoning[:80]}")
+        logger.info("=== PLAN: %d steps — %s ===", len(steps), reasoning[:80])
 
-        # 6. ReAct Loop
-        logger.info("=== ReAct Loop: START ===")
-        start_react = time.time()
-        state = await _graph.ainvoke({"messages": messages}, config={"recursion_limit": 30})
+        if not steps:
+            return AgentResult(
+                response="I couldn't determine what data to look up. Could you rephrase your question?",
+                actions=actions_log,
+            )
 
-        response = ""
-        for msg in reversed(state.get("messages", [])):
-            if isinstance(msg, AIMessage) and not getattr(msg, "tool_calls", None):
-                response = _extract_response(msg.content)
+        # 3. Execute plan (parallel where possible)
+        exec_result = await _execute_plan(steps, auth=auth)
+        results = exec_result["results"]
+        actions_log.extend(exec_result["actions"])
+
+        # 4. Check for SQL failures and attempt repair (max 2 rounds)
+        for repair_round in range(2):
+            failed_sql = [
+                (s, results[s["id"]])
+                for s in steps
+                if s.get("action") == "run_sql" and results.get(s["id"], {}).get("status") == "error"
+            ]
+            if not failed_sql:
                 break
-        if not response:
-            response = "Agent loop finished without final answer."
 
-        logger.info("=== AGENT COMPLETE (%.2fs) ===", time.time() - start_react)
+            logger.info("=== REPAIR ROUND %d: %d failed SQL steps ===", repair_round + 1, len(failed_sql))
+            actions_log.append(f"Repairing {len(failed_sql)} failed queries (round {repair_round + 1})")
+
+            repaired = await _repair_sql(failed_sql, _schema_cache)
+            if not repaired:
+                break
+
+            # Re-execute repaired steps
+            for step, fixed_sql in repaired:
+                step["params"]["sql"] = fixed_sql
+                result = await _execute_step(step, results, auth=auth)
+                results[step["id"]] = result
+                if result.get("status") == "success":
+                    actions_log.append(f"Repair OK — {step.get('description', step['id'])}")
+                else:
+                    actions_log.append(f"Repair failed — {step.get('description', step['id'])}")
+
+            # Re-execute chart steps that depend on now-fixed SQL steps
+            repaired_ids = {s["id"] for s, _ in repaired}
+            chart_steps = [
+                s for s in steps
+                if s.get("action") == "build_chart"
+                and any(d in repaired_ids for d in s.get("depends_on", []))
+                and results.get(s["id"], {}).get("status") != "success"
+            ]
+            for step in chart_steps:
+                result = await _execute_step(step, results, auth=auth)
+                results[step["id"]] = result
+
+        # 5. Collect charts
+        charts = []
+        for step in steps:
+            if step.get("action") == "build_chart":
+                result = results.get(step["id"], {})
+                if result.get("status") == "success":
+                    charts.append(ChartResult(
+                        chart_xml=result.get("chart_xml", ""),
+                        data_records=result.get("data_records", []),
+                        sql=result.get("sql", ""),
+                        title=result.get("title", ""),
+                        chart_type=result.get("chart_type", ""),
+                        size_column=result.get("size_column", ""),
+                        group_column=result.get("group_column", ""),
+                    ))
+
+        # 6. Synthesize response
+        response = await _run_synthesizer(question, results, steps)
+        actions_log.append("Synthesized response")
+
+        # 7. Collect SQL (use the last successful query for legacy compat)
+        last_sql = ""
+        last_records = []
+        for step in reversed(steps):
+            if step.get("action") == "run_sql":
+                result = results.get(step["id"], {})
+                if result.get("status") == "success":
+                    last_sql = result.get("sql", "")
+                    last_records = result.get("data", [])
+                    break
+
+        total_time = time.time() - overall_start
+        logger.info("=== AGENT COMPLETE (%.2fs) ===", total_time)
 
         return AgentResult(
-            intent=classification["intent"],
             response=response,
-            actions=ctx["actions"],
-            chart_xml=ctx["chart_xml"],
-            chart_data=ctx["chart_data"],
-            sql=ctx["sql"],
-            plan=plan,
+            actions=actions_log,
+            charts=charts,
+            sql=last_sql,
+            plan=reasoning,
+            # Legacy compat
+            chart_xml=charts[0].chart_xml if charts else "",
+            chart_data={"query_result": last_records} if last_records else {},
         )
 
     except Exception as exc:
         logger.error("!!! Agent Runtime Error: %s !!!", exc, exc_info=True)
         return AgentResult(
-            intent="analytics",
             response=f"I'm sorry, an internal error occurred: {exc}",
             error=str(exc),
-            actions=ctx.get("actions", []),
-            plan=ctx.get("plan", "")
+            actions=actions_log,
         )
+
+
+# ── Streaming Entry Point ───────────────────────────────────────────────────
+
+async def run_agent_stream(
+    question: str,
+    auth: Optional[Any] = None,
+    working_memory: str = "",
+    history: Optional[List[Dict]] = None,
+) -> AsyncGenerator[Dict, None]:
+    """
+    Streaming version of run_agent. Yields SSE events as the agent progresses.
+    """
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    logger.info("=== AGENT STREAM START === @ %s", now_str)
+    overall_start = time.time()
+
+    try:
+        # 1. Load schema + metrics
+        global _schema_cache
+        if not _schema_cache:
+            _schema_cache = get_frammer_schema()
+
+        all_metrics = "\n".join(f"- **{k}**: {v}" for k, v in METRIC_DICTIONARY.items())
+        all_metrics += "\n\n" + retrieve_metric_definitions("XYZ_FAIL")
+
+        # 2. Plan
+        yield {"type": "phase", "phase": "planning"}
+
+        plan = await _run_planner(
+            question=question,
+            schema=_schema_cache,
+            metrics=all_metrics,
+            auth=auth,
+            history=history,
+            working_memory=working_memory,
+        )
+
+        if plan.get("conversational"):
+            yield {"type": "complete", "message": {
+                "response": plan.get("reply", ""),
+                "intent": "conversational",
+                "actions": ["Conversational response"],
+                "charts": [],
+                "sql": "",
+            }}
+            return
+
+        steps = plan.get("steps", [])
+        yield {"type": "plan", "steps": [
+            {"id": s.get("id"), "action": s.get("action"), "description": s.get("description", "")}
+            for s in steps
+        ], "reasoning": plan.get("reasoning", "")}
+
+        if not steps:
+            yield {"type": "complete", "message": {
+                "response": "I couldn't determine what data to look up. Could you rephrase your question?",
+                "intent": "analytics",
+                "actions": [],
+                "charts": [],
+                "sql": "",
+            }}
+            return
+
+        # 3. Execute
+        yield {"type": "phase", "phase": "executing"}
+
+        results: Dict[str, Any] = {}
+        remaining = list(steps)
+        actions_log = [f"Plan: {len(steps)} steps"]
+
+        while remaining:
+            ready = [s for s in remaining if all(d in results for d in s.get("depends_on", []))]
+            if not ready:
+                for s in remaining:
+                    results[s["id"]] = {"status": "error", "error": "Unresolved dependencies"}
+                break
+
+            tasks = [_execute_step(s, results, auth=auth) for s in ready]
+            step_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            for step, result in zip(ready, step_results):
+                if isinstance(result, Exception):
+                    result = {"status": "error", "error": str(result)}
+
+                results[step["id"]] = result
+                remaining.remove(step)
+
+                # Yield step completion event
+                event = {
+                    "type": "step_complete",
+                    "step_id": step.get("id"),
+                    "action": step.get("action"),
+                    "description": step.get("description", ""),
+                    "status": result.get("status", "unknown"),
+                }
+                if result.get("status") == "success" and step.get("action") == "run_sql":
+                    event["row_count"] = result.get("row_count", 0)
+                    event["columns"] = result.get("columns", [])
+                if result.get("status") == "success" and step.get("action") == "build_chart":
+                    event["title"] = result.get("title", "")
+                yield event
+
+                # Build action log
+                action = step.get("action", "")
+                desc = step.get("description", action)
+                if action == "run_sql" and result.get("status") == "success":
+                    actions_log.append(f"SQL OK — {result.get('row_count', 0)} rows ({desc})")
+                elif action == "build_chart" and result.get("status") == "success":
+                    actions_log.append(f"Chart: {result.get('title', 'chart')}")
+                elif result.get("status") == "error":
+                    actions_log.append(f"Failed: {desc}")
+                else:
+                    actions_log.append(desc)
+
+        # 4. Repair (simplified for streaming — one round)
+        failed_sql = [
+            (s, results[s["id"]])
+            for s in steps
+            if s.get("action") == "run_sql" and results.get(s["id"], {}).get("status") == "error"
+        ]
+        if failed_sql:
+            yield {"type": "phase", "phase": "repairing"}
+            repaired = await _repair_sql(failed_sql, _schema_cache)
+            for step, fixed_sql in repaired:
+                step["params"]["sql"] = fixed_sql
+                result = await _execute_step(step, results, auth=auth)
+                results[step["id"]] = result
+                yield {
+                    "type": "step_complete",
+                    "step_id": step.get("id"),
+                    "action": "run_sql",
+                    "description": f"Repaired: {step.get('description', '')}",
+                    "status": result.get("status", "unknown"),
+                }
+
+        # 5. Synthesize
+        yield {"type": "phase", "phase": "synthesizing"}
+
+        charts = []
+        for step in steps:
+            if step.get("action") == "build_chart":
+                result = results.get(step["id"], {})
+                if result.get("status") == "success":
+                    charts.append({
+                        "chart_xml": result.get("chart_xml", ""),
+                        "chart_type": result.get("chart_type", ""),
+                        "data_records": result.get("data_records", []),
+                        "sql": result.get("sql", ""),
+                        "title": result.get("title", ""),
+                        "size_column": result.get("size_column", ""),
+                        "group_column": result.get("group_column", ""),
+                    })
+
+        response = await _run_synthesizer(question, results, steps)
+
+        last_sql = ""
+        for step in reversed(steps):
+            if step.get("action") == "run_sql" and results.get(step["id"], {}).get("status") == "success":
+                last_sql = results[step["id"]].get("sql", "")
+                break
+
+        yield {"type": "complete", "message": {
+            "response": response,
+            "intent": "analytics",
+            "actions": actions_log,
+            "charts": charts,
+            "sql": last_sql,
+        }}
+
+        logger.info("=== AGENT STREAM COMPLETE (%.2fs) ===", time.time() - overall_start)
+
+    except Exception as exc:
+        logger.error("!!! Agent Stream Error: %s !!!", exc, exc_info=True)
+        yield {"type": "error", "error": str(exc)}
+
+
+# ── CLI entry point ──────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     import asyncio
+
     async def _cli():
-        print("-- Frammer AI --\n")
+        print("-- Frammer AI (Plan-Execute-Synthesize) --\n")
         while True:
             q = input("You: ").strip()
-            if q.lower() in ("quit", "exit"): break
-            if not q: continue
+            if q.lower() in ("quit", "exit"):
+                break
+            if not q:
+                continue
             r = await run_agent(q)
-            print(f"\nPLAN:\n{r.plan}\n" if r.plan else "")
             print(f"RESPONSE:\n{r.response}\n")
-            print(f"ACTIONS: {r.actions}\n")
+            if r.actions:
+                print(f"ACTIONS: {r.actions}\n")
+            if r.charts:
+                print(f"CHARTS: {len(r.charts)} generated\n")
+
     asyncio.run(_cli())

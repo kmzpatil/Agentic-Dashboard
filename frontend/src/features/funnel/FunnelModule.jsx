@@ -193,11 +193,19 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
     }],
   }), [stageLinks]);
 
+  const compositionNodeLabels = useMemo(() => {
+    if (hiddenBreakdownSources > 0) {
+      return { 'Other': `Other (${hiddenBreakdownSources})` };
+    }
+    return {};
+  }, [hiddenBreakdownSources]);
+
   const compositionSankeyData = useMemo(() => ({
     datasets: [{
       data: compositionLinks,
       column: compositionColumn,
       priority: compositionPriority,
+      labels: compositionNodeLabels,
       colorFrom: '#f59e0b',
       colorTo: '#ef4444',
       colorMode: 'gradient',
@@ -206,7 +214,7 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
       nodeWidth: 18,
       nodePadding: 24,
     }],
-  }), [compositionLinks, compositionColumn, compositionPriority]);
+  }), [compositionLinks, compositionColumn, compositionPriority, compositionNodeLabels]);
 
   const handleCompositionZoom = useCallback((link) => {
     if (!link || link.grouped || link.from === 'Other') return;
@@ -237,7 +245,10 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
   }, []);
 
   const stageSankeyOptions = useMemo(() => makeSankeyOptions(stageFromTotals), [stageFromTotals]);
-  const compositionSankeyOptions = useMemo(() => makeSankeyOptions(compositionFromTotals), [compositionFromTotals]);
+  const compositionSankeyOptions = useMemo(
+    () => makeSankeyOptions(compositionFromTotals, {}, { interactive: true, hiddenSources: hiddenBreakdownSources }),
+    [compositionFromTotals, hiddenBreakdownSources],
+  );
 
   const hasActive = Object.values(effectiveFilters).some(Boolean);
 

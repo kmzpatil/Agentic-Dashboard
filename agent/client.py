@@ -22,8 +22,6 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 load_dotenv()
 
-from logger_setup import setup_logging
-setup_logging()
 logger = logging.getLogger("frammer.client")
 
 _THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL)

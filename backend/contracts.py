@@ -55,6 +55,7 @@ class AssistantMessage(BaseModel):
     datasets: list[Dataset] = Field(default_factory=list)
     suggested_actions: list[InsightAction] = Field(default_factory=list)
     intent: str = "analytics"
+    sql: str = ""
     error: str = ""
 
 
@@ -64,7 +65,8 @@ class ChatEnvelope(BaseModel):
     response: str
     actions: list[str] = Field(default_factory=list)
     chart_data: dict[str, Any] = Field(default_factory=dict)
-    chart_xml: str = ""
+    chart_xml: str = ""  # Legacy: first chart XML
+    chart_xmls: list[str] = Field(default_factory=list)  # All chart XMLs
     error: str = ""
 
 

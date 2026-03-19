@@ -59,7 +59,11 @@ def _dimension_columns(dataset: Dataset) -> list[str]:
     return [column.key for column in dataset.columns if column.type != "number"]
 
 
-def _chart_spec(dataset: Dataset) -> dict[str, Any] | None:
+def _chart_spec(
+    dataset: Dataset,
+    chart_type_hint: str | None = None,
+    extra_spec: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
     numeric_columns = _numeric_columns(dataset)
     if not numeric_columns:
         return None
@@ -67,17 +71,23 @@ def _chart_spec(dataset: Dataset) -> dict[str, Any] | None:
     dateish = _dateish_columns(dataset)
     dimensions = _dimension_columns(dataset)
     x_field = (dateish or dimensions or [dataset.columns[0].key])[0]
-    chart_type = "line" if x_field in dateish else "bar"
 
-    if chart_type == "bar" and len(dataset.rows) <= 6 and len(numeric_columns) == 1:
-        chart_type = "pie"
+    if chart_type_hint:
+        chart_type = chart_type_hint
+    else:
+        chart_type = "line" if x_field in dateish else "bar"
+        if chart_type == "bar" and len(dataset.rows) <= 6 and len(numeric_columns) == 1:
+            chart_type = "pie"
 
-    return {
+    spec = {
         "chartType": chart_type,
         "xField": x_field,
-        "yFields": numeric_columns[:2],
-        "maxRows": 24,
+        "yFields": numeric_columns[:4],
+        "maxRows": 50,
     }
+    if extra_spec:
+        spec.update(extra_spec)
+    return spec
 
 
 def build_dataset_artifacts(
@@ -87,6 +97,8 @@ def build_dataset_artifacts(
     sql: str = "",
     confidence: float = 0.82,
     include_table: bool = True,
+    chart_type_hint: str | None = None,
+    extra_spec: dict[str, Any] | None = None,
 ) -> list[Artifact]:
     artifacts: list[Artifact] = []
     numeric_columns = _numeric_columns(dataset)
@@ -111,8 +123,8 @@ def build_dataset_artifacts(
             )
         )
 
-    chart_spec = _chart_spec(dataset)
-    if dataset.rows and chart_spec:
+    chart_spec = _chart_spec(dataset, chart_type_hint=chart_type_hint, extra_spec=extra_spec)
+    if dataset.rows and len(dataset.rows) > 1 and chart_spec:
         artifacts.append(
             Artifact(
                 id=f"{dataset.id}-chart",
@@ -147,7 +159,12 @@ def build_assistant_artifacts(
     sql: str = "",
     dataset_id: str = "query_result",
     title: str = "Analysis",
+    chart_type_hint: str | None = None,
+    extra_spec: dict[str, Any] | None = None,
 ) -> tuple[list[Dataset], list[Artifact]]:
     dataset = build_dataset(dataset_id, f"{title} Dataset", rows)
-    artifacts = build_dataset_artifacts(dataset, title_prefix=title, sql=sql)
+    artifacts = build_dataset_artifacts(
+        dataset, title_prefix=title, sql=sql,
+        chart_type_hint=chart_type_hint, extra_spec=extra_spec,
+    )
     return [dataset], artifacts
