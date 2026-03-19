@@ -1066,6 +1066,25 @@ export default function UsageTrendsModule({
     [historySeries],
   );
 
+  // Merge client-side + backend anomalies, dedup by period, keep higher |zScore|
+  const mergedAnomalies = useMemo(() => {
+    const byPeriod = new Map();
+    (computedAnomalies || []).forEach(a => {
+      const key = String(a.period || '').slice(0, 10);
+      if (key) byPeriod.set(key, { ...a, period: key });
+    });
+    (trends.data?.anomalies || []).forEach(a => {
+      const key = String(a.period || '').slice(0, 10);
+      if (!key) return;
+      const existing = byPeriod.get(key);
+      if (!existing || Math.abs(a.zScore || 0) > Math.abs(existing.zScore || 0)) {
+        byPeriod.set(key, { ...a, period: key });
+      }
+    });
+    return Array.from(byPeriod.values())
+      .sort((a, b) => Math.abs(b.zScore || 0) - Math.abs(a.zScore || 0));
+  }, [computedAnomalies, trends.data]);
+
   const chartData = useMemo(() => {
     const historyByDate = new Map(
       historySeries.map((p) => [p.period, Number(p.value || 0)]),
@@ -1339,7 +1358,7 @@ export default function UsageTrendsModule({
       </div>
     );
 
-  const anomalies = computedAnomalies;
+  const anomalies = mergedAnomalies;
   const needsClientFilter = CLIENT_OPTIONAL_DIMS.has(multiDim);
   const needsUserFilter = USER_OPTIONAL_DIMS.has(multiDim);
   const hasDataForFilters = validateData?.has_data;
