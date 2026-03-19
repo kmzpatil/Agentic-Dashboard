@@ -8,6 +8,7 @@ from .schema import get_frammer_schema
 from .sql_query import execute_sql_query, execute_exploration_queries
 from .chart import generate_plotly_chart
 from ._db import get_db
+from .custom_kpis import get_custom_kpi_info
 
 __all__ = [
     "retrieve_metric_definitions",
@@ -16,4 +17,5 @@ __all__ = [
     "execute_exploration_queries",
     "generate_plotly_chart",
     "get_db",
+    "get_custom_kpi_info",
 ]

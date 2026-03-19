@@ -52,7 +52,7 @@ def _resolve_database_url():
             query["sslmode"] = sslmode
 
         query_string = f"?{urlencode(query)}" if query else ""
-        return f"postgresql+psycopg2://{credentials}@{target_host}:{port}/{quote_plus(database)}{query_string}"
+        return f"postgresql+psycopg://{credentials}@{target_host}:{port}/{quote_plus(database)}{query_string}"
 
     return _env("DATABASE_URL") or f"sqlite:///{ROOT_DIR / 'database' / 'frammer_database.sqlite'}"
 

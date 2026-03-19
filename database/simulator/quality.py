@@ -7,7 +7,8 @@ from __future__ import annotations
 import re
 from typing import Any, Iterable
 
-from psycopg2.pool import SimpleConnectionPool
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
 
 from .data_logger import DataLogger
 
@@ -59,8 +60,8 @@ DATE_REGEX = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 class QualityEngine:
     """Runs data-quality checks on the Postgres database."""
 
-    def __init__(self, pool: SimpleConnectionPool, logger: DataLogger) -> None:
-        self._pool = pool
+    def __init__(self, engine: Engine, logger: DataLogger) -> None:
+        self._engine = engine
         self._logger = logger
 
     def run_all_checks(self) -> dict[str, Any]:
@@ -241,9 +242,10 @@ class QualityEngine:
         return issues
 
     def _table_exists(self, table: str) -> bool:
+        # Note: information_schema tables are case sensitive names in values sometimes
         rows = self._fetchall(
-            "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = %s",
-            (table,),
+            "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = :tbl",
+            {"tbl": table},
         )
         return bool(rows)
 
@@ -251,8 +253,8 @@ class QualityEngine:
         rows = self._fetchall(
             "SELECT table_name FROM information_schema.tables "
             "WHERE table_schema = 'public' AND table_type = 'BASE TABLE' "
-            "AND table_name NOT LIKE %s",
-            [r'\_%'],
+            "AND table_name NOT LIKE :prefix",
+            {"prefix": r'\_%'},
         )
         return [r[0] for r in rows]
 
@@ -263,18 +265,15 @@ class QualityEngine:
     def _fetchall(
         self,
         sql: str,
-        params: Iterable[Any] | None = None,
-    ) -> list[tuple[Any, ...]]:
-        conn = self._pool.getconn()
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute(sql, params or [])
-                return cursor.fetchall()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            self._pool.putconn(conn)
+        params: dict[str, Any] | None = None,
+    ) -> list[Any]:
+        with self._engine.connect() as conn:
+            try:
+                result = conn.execute(text(sql), params or {})
+                return result.fetchall()
+            except Exception:
+                conn.rollback()
+                raise
 
 
 def _pk_dict(columns: list[str], values: Iterable[Any]) -> dict[str, Any]:

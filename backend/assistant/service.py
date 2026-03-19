@@ -163,6 +163,7 @@ async def chat(
             chart_type = _ga(chart, "chart_type", None) or None
             size_col = _ga(chart, "size_column", "")
             group_col = _ga(chart, "group_column", "")
+            valid_types = _ga(chart, "valid_types", [])
 
             extra_spec = {}
             if size_col:
@@ -178,6 +179,7 @@ async def chat(
                     title=chart_title,
                     chart_type_hint=chart_type,
                     extra_spec=extra_spec if extra_spec else None,
+                    valid_chart_types=valid_types,
                 )
                 all_datasets.extend(ds)
                 all_artifacts.extend(arts)
@@ -307,6 +309,7 @@ async def chat_stream(
                     extra_spec["sizeField"] = chart["size_column"]
                 if chart.get("group_column"):
                     extra_spec["groupField"] = chart["group_column"]
+                valid_types = chart.get("valid_types", [])
                 if chart_rows:
                     ds, arts = build_assistant_artifacts(
                         chart_rows,
@@ -315,6 +318,7 @@ async def chat_stream(
                         title=chart.get("title", f"Analysis {i+1}"),
                         chart_type_hint=chart_type,
                         extra_spec=extra_spec if extra_spec else None,
+                        valid_chart_types=valid_types,
                     )
                     all_datasets.extend(ds)
                     all_artifacts.extend(arts)

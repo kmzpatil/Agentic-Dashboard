@@ -67,7 +67,7 @@ def _build_postgres_url() -> str | None:
 
     query_string = f"?{urlencode(query)}" if query else ""
     return (
-        f"postgresql+psycopg2://{credentials}@{target_host}:{port}/"
+        f"postgresql+psycopg://{credentials}@{target_host}:{port}/"
         f"{quote_plus(database)}{query_string}"
     )
 

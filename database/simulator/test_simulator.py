@@ -10,6 +10,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
+from sqlalchemy import text
 from database.simulator.engine import SimulatorEngine
 
 
@@ -84,16 +85,25 @@ class TestQualityChecks(unittest.TestCase):
         self.engine.reset()
 
     def test_invalid_date_detected(self):
-        conn = self.engine._pool.getconn()
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    "INSERT INTO raw_videos (Video_ID, User_ID, Headline, Source_URL, Upload_Date, Input_Type, Language, Uploaded_Duration) "
-                    "VALUES (999999, 1, 'SIM: BadDate', 'http://x.com', 'not-a-date', 'Uploaded', 'English', 100)"
-                )
+        # Resolve engine for the test
+        from database.bootstrap_postgres import resolve_postgres_engine
+        pg_engine = resolve_postgres_engine()
+        
+        with pg_engine.connect() as conn:
+            conn.execute(text(
+                "INSERT INTO raw_videos (Video_ID, User_ID, Headline, Source_URL, Upload_Date, Input_Type, Language, Uploaded_Duration) "
+                "VALUES (:vid, :uid, :head, :url, :date, :type, :lang, :dur)"
+            ), {
+                "vid": 999999,
+                "uid": 1,
+                "head": "SIM: BadDate",
+                "url": "http://x.com",
+                "date": "not-a-date",
+                "type": "Uploaded",
+                "lang": "English",
+                "dur": 100
+            })
             conn.commit()
-        finally:
-            self.engine._pool.putconn(conn)
 
         report = self.engine.get_quality_report()
         raw_video_issues = report["tables"].get("raw_videos", {}).get("issues", [])

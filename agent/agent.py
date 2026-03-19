@@ -46,13 +46,13 @@ try:
     from mcp_server.database import DatabaseClient, QueryValidationError
     from tools.metric_definitions import retrieve_metric_definitions, METRIC_DICTIONARY
     from tools.chart import generate_plotly_chart
-    from tools import get_frammer_schema, execute_sql_query, get_db
+    from tools import get_frammer_schema, execute_sql_query, get_db, get_custom_kpi_info
 except ImportError:
     from agent.mcp_server.config import ServerSettings
     from agent.mcp_server.database import DatabaseClient, QueryValidationError
     from agent.tools.metric_definitions import retrieve_metric_definitions, METRIC_DICTIONARY
     from agent.tools.chart import generate_plotly_chart
-    from agent.tools import get_frammer_schema, execute_sql_query, get_db
+    from agent.tools import get_frammer_schema, execute_sql_query, get_db, get_custom_kpi_info
 
 logger = logging.getLogger("frammer.agent")
 
@@ -87,6 +87,7 @@ class ChartResult:
     chart_type: str = ""
     size_column: str = ""
     group_column: str = ""
+    valid_types: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -167,6 +168,10 @@ The dataset tracks a media content pipeline:
 {auth_block}
 {memory_block}
 
+## Custom KPIs
+The following specialized business KPIs are available for analytics. If you need the exact formula or business significance of any KPI, add a `get_kpi_info` step to your plan.
+Available IDs: uploaded_count, processed_count, created_count, published_count, publish_conversion, month_by_month_use_rate, processing_efficiency, creation_rate, waste_index, upload_failure_rate, roi, cdas, interaction_lift, cross_dimension_entropy, publish_dependency_index, point_biserial, multidimensional_waste, ctas, rei
+
 ## System Environment
 Current System Time: {now_str}
 
@@ -178,7 +183,7 @@ You MUST call the `create_plan` tool with your execution plan. The plan is a JSO
 - `reasoning`: string — brief explanation of your approach
 - `steps`: array of step objects, each with:
   - `id`: string like "s1", "s2", ...
-  - `action`: "run_sql" | "build_chart" | "get_column_values" | "get_time" | "explore"
+  - `action`: "run_sql" | "build_chart" | "get_column_values" | "get_time" | "explore" | "get_kpi_info"
   - `params`: object with action-specific params
   - `depends_on`: array of step IDs this depends on (empty if independent)
   - `description`: brief human-readable description
@@ -189,6 +194,7 @@ You MUST call the `create_plan` tool with your execution plan. The plan is a JSO
 - `get_column_values`: {{ "table_name": "table", "column_name": "column" }}
 - `get_time`: {{}}  (returns current datetime)
 - `explore`: {{ "queries": ["SELECT DISTINCT ...", "SELECT MIN(...) ..."] }}  (lightweight exploration)
+- `get_kpi_info`: {{ "kpi_id": "uploaded_count" }} (returns definition/formula for a specific KPI)
 
 ### Chart Type Selection Guide
 
@@ -227,6 +233,7 @@ Pick the chart type that best matches the DATA SHAPE and ANALYTICAL INTENT:
 ### build_chart params:
 {{
   "chart_type": "bar"|"stacked-bar"|"horizontal-bar"|"line"|"area"|"pie"|"doughnut"|"polar-area"|"scatter"|"bubble"|"radar"|"heatmap"|"box"|"violin"|"treemap",
+  "valid_types": ["type1", "type2"],   // List of alternative chart types valid for this data
   "x_column": "column for X axis or category axis",
   "y_columns": "col1,col2",
   "size_column": "col3",              // ONLY for bubble charts
@@ -234,6 +241,14 @@ Pick the chart type that best matches the DATA SHAPE and ANALYTICAL INTENT:
   "title": "Short descriptive title",
   "source_step": "s1"
 }}
+
+### Chart Compatibility Guiding Rules:
+- **Time Series (X is date)**: `line`, `area`, `bar` (if few points). NEVER `pie`/`doughnut`.
+- **Categorical (X is labels)**: `bar`, `horizontal-bar`, `pie` (if metrics are summable and ≤6 categories).
+- **Parts of a Whole**: `pie`, `doughnut`, `treemap`. Valid if values represent a complete set.
+- **Correlations**: `scatter`, `bubble`. Valid if X and Y are both continuous numeric metrics.
+- **Multiple Metrics**: `radar`, `stacked-bar` (if units match).
+- **Distributions**: `box`, `violin`. Valid only if SQL returns the statistical columns (min, q1, etc).
 """
 
 SYNTHESIZER_PROMPT = """\
@@ -364,6 +379,7 @@ async def _execute_chart_step(params: Dict, results: Dict) -> Dict:
             "status": "success",
             "chart_xml": xml,
             "chart_type": params.get("chart_type", "bar"),
+            "valid_types": params.get("valid_types", []),
             "data_records": records,
             "sql": source_data.get("sql", ""),
             "title": params.get("title", "Chart"),
@@ -432,6 +448,10 @@ async def _execute_step(step: PlanStep, results: Dict, auth: Any = None) -> Dict
             result = await _execute_time_step()
         elif action == "explore":
             result = await _execute_explore_step(params, auth=auth)
+        elif action == "get_kpi_info":
+            kpi_id = params.get("kpi_id")
+            result_raw = await asyncio.to_thread(get_custom_kpi_info, kpi_id)
+            result = {"status": "success", "data": json.loads(result_raw)}
         else:
             result = {"status": "error", "error": f"Unknown action: {action}"}
 
@@ -647,6 +667,10 @@ async def _run_synthesizer(question: str, results: Dict[str, Any], plan_steps: L
             results_parts.append(f"### Available values for {desc}: {result.get('values', [])}")
         elif action == "explore" and result.get("status") == "success":
             results_parts.append(f"### Exploration:\n{json.dumps(result.get('explorations', []), default=str, indent=1)}")
+        elif action == "get_kpi_info" and result.get("status") == "success":
+            kpi_data = result.get("data", {})
+            sql_block = f"\nSQL Pattern: {kpi_data.get('sql')}" if kpi_data.get('sql') else ""
+            results_parts.append(f"### KPI Info: {kpi_data.get('title')}\nDefinition: {kpi_data.get('definition')}\nFormula: {kpi_data.get('formula')}{sql_block}")
         elif result.get("status") == "error":
             results_parts.append(f"### {desc} — FAILED: {result.get('error', '')[:100]}")
 
@@ -788,6 +812,7 @@ async def run_agent(
                         chart_type=result.get("chart_type", ""),
                         size_column=result.get("size_column", ""),
                         group_column=result.get("group_column", ""),
+                        valid_types=result.get("valid_types", []),
                     ))
 
         # 6. Synthesize response
@@ -978,6 +1003,7 @@ async def run_agent_stream(
                         "title": result.get("title", ""),
                         "size_column": result.get("size_column", ""),
                         "group_column": result.get("group_column", ""),
+                        "valid_types": result.get("valid_types", []),
                     })
 
         response = await _run_synthesizer(question, results, steps)
