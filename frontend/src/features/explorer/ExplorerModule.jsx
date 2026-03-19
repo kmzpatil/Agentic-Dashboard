@@ -252,18 +252,22 @@ export default function ExplorerModule({ authUser }) {
     }
   }, [multi.data?.dim2Values, multi.dataUrl, multiQuery, hasPreselectedDim2]);
 
-  // Helper for persistent colors
-  const getStringColor = (str) => {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      hash = str.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    const hue = Math.abs(hash) % 360;
-    return {
-      bg: `hsla(${hue}, 70%, 55%, 0.6)`,
-      border: `hsla(${hue}, 70%, 55%, 1)`
-    };
-  };
+  // High-contrast red-family palette — alternates dark/bright/light for clear separation
+  const RED_PALETTE = [
+    { bg: 'rgba(239,68,68,0.88)',   border: '#ef4444' },  // vivid red
+    { bg: 'rgba(69,10,10,0.95)',    border: '#450a0a' },  // near-black maroon
+    { bg: 'rgba(255,160,122,0.88)', border: '#ffa07a' },  // light salmon / orange-red
+    { bg: 'rgba(153,27,27,0.92)',   border: '#991b1b' },  // dark red-800
+    { bg: 'rgba(255,99,71,0.88)',   border: '#ff6347' },  // tomato / orange-red
+    { bg: 'rgba(100,10,10,0.95)',   border: '#640a0a' },  // very dark maroon
+    { bg: 'rgba(252,165,165,0.88)', border: '#fca5a5' },  // light pink-red
+    { bg: 'rgba(185,28,28,0.92)',   border: '#b91c1c' },  // red-700
+    { bg: 'rgba(255,50,50,0.88)',   border: '#ff3232' },  // bright coral
+    { bg: 'rgba(127,29,29,0.92)',   border: '#7f1d1d' },  // red-900
+    { bg: 'rgba(255,200,180,0.88)', border: '#ffc8b4' },  // very light peach-red
+    { bg: 'rgba(200,30,30,0.88)',   border: '#c81e1e' },  // medium-dark red
+  ];
+  const getIndexColor = (idx) => RED_PALETTE[idx % RED_PALETTE.length];
 
   // Data Formatting
   const matrixChartData = useMemo(() => {
@@ -286,8 +290,8 @@ export default function ExplorerModule({ authUser }) {
         datasets: [{
           label: 'Total',
           data: dim1Vals.map((d1) => lookup.get(d1) || 0),
-          backgroundColor: '#3b82f6',
-          borderColor: '#2563eb',
+          backgroundColor: 'rgba(239,68,68,0.75)',
+          borderColor: '#ef4444',
           borderWidth: 1,
         }]
       };
@@ -298,8 +302,8 @@ export default function ExplorerModule({ authUser }) {
 
     return {
       labels: dim1Vals,
-      datasets: dim2Vals.map((d2) => {
-        const colors = getStringColor(String(d2));
+      datasets: dim2Vals.map((d2, idx) => {
+        const colors = getIndexColor(idx);
         return {
           label: d2,
           data: dim1Vals.map((d1) => lookup.get(`${d1}|||${d2}`) || 0),
@@ -332,8 +336,8 @@ export default function ExplorerModule({ authUser }) {
         datasets: [{
           label: 'Total',
           data: periods.map((p) => lookup.get(p) || 0),
-          backgroundColor: '#3b82f6',
-          borderColor: '#2563eb',
+          backgroundColor: 'rgba(239,68,68,0.75)',
+          borderColor: '#ef4444',
           borderWidth: 1,
           stack: 'stacked',
         }]
@@ -345,8 +349,8 @@ export default function ExplorerModule({ authUser }) {
 
     return {
       labels: periods,
-      datasets: dim2Vals.map((d2) => {
-        const colors = getStringColor(String(d2));
+      datasets: dim2Vals.map((d2, idx) => {
+        const colors = getIndexColor(idx);
         return {
           label: d2,
           data: periods.map((p) => lookup.get(`${p}|||${d2}`) || 0),

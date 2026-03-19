@@ -7,7 +7,6 @@ import {
   LayoutDashboard,
   Microscope,
   FlaskConical,
-  Braces,
 } from 'lucide-react';
 import './lib/chartSetup';
 import { API_BASE, customStyles } from './lib/constants';
@@ -200,14 +199,7 @@ export default function AppShell() {
       <header className="border-b border-neutral-900 bg-[#050505] px-6 py-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0">
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-black tracking-tight text-red-500">FRAMMER AI</h1>
-              <div className="inline-flex items-center gap-2 rounded-full border border-neutral-800 bg-[#111111] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-500">
-                <Braces size={12} />
-                Analytics OS
-              </div>
-            </div>
-            <p className="mt-2 text-sm text-neutral-500">A single workspace for performance monitoring, operating priorities, and AI-guided analysis.</p>
+            <h1 className="text-2xl font-black tracking-tight text-red-500">FRAMMER AI</h1>
           </div>
 
           <div className="flex items-center gap-3">
