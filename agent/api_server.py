@@ -21,10 +21,9 @@ load_dotenv()
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from agent import run_agent, run_agent_stream
+from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
-
-from agent import run_agent
 
 from conversations import (
     create_conversation, get_conversation, list_conversations,
@@ -86,6 +85,7 @@ class QueryResponse(BaseModel):
     response: str
     error: str
     chart_data: dict
+    report_xml: str = ""
 
 class ChatResponse(BaseModel):
     response: str
@@ -94,6 +94,7 @@ class ChatResponse(BaseModel):
     chart_data: dict = {}
     conversation_id: str = ""
     error: str = ""
+    report_xml: str = ""
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -135,6 +136,7 @@ async def run_query_route(req: QueryRequest):
         response=result.response,
         error=result.error,
         chart_data=jsonable_encoder(result.chart_data),
+        report_xml=result.report_xml,
     )
 
 @app.post("/api/chat", response_model=ChatResponse)
@@ -188,6 +190,7 @@ async def chat(req: ChatRequest):
             chart_data=jsonable_encoder(result.chart_data),
             conversation_id=conv_id,
             error=result.error,
+            report_xml=result.report_xml,
         )
 
     except Exception as exc:
@@ -197,6 +200,47 @@ async def chat(req: ChatRequest):
             conversation_id=conv_id,
             error=str(exc),
         )
+
+@app.post("/api/chat/stream")
+async def chat_stream(req: ChatRequest):
+    logger.info("Streaming Chat request: %r", req.message)
+    
+    conv_id = req.conversation_id
+    if not conv_id:
+        conv = create_conversation(title="New conversation")
+        conv_id = conv["id"]
+    
+    conv = get_conversation(conv_id)
+    working_mem = conv.get("working_memory", "") if conv else ""
+    
+    append_message(conv_id, "user", req.message)
+    
+    async def event_generator():
+        # Yield init event
+        yield f"data: {json.dumps({'type': 'init', 'conversation_id': conv_id})}\n\n"
+        
+        final_result = {"response": "", "actions": [], "intent": "analytics"}
+        
+        async for event in run_agent_stream(req.message, working_memory=working_mem):
+            if event["type"] == "complete":
+                msg = event["message"]
+                final_result["response"] = msg.get("response", "")
+                final_result["actions"] = msg.get("actions", [])
+                final_result["intent"] = msg.get("intent", "analytics")
+                
+                # Persistence
+                append_message(conv_id, "assistant", final_result["response"], metadata={
+                    "intent": final_result["intent"],
+                    "actions": final_result["actions"],
+                })
+                new_memory = build_memory_update(working_mem, req.message, final_result["actions"], final_result["response"])
+                update_working_memory(conv_id, new_memory)
+                
+            yield f"data: {json.dumps(event)}\n\n"
+        
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 @app.get("/api/conversations")
 async def get_conversations(user_id: Optional[str] = None):

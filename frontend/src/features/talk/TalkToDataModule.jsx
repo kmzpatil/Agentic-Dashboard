@@ -527,6 +527,7 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
                   intent: msg.intent || 'analytics',
                   sql: msg.sql || '',
                   error: msg.error || '',
+                  report_xml: msg.report_xml || event.report_xml || '',
                 };
                 setMessages(curr => [...curr, assistantMessage]);
                 if (shouldAutoOpenCanvas(assistantMessage.artifacts)) {
@@ -590,9 +591,10 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
           datasets: payload.message?.datasets || [],
           suggested_actions: payload.message?.suggested_actions || [],
           actions: payload.actions || [],
-          intent: payload.message?.intent || 'analytics',
-          sql: payload.message?.sql || '',
+          intent: payload.message?.intent || payload.intent || 'analytics',
+          sql: payload.message?.sql || payload.sql || '',
           error: payload.message?.error || payload.error || '',
+          report_xml: payload.message?.report_xml || payload.report_xml || '',
         };
         setMessages(curr => [...curr, assistantMessage]);
         if (shouldAutoOpenCanvas(assistantMessage.artifacts)) {
@@ -707,6 +709,7 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
             artifacts={canvasMessage.artifacts || []}
             datasets={canvasMessage.datasets || []}
             sql={canvasMessage.sql || ''}
+            reportXml={canvasMessage.report_xml || ''}
             onClose={() => setCanvasMessage(null)}
           />
         </div>

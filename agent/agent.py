@@ -92,13 +92,14 @@ class ChartResult:
 
 @dataclass
 class AgentResult:
-    intent: str = "analytics"
+    intent: str = "analytics" # "analytics", "conversational", or "report"
     response: str = ""
     actions: List[str] = field(default_factory=list)
     charts: List[ChartResult] = field(default_factory=list)
     sql: str = ""
     error: str = ""
     plan: str = ""
+    report_xml: str = ""  # New field for deep research reports
     # Legacy compat
     chart_xml: str = ""
     chart_data: Dict = field(default_factory=dict)
@@ -291,6 +292,66 @@ The following SQL query failed. Fix the SQL and return ONLY the corrected query.
 - Return ONLY the corrected SQL, nothing else.
 """
 
+REPORT_PLANNER_PROMPT = """\
+You are Frammer AI, specialized in Deep Research Report Generation.
+Your goal is to create a COMPREHENSIVE EXHAUSTIVE plan for a 1-2 page business report.
+
+## How to Plan for Research
+1. Start by exploring the data landscape if the question is broad.
+2. Plan multiple SQL queries to cover different dimensions (Time, Language, Platform, User).
+3. Always include steps to 'get_column_values' if you need to filter by a specific category.
+4. Plan at least 3-5 distinct charts to visualize the data.
+5. Use Custom KPIs (uploaded_count, waste_index, etc.) to add depth.
+
+## Output Format
+You MUST call the `create_report_plan` tool.
+Plan for a multi-step investigation that can be refined.
+"""
+
+REPORT_REFINER_PROMPT = """\
+You are the Frammer Research Critic. Review the current investigation results.
+Determine if the research is complete or if we need more 'Deep Dive' steps.
+
+## Current Results
+{results_summary}
+
+## Goal
+A 1-2 page detailed report answering: {question}
+
+## Your Job
+If the data is insufficient or hints at a deeper trend (e.g. a specific month has high failure), add NEW steps to investigate that.
+If the research is sufficient, return an empty list of steps.
+
+## Response Format
+Call `create_report_plan` with ONLY the additional steps needed. Set `research_complete` to true if no more steps are needed.
+"""
+
+REPORT_GENERATOR_PROMPT = """\
+You are a Professional Business Report Designer.
+Convert the following research results into a structured, 1-2 page XML report.
+
+## Research Results
+{results_block}
+
+## XML Schema
+The report must follow this structure:
+<report>
+  <meta>
+    <title>Business Title</title>
+    <description>Brief summary</description>
+  </meta>
+  <section title="Section Title">
+    <text>Detailed analytical explanation (2-3 paragraphs).</text>
+    <chart_ref id="step_id" /> <!-- Reference a chart created in the plan -->
+  </section>
+</report>
+
+## Rules
+- Focus on business impact and trends.
+- Use 3-5 sections.
+- Ensure the tone is professional and insightful.
+"""
+
 
 # ── Tool: create_plan (for structured LLM output) ───────────────────────────
 
@@ -320,10 +381,31 @@ def create_plan(
     })
 
 
+@tool
+def create_report_plan(
+    reasoning: str = "",
+    steps: Optional[List[Dict]] = None,
+    research_complete: bool = False,
+) -> str:
+    """Create or refine a deep research plan.
+    Args:
+        reasoning: Explanation of the research strategy.
+        steps: List of research steps (SQL, explore, KPI info, etc).
+        research_complete: Set to True if no more investigation is needed.
+    """
+    return json.dumps({
+        "reasoning": reasoning,
+        "steps": steps or [],
+        "research_complete": research_complete,
+    })
+
+
 # ── LLM with plan tool ──────────────────────────────────────────────────────
 _planner_llm = _llm_client.llm.bind_tools([create_plan])
+_report_planner_llm = _llm_client.llm.bind_tools([create_report_plan])
 _synthesizer_llm = _llm_client.llm
 _repair_llm = _llm_client.llm
+_report_generator_llm = _llm_client.creative # Use creative model for report generation
 
 
 # ── Step Executors ───────────────────────────────────────────────────────────
@@ -552,6 +634,62 @@ async def _repair_sql(failed_steps: List[tuple], schema: str) -> List[tuple]:
     return repaired
 
 
+# ── Report Generation Functions ──────────────────────────────────────────────
+
+async def _run_report_planner(
+    question: str,
+    schema: str,
+    metrics: str,
+    auth: Any = None,
+    history: Optional[List[Dict]] = None,
+) -> Dict:
+    """Initial research plan for reports."""
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    system = REPORT_PLANNER_PROMPT.format(
+        schema_block=schema,
+        metrics_block=metrics,
+        now_str=now_str,
+    )
+    messages = [SystemMessage(content=system), HumanMessage(content=question)]
+    
+    resp = await asyncio.to_thread(_report_planner_llm.invoke, messages)
+    tool_calls = getattr(resp, "tool_calls", [])
+    if tool_calls:
+        return tool_calls[0].get("args", {})
+    return json.loads(_extract_response(resp.content))
+
+async def _run_report_refiner(
+    question: str,
+    results_summary: str,
+) -> Dict:
+    """Analyze results and decide if more deep-dive steps are needed."""
+    system = REPORT_REFINER_PROMPT.format(
+        results_summary=results_summary,
+        question=question,
+    )
+    messages = [SystemMessage(content=system), HumanMessage(content="Refine the research plan.")]
+    
+    resp = await asyncio.to_thread(_report_planner_llm.invoke, messages)
+    tool_calls = getattr(resp, "tool_calls", [])
+    if tool_calls:
+        return tool_calls[0].get("args", {})
+    return json.loads(_extract_response(resp.content))
+
+async def _run_report_generator(
+    results_block: str,
+) -> str:
+    """Generate the final report XML."""
+    system = REPORT_GENERATOR_PROMPT.format(results_block=results_block)
+    messages = [SystemMessage(content=system), HumanMessage(content="Generate the report XML.")]
+    
+    resp = await asyncio.to_thread(_report_generator_llm.invoke, messages)
+    xml = _extract_response(resp.content)
+    # Strip markdown fences
+    xml = re.sub(r"^```(?:xml)?\s*\n?", "", xml, flags=re.IGNORECASE)
+    xml = re.sub(r"\n?```\s*$", "", xml).strip()
+    return xml
+
+
 # ── Planner ──────────────────────────────────────────────────────────────────
 
 async def _run_planner(
@@ -704,12 +842,14 @@ async def run_agent(
     auth: Optional[Any] = None,
     working_memory: str = "",
     history: Optional[List[Dict]] = None,
+    mode: str = "analytics",
 ) -> AgentResult:
     """
-    Main agent entry point. Runs the plan-execute-synthesize pipeline.
+    Main agent entry point. Runs either the standard analytic pipeline 
+    or the Deep Research Report pipeline.
     """
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    logger.info("=== AGENT START === @ %s", now_str)
+    logger.info("=== AGENT START (%s) === @ %s", mode, now_str)
     overall_start = time.time()
 
     actions_log: List[str] = []
@@ -723,20 +863,19 @@ async def run_agent(
         all_metrics = "\n".join(f"- **{k}**: {v}" for k, v in METRIC_DICTIONARY.items())
         all_metrics += "\n\n" + retrieve_metric_definitions("XYZ_FAIL")
 
-        # 2. Run Planner
-        actions_log.append("Planning analysis...")
-        plan = await _run_planner(
-            question=question,
-            schema=_schema_cache,
-            metrics=all_metrics,
-            auth=auth,
-            history=history,
-            working_memory=working_memory,
-        )
+        # Automatically switch to report mode if keywords are present
+        if any(w in question.lower() for w in ["report", "deep research", "thorough analysis"]):
+            mode = "report"
 
-        # Handle conversational responses (no data needed)
+        # 2. Run Planner
+        actions_log.append(f"Planning {mode}...")
+        if mode == "report":
+            plan = await _run_report_planner(question, _schema_cache, all_metrics, auth, history)
+        else:
+            plan = await _run_planner(question, _schema_cache, all_metrics, auth, history, working_memory)
+
+        # Handle conversational responses
         if plan.get("conversational"):
-            logger.info("=== AGENT COMPLETE (conversational, %.2fs) ===", time.time() - overall_start)
             return AgentResult(
                 intent="conversational",
                 response=plan.get("reply", ""),
@@ -745,101 +884,103 @@ async def run_agent(
 
         steps = plan.get("steps", [])
         reasoning = plan.get("reasoning", "")
-        actions_log.append(f"Plan: {len(steps)} steps — {reasoning[:80]}")
-        logger.info("=== PLAN: %d steps — %s ===", len(steps), reasoning[:80])
-
+        actions_log.append(f"Initial Plan: {len(steps)} steps")
+        
         if not steps:
             return AgentResult(
                 response="I couldn't determine what data to look up. Could you rephrase your question?",
                 actions=actions_log,
             )
 
-        # 3. Execute plan (parallel where possible)
-        exec_result = await _execute_plan(steps, auth=auth)
-        results = exec_result["results"]
-        actions_log.extend(exec_result["actions"])
+        # 3. Execution & Refinement Loop (for reports)
+        results: Dict[str, Any] = {}
+        
+        async def execute_and_repair(current_steps):
+            exec_res = await _execute_plan(current_steps, auth=auth)
+            results.update(exec_res["results"])
+            actions_log.extend(exec_res["actions"])
+            
+            # Repair loop (only for new steps)
+            for _ in range(2):
+                failed = [(s, results[s["id"]]) for s in current_steps if results.get(s["id"], {}).get("status") == "error" and s.get("action") == "run_sql"]
+                if not failed: break
+                repaired = await _repair_sql(failed, _schema_cache)
+                if not repaired: break
+                for s, sql in repaired:
+                    s["params"]["sql"] = sql
+                    results[s["id"]] = await _execute_step(s, results, auth=auth)
+                    actions_log.append(f"SQL Repaired — {s.get('id')}")
 
-        # 4. Check for SQL failures and attempt repair (max 2 rounds)
-        for repair_round in range(2):
-            failed_sql = [
-                (s, results[s["id"]])
-                for s in steps
-                if s.get("action") == "run_sql" and results.get(s["id"], {}).get("status") == "error"
-            ]
-            if not failed_sql:
-                break
+        await execute_and_repair(steps)
 
-            logger.info("=== REPAIR ROUND %d: %d failed SQL steps ===", repair_round + 1, len(failed_sql))
-            actions_log.append(f"Repairing {len(failed_sql)} failed queries (round {repair_round + 1})")
+        if mode == "report":
+            for loop_i in range(1): # One refinement loop for now to avoid token explosion
+                summary = ""
+                for sid, res in results.items():
+                    if res.get("status") == "success":
+                        summary += f"- {sid}: {res.get('row_count', 0)} rows found.\n"
+                
+                refinement = await _run_report_refiner(question, summary)
+                if refinement.get("research_complete") or not refinement.get("steps"):
+                    actions_log.append("Research complete — no further deep-dive needed.")
+                    break
+                
+                new_steps = refinement.get("steps", [])
+                actions_log.append(f"Deep-dive: Adding {len(new_steps)} research steps.")
+                steps.extend(new_steps)
+                await execute_and_repair(new_steps)
 
-            repaired = await _repair_sql(failed_sql, _schema_cache)
-            if not repaired:
-                break
-
-            # Re-execute repaired steps
-            for step, fixed_sql in repaired:
-                step["params"]["sql"] = fixed_sql
-                result = await _execute_step(step, results, auth=auth)
-                results[step["id"]] = result
-                if result.get("status") == "success":
-                    actions_log.append(f"Repair OK — {step.get('description', step['id'])}")
-                else:
-                    actions_log.append(f"Repair failed — {step.get('description', step['id'])}")
-
-            # Re-execute chart steps that depend on now-fixed SQL steps
-            repaired_ids = {s["id"] for s, _ in repaired}
-            chart_steps = [
-                s for s in steps
-                if s.get("action") == "build_chart"
-                and any(d in repaired_ids for d in s.get("depends_on", []))
-                and results.get(s["id"], {}).get("status") != "success"
-            ]
-            for step in chart_steps:
-                result = await _execute_step(step, results, auth=auth)
-                results[step["id"]] = result
-
-        # 5. Collect charts
+        # 4. Final Aggregation
         charts = []
         for step in steps:
             if step.get("action") == "build_chart":
-                result = results.get(step["id"], {})
-                if result.get("status") == "success":
+                res = results.get(step["id"], {})
+                if res.get("status") == "success":
                     charts.append(ChartResult(
-                        chart_xml=result.get("chart_xml", ""),
-                        data_records=result.get("data_records", []),
-                        sql=result.get("sql", ""),
-                        title=result.get("title", ""),
-                        chart_type=result.get("chart_type", ""),
-                        size_column=result.get("size_column", ""),
-                        group_column=result.get("group_column", ""),
-                        valid_types=result.get("valid_types", []),
+                        chart_xml=res.get("chart_xml", ""),
+                        data_records=res.get("data_records", []),
+                        sql=res.get("sql", ""),
+                        title=res.get("title", ""),
+                        chart_type=res.get("chart_type", ""),
+                        valid_types=res.get("valid_types", []),
                     ))
 
-        # 6. Synthesize response
-        response = await _run_synthesizer(question, results, steps)
-        actions_log.append("Synthesized response")
+        # Synthesize final message
+        final_response = await _run_synthesizer(question, results, steps)
+        
+        report_xml = ""
+        if mode == "report":
+            # Build results block for generator
+            results_block = ""
+            for step in steps:
+                res = results.get(step["id"], {})
+                if res.get("status") == "success":
+                    results_block += f"Step {step['id']} ({step.get('description')}):\n{json.dumps(res.get('sample', []), default=str)}\n\n"
+            
+            report_xml = await _run_report_generator(results_block)
+            actions_log.append("Detailed XML report generated")
 
-        # 7. Collect SQL (use the last successful query for legacy compat)
         last_sql = ""
         last_records = []
         for step in reversed(steps):
             if step.get("action") == "run_sql":
-                result = results.get(step["id"], {})
-                if result.get("status") == "success":
-                    last_sql = result.get("sql", "")
-                    last_records = result.get("data", [])
+                res = results.get(step["id"], {})
+                if res.get("status") == "success":
+                    last_sql = res.get("sql", "")
+                    last_records = res.get("data", [])
                     break
 
         total_time = time.time() - overall_start
-        logger.info("=== AGENT COMPLETE (%.2fs) ===", total_time)
+        logger.info("=== AGENT COMPLETE (%s, %.2fs) ===", mode, total_time)
 
         return AgentResult(
-            response=response,
+            intent=mode,
+            response=final_response,
             actions=actions_log,
             charts=charts,
             sql=last_sql,
             plan=reasoning,
-            # Legacy compat
+            report_xml=report_xml,
             chart_xml=charts[0].chart_xml if charts else "",
             chart_data={"query_result": last_records} if last_records else {},
         )
@@ -847,7 +988,7 @@ async def run_agent(
     except Exception as exc:
         logger.error("!!! Agent Runtime Error: %s !!!", exc, exc_info=True)
         return AgentResult(
-            response=f"I'm sorry, an internal error occurred: {exc}",
+            response=f"I encountered an error generating the report: {exc}. Please try a more specific question.",
             error=str(exc),
             actions=actions_log,
         )
@@ -860,12 +1001,13 @@ async def run_agent_stream(
     auth: Optional[Any] = None,
     working_memory: str = "",
     history: Optional[List[Dict]] = None,
+    mode: str = "analytics",
 ) -> AsyncGenerator[Dict, None]:
     """
     Streaming version of run_agent. Yields SSE events as the agent progresses.
     """
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    logger.info("=== AGENT STREAM START === @ %s", now_str)
+    logger.info("=== AGENT STREAM START (%s) === @ %s", mode, now_str)
     overall_start = time.time()
 
     try:
@@ -877,17 +1019,17 @@ async def run_agent_stream(
         all_metrics = "\n".join(f"- **{k}**: {v}" for k, v in METRIC_DICTIONARY.items())
         all_metrics += "\n\n" + retrieve_metric_definitions("XYZ_FAIL")
 
+        # Automatically switch to report mode
+        if any(w in question.lower() for w in ["report", "deep research", "thorough analysis"]):
+            mode = "report"
+
         # 2. Plan
         yield {"type": "phase", "phase": "planning"}
 
-        plan = await _run_planner(
-            question=question,
-            schema=_schema_cache,
-            metrics=all_metrics,
-            auth=auth,
-            history=history,
-            working_memory=working_memory,
-        )
+        if mode == "report":
+            plan = await _run_report_planner(question, _schema_cache, all_metrics, auth, history)
+        else:
+            plan = await _run_planner(question, _schema_cache, all_metrics, auth, history, working_memory)
 
         if plan.get("conversational"):
             yield {"type": "complete", "message": {
@@ -1006,6 +1148,18 @@ async def run_agent_stream(
                         "valid_types": result.get("valid_types", []),
                     })
 
+        # 5. Synthesize & Generate Report
+        yield {"type": "phase", "phase": "synthesizing"}
+
+        report_xml = ""
+        if mode == "report":
+            results_block = ""
+            for step in steps:
+                res = results.get(step["id"], {})
+                if res.get("status") == "success":
+                    results_block += f"Step {step['id']} ({step.get('description')}):\n{json.dumps(res.get('sample', []), default=str)}\n\n"
+            report_xml = await _run_report_generator(results_block)
+
         response = await _run_synthesizer(question, results, steps)
 
         last_sql = ""
@@ -1016,13 +1170,14 @@ async def run_agent_stream(
 
         yield {"type": "complete", "message": {
             "response": response,
-            "intent": "analytics",
+            "intent": mode,
             "actions": actions_log,
             "charts": charts,
             "sql": last_sql,
+            "report_xml": report_xml,
         }}
 
-        logger.info("=== AGENT STREAM COMPLETE (%.2fs) ===", time.time() - overall_start)
+        logger.info("=== AGENT STREAM COMPLETE (%s, %.2fs) ===", mode, time.time() - overall_start)
 
     except Exception as exc:
         logger.error("!!! Agent Stream Error: %s !!!", exc, exc_info=True)

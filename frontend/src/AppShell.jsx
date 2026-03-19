@@ -37,6 +37,7 @@ export default function AppShell() {
   const [loginError, setLoginError] = useState('');
   const [loginSubmitting, setLoginSubmitting] = useState(false);
   const [routeState, setRouteState] = useState(readRouteState);
+  const [showStatus, setShowStatus] = useState(false);
 
   useEffect(() => {
     const onPopState = () => setRouteState(readRouteState());
@@ -196,6 +197,44 @@ export default function AppShell() {
     <div className="flex h-screen w-full flex-col overflow-hidden bg-[#050505] text-white">
       <style>{customStyles}</style>
 
+      {showStatus && health.data && (
+        <div 
+          className="fixed inset-0 z-[100] flex items-start justify-end bg-black/40 p-6 pt-20 backdrop-blur-sm"
+          onClick={() => setShowStatus(false)}
+        >
+          <div 
+            className="w-80 animate-in fade-in slide-in-from-top-4 rounded-3xl border border-neutral-800 bg-[#111111] p-6 shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-500">Systems Status</h3>
+              <div className={`h-1.5 w-1.5 rounded-full ${health.data.ok ? 'bg-emerald-500' : 'bg-red-500'}`} />
+            </div>
+            <div className="space-y-4">
+              {Object.entries(health.data.services || {})
+                .filter(([name]) => !['assistant', 'agent', 'bootstrap'].includes(name))
+                .map(([name, svc]) => (
+                <div key={name} className="flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className="text-[13px] font-bold capitalize text-neutral-200">{name}</span>
+                    <span className="text-[10px] text-neutral-500">{svc.detail || 'Service active'}</span>
+                  </div>
+                  <div className={`flex items-center gap-1.5 rounded-full border border-neutral-800/50 bg-[#0A0A0A] px-2 py-1`}>
+                    <div className={`h-1.5 w-1.5 rounded-full ${svc.ok ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                    <span className={`text-[10px] font-bold uppercase tracking-wider ${svc.ok ? 'text-emerald-500' : 'text-red-500'}`}>
+                      {svc.ok ? 'Live' : 'Degraded'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-6 border-t border-neutral-800 pt-4 text-center text-[10px] font-medium text-neutral-600 uppercase tracking-widest">
+              Frammer OS v5.0.0
+            </div>
+          </div>
+        </div>
+      )}
+
       <header className="border-b border-neutral-900 bg-[#050505] px-6 py-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0">
@@ -203,16 +242,16 @@ export default function AppShell() {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* DB status — single dot indicator */}
-            {health.data?.services?.database && (() => {
-              const dbOk = Boolean(health.data.services.database.ok);
-              return (
-                <div className="flex items-center gap-2 rounded-full border border-neutral-800 bg-[#111111] px-3 py-1.5">
-                  <div className={`h-2 w-2 rounded-full ${dbOk ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)]' : 'bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.6)]'}`} />
-                  <span className="text-xs font-semibold text-neutral-400">DB</span>
-                </div>
-              );
-            })()}
+            {/* Systems Status — Minimalist dot indicator */}
+            <button 
+              onClick={() => setShowStatus(!showStatus)}
+              className="group relative flex items-center justify-center rounded-full border border-neutral-800 bg-[#111111] p-2 transition-all hover:bg-[#1A1A1A] hover:border-neutral-700 active:scale-95"
+            >
+              <div className={`h-2.5 w-2.5 rounded-full ${health.data?.ok ? 'bg-emerald-500' : 'bg-red-500'} ${health.data?.ok ? 'shadow-[0_0_12px_rgba(16,185,129,0.5)]' : 'shadow-[0_0_12px_rgba(239,68,68,0.5)]'} animate-pulse`} />
+              <div className="absolute -top-1 -right-1 flex h-2 w-2">
+                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${health.data?.ok ? 'bg-emerald-400' : 'bg-red-400'} opacity-75`}></span>
+              </div>
+            </button>
 
             <div className="h-4 w-px bg-neutral-800" />
 
