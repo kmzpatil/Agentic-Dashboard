@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  BarChart3,
   Bot,
   Loader2,
   MessageSquare,
@@ -9,6 +10,7 @@ import {
   Plus,
   Send,
   Trash2,
+  X,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -175,6 +177,7 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
   const [conversationId, setConversationId] = useState(null);
   const [conversations, setConversations] = useState([]);
   const [canvasMessage, setCanvasMessage] = useState(null);
+  const [lastArtifactMessage, setLastArtifactMessage] = useState(null);
   const endRef = useRef(null);
 
   const voice = useVoiceInput({
@@ -212,6 +215,7 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
     setMessages([]);
     setConversationId(null);
     setCanvasMessage(null);
+    setLastArtifactMessage(null);
     setInput(routeState?.prompt || '');
   };
 
@@ -224,6 +228,7 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
       const payload = await res.json();
       setConversationId(id);
       setCanvasMessage(null);
+      setLastArtifactMessage(null);
       setMessages(payload.messages || []);
     } catch {
       // Ignore and keep the current panel stable.
@@ -240,6 +245,15 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
       if (id === conversationId) handleNewConversation();
     } catch {
       // Ignore.
+    }
+  };
+
+  // Toggle button: open canvas with last artifact message, or close it
+  const toggleCanvas = () => {
+    if (canvasMessage) {
+      setCanvasMessage(null);
+    } else if (lastArtifactMessage) {
+      setCanvasMessage(lastArtifactMessage);
     }
   };
 
@@ -283,6 +297,7 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
       };
       setMessages((current) => [...current, assistantMessage]);
       if ((assistantMessage.artifacts || []).length) {
+        setLastArtifactMessage(assistantMessage);
         setCanvasMessage(assistantMessage);
       }
       fetchConversations();
@@ -306,6 +321,8 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
       send();
     }
   };
+
+  const canToggle = !!lastArtifactMessage;
 
   return (
     <div className="flex h-full bg-[#080808]">
@@ -348,12 +365,28 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
                 disabled={loading}
                 className="flex-1 bg-transparent px-5 py-4 text-[15px] text-white placeholder-neutral-600 focus:outline-none disabled:opacity-50"
               />
+
+              {/* Analytics canvas toggle — directly opens/closes the panel */}
+              <button
+                onClick={toggleCanvas}
+                disabled={!canToggle}
+                type="button"
+                title={canvasMessage ? 'Close analytics' : 'Open analytics'}
+                className={`mr-1 rounded-xl p-2.5 transition-all disabled:opacity-20 ${
+                  canvasMessage
+                    ? 'bg-red-500/15 text-red-400 hover:bg-red-500/25'
+                    : 'bg-[#1A1A1A] text-neutral-400 hover:bg-neutral-700 hover:text-white'
+                }`}
+              >
+                <BarChart3 size={15} />
+              </button>
+
               {voice.supported && (
                 <button
                   onClick={voice.toggle}
                   disabled={loading}
                   type="button"
-                  className={`mr-2 rounded-xl p-2.5 transition-all ${
+                  className={`mr-1 rounded-xl p-2.5 transition-all ${
                     voice.listening
                       ? 'bg-red-500 text-white'
                       : 'bg-[#1A1A1A] text-neutral-400 hover:bg-neutral-700 hover:text-white'
@@ -376,8 +409,15 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
 
       {canvasMessage && (
         <div className="flex-1 border-l border-neutral-800/50 bg-[#0C0C0C]">
-          <div className="border-b border-neutral-800/50 px-5 py-4">
+          <div className="flex items-center justify-between border-b border-neutral-800/50 px-5 py-4">
             <div className="text-[12px] font-bold uppercase tracking-[0.2em] text-neutral-500">Artifact Canvas</div>
+            <button
+              onClick={() => setCanvasMessage(null)}
+              className="rounded-lg p-1.5 text-neutral-600 transition-colors hover:bg-neutral-800 hover:text-neutral-300"
+              title="Close panel"
+            >
+              <X size={14} />
+            </button>
           </div>
           <div className="h-[calc(100%-57px)] overflow-y-auto p-5">
             <ArtifactCanvas artifacts={canvasMessage.artifacts || []} datasets={canvasMessage.datasets || []} />

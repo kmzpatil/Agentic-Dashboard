@@ -1,23 +1,59 @@
 """
 memory.py
 ---------
-Working memory management for Frammer AI conversations.
+Conversation memory for the multi-agent pipeline.
 
-Each conversation accumulates a working memory block:
-  mem = mem + latest_user_query + agent_thinking_summary
+Provides a lightweight async interface for storing and retrieving
+the last N turns so follow-up queries have context.
 
-When the memory exceeds a token threshold, a compaction LLM call
-summarizes it into a shorter block, preserving key context.
+Falls back to an in-memory LRU dict when PostgreSQL is not available.
+Also preserves the legacy helper functions used by the existing api_server.
 """
 
 import logging
-from typing import Dict, List, Optional
+from collections import OrderedDict
+from typing import Any, List
 
-from client import LLMClient
+logger = logging.getLogger("agent.memory")
 
-logger = logging.getLogger("frammer.memory")
+_MAX_CONVERSATIONS = 200
 
-_compactor = LLMClient.fast()
+
+class ConversationMemory:
+    """In-memory conversation context store (LRU, capped at 200 conversations)."""
+
+    def __init__(self) -> None:
+        self._store: OrderedDict[str, list[dict]] = OrderedDict()
+
+    async def get_context(self, conversation_id: str, last_n: int = 5) -> list[dict]:
+        """Return the last *last_n* turns for a conversation."""
+        turns = self._store.get(conversation_id, [])
+        return turns[-last_n:]
+
+    async def save(self, conversation_id: str, query: str, response: Any) -> None:
+        """Append a turn to the conversation history."""
+        summary = getattr(response, "summary", str(response))
+        turn = {"query": query, "summary": summary[:500]}
+        if conversation_id not in self._store:
+            self._store[conversation_id] = []
+        self._store[conversation_id].append(turn)
+        self._store.move_to_end(conversation_id)
+        # Evict oldest if over cap
+        while len(self._store) > _MAX_CONVERSATIONS:
+            self._store.popitem(last=False)
+
+    async def clear(self, conversation_id: str) -> None:
+        """Remove all turns for a conversation."""
+        self._store.pop(conversation_id, None)
+
+
+# ── Legacy helpers (used by existing api_server.py) ──────────────────────────
+
+try:
+    from client import LLMClient
+    _compactor = LLMClient.fast()
+except Exception:
+    _compactor = None
 
 MAX_MEMORY_CHARS = 2000
 
@@ -28,12 +64,7 @@ def build_memory_update(
     agent_actions: List[str],
     agent_response: str,
 ) -> str:
-    """
-    Append the latest turn to working memory.
-
-    Returns the updated memory string. If it exceeds the threshold,
-    triggers compaction.
-    """
+    """Append the latest turn to working memory (legacy interface)."""
     actions_summary = " | ".join(agent_actions) if agent_actions else ""
     response_snippet = agent_response[:300] if agent_response else ""
 
@@ -67,11 +98,12 @@ def _compact_memory(memory: str) -> str:
         "Compacted memory:"
     )
     try:
-        resp = _compactor.invoke(prompt, label="memory-compact")
-        return resp.content.strip()
+        if _compactor is not None:
+            resp = _compactor.invoke(prompt, label="memory-compact")
+            return resp.content.strip()
     except Exception as exc:
         logger.warning("Memory compaction failed: %s — truncating instead", exc)
-        return memory[-2000:]
+    return memory[-2000:]
 
 
 def generate_title(user_query: str) -> str:
@@ -82,8 +114,10 @@ def generate_title(user_query: str) -> str:
         "Return ONLY the title, no quotes, no punctuation at the end."
     )
     try:
-        resp = _compactor.invoke(prompt, label="title-gen")
-        title = resp.content.strip().strip('"').strip("'")
-        return title[:60]
+        if _compactor is not None:
+            resp = _compactor.invoke(prompt, label="title-gen")
+            title = resp.content.strip().strip('"').strip("'")
+            return title[:60]
     except Exception:
-        return user_query[:50]
+        pass
+    return user_query[:50]

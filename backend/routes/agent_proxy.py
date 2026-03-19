@@ -3,8 +3,12 @@ agent_proxy.py
 ──────────────
 Reverse-proxy routes that forward /api/chat and /api/conversations
 requests from the backend (port 4000) to the agent server (port 8000).
+
+Also proxies the new /agent/query endpoint for the multi-agent pipeline,
+injecting the ``mode`` field from the request body.
 """
 
+import json
 import os
 
 import httpx
@@ -25,6 +29,16 @@ async def _proxy(method: str, path: str, request: Request) -> Response:
         for k, v in request.headers.items()
         if k.lower() not in ("host", "content-length")
     }
+
+    # Inject mode passthrough for chat/query endpoints
+    if method == "POST" and body:
+        try:
+            payload = json.loads(body)
+            if "mode" not in payload:
+                payload["mode"] = "auto"
+            body = json.dumps(payload).encode()
+        except (json.JSONDecodeError, TypeError):
+            pass
 
     agent_resp = await _client.request(
         method,
@@ -47,6 +61,14 @@ async def _proxy(method: str, path: str, request: Request) -> Response:
 @router.post("/chat")
 async def proxy_chat(request: Request):
     return await _proxy("POST", "/api/chat", request)
+
+
+# ── Multi-agent query ────────────────────────────────────────────────────────
+
+@router.post("/agent/query")
+async def proxy_agent_query(request: Request):
+    """Forward to the new multi-agent pipeline endpoint."""
+    return await _proxy("POST", "/agent/query", request)
 
 
 # ── Conversations ────────────────────────────────────────────────────────────

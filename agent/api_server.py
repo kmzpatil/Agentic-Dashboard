@@ -2,11 +2,15 @@
 api_server.py
 ──────────────
 FastAPI server that exposes the Anthropic-powered Frammer analytics agent.
+
+This file preserves ALL existing endpoints and adds the new multi-agent
+pipeline, invoked first on /api/chat with a fallback to the legacy agent.
 """
 
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import List, Optional
 
@@ -17,6 +21,11 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 # Fallback to root .env
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 load_dotenv()
+
+# Make sure agent/ directory is on sys.path so all our modules resolve
+_AGENT_DIR = str(Path(__file__).resolve().parent)
+if _AGENT_DIR not in sys.path:
+    sys.path.insert(0, _AGENT_DIR)
 
 from logger_setup import setup_logging
 setup_logging()
@@ -42,15 +51,46 @@ from mcp_server.database import DatabaseClient
 
 from contextlib import asynccontextmanager
 
+# ── Multi-agent orchestrator (lazy import at startup) ────────────────────────
+
+_orchestrator_ready = False
+
+
+async def _get_orchestrator():
+    """Lazy-import and init the orchestrator singleton."""
+    from orchestrator.orchestrator import get_orchestrator
+    return await get_orchestrator()
+
+
+async def _shutdown_orchestrator():
+    from orchestrator.orchestrator import shutdown_orchestrator
+    await shutdown_orchestrator()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _orchestrator_ready
+    # Existing table bootstrap
     try:
         ensure_tables()
     except Exception as exc:
         logger.warning("Could not ensure conversation tables: %s", exc)
+
+    # Initialise the new orchestrator
+    try:
+        await _get_orchestrator()
+        _orchestrator_ready = True
+        logger.info("Multi-agent orchestrator initialised")
+    except Exception as exc:
+        logger.warning("Orchestrator init failed (non-fatal, legacy agent available): %s", exc)
+
     yield
 
-app = FastAPI(title="Frammer Analytics API (Anthropic Version)", version="5.0.0-anthropic", lifespan=lifespan)
+    # Shutdown
+    if _orchestrator_ready:
+        await _shutdown_orchestrator()
+
+app = FastAPI(title="Frammer Analytics API (Anthropic Version)", version="6.0.0-multi-agent", lifespan=lifespan)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -85,6 +125,7 @@ class ChatRequest(BaseModel):
     message: str
     filters: Optional[dict] = Field(default_factory=dict)
     conversation_id: Optional[str] = Field(default=None)
+    mode: Optional[str] = Field(default="auto")  # fast | deep | auto
 
 class QueryResponse(BaseModel):
     question: str
@@ -101,6 +142,12 @@ class ChatResponse(BaseModel):
     chart_data: dict = {}
     conversation_id: str = ""
     error: str = ""
+    # ── New fields consumed by TalkToDataModule / ArtifactCanvas ──
+    message: Optional[dict] = None    # {markdown, artifacts, datasets, ...}
+    has_charts: bool = False
+    path_used: str = ""
+    insights: list = []
+    confidence: str = ""
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -146,7 +193,7 @@ async def run_query_route(req: QueryRequest):
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
-    logger.info("Chat request (Anthropic): %r (conv=%s)", req.message, req.conversation_id)
+    logger.info("Chat request: %r (conv=%s, mode=%s)", req.message, req.conversation_id, req.mode)
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty.")
 
@@ -168,6 +215,76 @@ async def chat(req: ChatRequest):
         if parts:
             question = f"[Filters: {', '.join(parts)}] {question}"
 
+    # ── Try new multi-agent pipeline first ────────────────────────────────
+    mode = req.mode or "auto"
+    if _orchestrator_ready:
+        try:
+            orchestrator = await _get_orchestrator()
+            result = await orchestrator.handle_query(
+                query=question,
+                conversation_id=conv_id,
+                mode=mode,
+            )
+
+            summary = result.get("response", "")
+            artifacts = result.get("artifacts", [])
+            datasets = result.get("datasets", [])
+            insights = result.get("insights", [])
+            path_used = result.get("path_used", "fast")
+            confidence = result.get("confidence", "HIGH")
+            has_charts = result.get("has_charts", False)
+            query_used = result.get("query_used", "")
+
+            # Build markdown response with insights as bullet points
+            md_parts = [summary]
+            if insights:
+                md_parts.append("")
+                for ins in insights:
+                    md_parts.append(f"- {ins}")
+            if query_used:
+                md_parts.append("")
+                md_parts.append(f"*SQL: `{query_used}`*")
+            markdown = "\n".join(md_parts)
+
+            append_message(conv_id, "assistant", summary, metadata={
+                "intent": "multi-agent",
+                "actions": [],
+                "path_used": path_used,
+            })
+
+            new_memory = build_memory_update(working_mem, req.message, [], summary)
+            update_working_memory(conv_id, new_memory)
+
+            if is_first_message:
+                try:
+                    update_title(conv_id, generate_title(req.message))
+                except Exception:
+                    pass
+
+            return ChatResponse(
+                response=summary,
+                actions=[],
+                chart_xml="",
+                chart_data={},
+                conversation_id=conv_id,
+                error="",
+                message={
+                    "markdown": markdown,
+                    "artifacts": artifacts,
+                    "datasets": datasets,
+                    "suggested_actions": [],
+                    "intent": "analytics",
+                },
+                has_charts=has_charts,
+                path_used=path_used,
+                insights=insights,
+                confidence=confidence,
+            )
+
+        except Exception as exc:
+            logger.warning("Multi-agent pipeline failed, falling back to legacy: %s", exc, exc_info=True)
+
+    # ── Fallback: legacy single-agent ─────────────────────────────────────
     try:
         result = await run_agent(question, working_memory=working_mem)
         logger.info("Agent done: intent=%s actions=%d", result.intent, len(result.actions))
@@ -235,5 +352,4 @@ async def get_data_route(req: DataRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    # Use port 4001 or whatever matches the frontend/tests
     uvicorn.run(app, host="0.0.0.0", port=4001)
