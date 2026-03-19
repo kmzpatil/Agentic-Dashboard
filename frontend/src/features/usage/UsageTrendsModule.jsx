@@ -1,4 +1,10 @@
-import React, { useState, useMemo, useEffect, useRef } from "react";
+import React, {
+  useState,
+  useMemo,
+  useEffect,
+  useRef,
+  useCallback,
+} from "react";
 import {
   AlertTriangle,
   TrendingUp,
@@ -10,6 +16,7 @@ import {
   Download,
   Image as ImageIcon,
   CircleDot,
+  Layers,
   ChevronDown,
   CalendarDays,
   SlidersHorizontal,
@@ -101,7 +108,9 @@ function FloatingDropdown({
         if (opt) return opt.label;
       }
     } else {
-      const opt = options.find((o) => o.value === (Array.isArray(val) ? val[0] : val));
+      const opt = options.find(
+        (o) => o.value === (Array.isArray(val) ? val[0] : val),
+      );
       if (opt) return opt.label;
     }
     return Array.isArray(val) ? val[0] : val;
@@ -143,11 +152,17 @@ function FloatingDropdown({
   const dotColor = themeColor === "red" ? "bg-red-500" : "bg-red-400";
 
   return (
-    <div ref={ref} className={`relative ${className}`} style={minWidth ? { minWidth } : {}}>
+    <div
+      ref={ref}
+      className={`relative ${className}`}
+      style={minWidth ? { minWidth } : {}}
+    >
       <button
         type="button"
         disabled={disabled}
-        onClick={() => { if (!disabled) setOpen((o) => !o); }}
+        onClick={() => {
+          if (!disabled) setOpen((o) => !o);
+        }}
         className={`group w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl border backdrop-blur-md text-sm font-bold transition-all outline-none shadow-lg ${themeClasses} ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
       >
         <span className="truncate">{getLabel(value)}</span>
@@ -163,7 +178,10 @@ function FloatingDropdown({
         >
           {isGroups ? (
             options.map((group, gi) => (
-              <div key={group.label} className={gi > 0 ? "border-t border-neutral-900" : ""}>
+              <div
+                key={group.label}
+                className={gi > 0 ? "border-t border-neutral-900" : ""}
+              >
                 <div className="px-4 py-2 text-[10px] font-black uppercase tracking-[0.2em] text-neutral-600 bg-neutral-900/50">
                   {group.label}
                 </div>
@@ -174,22 +192,32 @@ function FloatingDropdown({
                       <button
                         key={opt.value}
                         onClick={() => handleSelect(opt.value)}
-                        className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all flex items-center justify-between group/item ${active
+                        className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all flex items-center justify-between group/item ${
+                          active
                             ? "bg-red-500/10 text-red-500 font-bold"
                             : "text-neutral-400 hover:bg-neutral-800 hover:text-white"
-                          }`}
+                        }`}
                       >
                         <span className="flex items-center gap-2">
                           {multiSelect && (
-                            <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-all ${active ? "bg-red-500 border-red-500" : "border-neutral-700 bg-neutral-900"
-                              }`}>
-                              {active && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                            <div
+                              className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-all ${
+                                active
+                                  ? "bg-red-500 border-red-500"
+                                  : "border-neutral-700 bg-neutral-900"
+                              }`}
+                            >
+                              {active && (
+                                <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                              )}
                             </div>
                           )}
                           {opt.label}
                         </span>
                         {active && !multiSelect && (
-                          <div className={`w-1.5 h-1.5 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.6)] ${dotColor}`} />
+                          <div
+                            className={`w-1.5 h-1.5 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.6)] ${dotColor}`}
+                          />
                         )}
                       </button>
                     );
@@ -205,22 +233,32 @@ function FloatingDropdown({
                   <button
                     key={opt.value}
                     onClick={() => handleSelect(opt.value)}
-                    className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all flex items-center justify-between group/item ${active
+                    className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all flex items-center justify-between group/item ${
+                      active
                         ? "bg-red-500/10 text-red-500 font-bold"
                         : "text-neutral-400 hover:bg-neutral-800 hover:text-white"
-                      }`}
+                    }`}
                   >
                     <span className="flex items-center gap-2">
                       {multiSelect && (
-                        <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-all ${active ? "bg-red-500 border-red-500" : "border-neutral-700 bg-neutral-900"
-                          }`}>
-                          {active && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                        <div
+                          className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-all ${
+                            active
+                              ? "bg-red-500 border-red-500"
+                              : "border-neutral-700 bg-neutral-900"
+                          }`}
+                        >
+                          {active && (
+                            <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                          )}
                         </div>
                       )}
                       {opt.label}
                     </span>
                     {active && !multiSelect && (
-                      <div className={`w-1.5 h-1.5 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.6)] ${dotColor}`} />
+                      <div
+                        className={`w-1.5 h-1.5 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.6)] ${dotColor}`}
+                      />
                     )}
                   </button>
                 );
@@ -250,10 +288,11 @@ function GranularityPills({ value, onChange }) {
           <button
             key={opt.value}
             onClick={() => onChange(opt.value)}
-            className={`w-9 h-10 rounded-lg text-sm font-semibold transition-all cursor-pointer border flex items-center justify-center ${active
+            className={`w-9 h-10 rounded-lg text-sm font-semibold transition-all cursor-pointer border flex items-center justify-center ${
+              active
                 ? "bg-neutral-800 border-neutral-600 text-white shadow-md"
                 : "bg-transparent border-neutral-800 text-neutral-500 hover:border-neutral-700 hover:text-neutral-300"
-              }`}
+            }`}
           >
             {opt.label}
           </button>
@@ -331,12 +370,7 @@ function enumerateDates(startIso, endIso) {
   return dates;
 }
 
-function DateRangeSlider({
-  dates,
-  startIndex,
-  endIndex,
-  onChange,
-}) {
+function DateRangeSlider({ dates, startIndex, endIndex, onChange }) {
   if (!dates.length) {
     return (
       <div className="rounded-[18px] border border-neutral-800 bg-[#111111] p-4 text-sm text-neutral-500">
@@ -394,12 +428,41 @@ const MULTI_DIM_OPTIONS = [
 ];
 
 const MULTIDIM_COLORS = [
-  "#38BDF8", "#F472B6", "#34D399", "#FBBF24", "#A78BFA",
-  "#FB923C", "#60A5FA", "#F87171", "#4ADE80", "#E879F9",
+  "#38BDF8",
+  "#F472B6",
+  "#34D399",
+  "#FBBF24",
+  "#A78BFA",
+  "#FB923C",
+  "#60A5FA",
+  "#F87171",
+  "#4ADE80",
+  "#E879F9",
 ];
 
-const CLIENT_OPTIONAL_DIMS = new Set(["output_type", "input_type_proportion", "volume_dynamics", "duration_dynamics", "success_scores"]);
-const USER_OPTIONAL_DIMS = new Set(["output_type", "input_type_proportion", "volume_dynamics", "duration_dynamics", "success_scores"]);
+const CLIENT_OPTIONAL_DIMS = new Set([
+  "output_type",
+  "input_type_proportion",
+  "volume_dynamics",
+  "duration_dynamics",
+  "success_scores",
+]);
+const USER_OPTIONAL_DIMS = new Set([
+  "output_type",
+  "input_type_proportion",
+  "volume_dynamics",
+  "duration_dynamics",
+  "success_scores",
+]);
+const MULTI_DIM_APPLY_DEBOUNCE_MS = 650;
+
+function areStringArraysEqual(left = [], right = []) {
+  if (left.length !== right.length) return false;
+  for (let i = 0; i < left.length; i += 1) {
+    if (left[i] !== right[i]) return false;
+  }
+  return true;
+}
 
 function formatMetricValue(metric, value) {
   if (metric.includes("rate") || metric.includes("efficiency"))
@@ -463,7 +526,7 @@ function buildFilterParams(filters) {
 
   const appendMulti = (key, value) => {
     if (Array.isArray(value)) {
-      value.forEach(v => {
+      value.forEach((v) => {
         if (v !== "All") params.append(key, v);
       });
     } else if (value && value !== "All") {
@@ -484,16 +547,23 @@ function buildFilterParams(filters) {
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export default function UsageTrendsModule({ authUser, routeState, onNavigate }) {
+export default function UsageTrendsModule({
+  authUser,
+  routeState,
+  onNavigate,
+}) {
   const defaultMetric =
     routeState.metric && routeState.metric !== "future_forecast"
       ? routeState.metric
       : "uploaded_count";
 
   const [metric, setMetric] = useState(defaultMetric);
-  const [granularity, setGranularity] = useState(routeState?.granularity || "week");
+  const [granularity, setGranularity] = useState(
+    routeState?.granularity || "week",
+  );
   const [isPredicting, setIsPredicting] = useState(
-    Boolean(routeState?.isPredicting) || routeState?.metric === "future_forecast",
+    Boolean(routeState?.isPredicting) ||
+      routeState?.metric === "future_forecast",
   );
   const [predictionLength, setPredictionLength] = useState(7);
   /**
@@ -513,7 +583,8 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
     dateTo: "",
   });
   const [filters, setFilters] = useState({
-    company: authUser?.role === "client_admin" ? [authUser.clientName] : ["All"],
+    company:
+      authUser?.role === "client_admin" ? [authUser.clientName] : ["All"],
     channel: ["All"],
     user: ["All"],
     language: ["All"],
@@ -530,6 +601,7 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
     return !window.matchMedia("(max-width: 1023px)").matches;
   });
   const [showPoints, setShowPoints] = useState(false);
+  const [showStl, setShowStl] = useState(false);
   const [showComparison, setShowComparison] = useState(false);
   const [comparisonOffset, setComparisonOffset] = useState(1);
   const chartRef = useRef(null);
@@ -538,7 +610,9 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
   useEffect(() => {
     if (isMaximized) {
       document.body.style.overflow = "hidden";
-      return () => { document.body.style.overflow = ""; };
+      return () => {
+        document.body.style.overflow = "";
+      };
     }
     document.body.style.overflow = "";
     return undefined;
@@ -565,7 +639,8 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
 
   // Prediction mode only supports uploaded_count today
   useEffect(() => {
-    if (isPredicting && metric !== "uploaded_count") setMetric("uploaded_count");
+    if (isPredicting && metric !== "uploaded_count")
+      setMetric("uploaded_count");
   }, [isPredicting, metric]);
 
   // Reset cutoff when prediction is toggled off
@@ -574,15 +649,27 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
   }, [isPredicting]);
 
   const rateMetrics = useMemo(
-    () => new Set(["publish_conversion_rate", "creation_rate", "processing_efficiency", "waste_index"]),
+    () =>
+      new Set([
+        "publish_conversion_rate",
+        "creation_rate",
+        "processing_efficiency",
+        "waste_index",
+      ]),
     [],
   );
 
-  const resolvedMetric = metric === "turnaround_time" ? "turnaround_time" : metric;
+  const resolvedMetric =
+    metric === "turnaround_time" ? "turnaround_time" : metric;
 
   // workingFiltersQuery used for real-time validation and dynamic options
-  const workingFiltersQuery = useMemo(() => buildFilterParams(filters), [filters]);
-  const workingFiltersQuerySuffix = workingFiltersQuery ? `&${workingFiltersQuery}` : "";
+  const workingFiltersQuery = useMemo(
+    () => buildFilterParams(filters),
+    [filters],
+  );
+  const workingFiltersQuerySuffix = workingFiltersQuery
+    ? `&${workingFiltersQuery}`
+    : "";
 
   // appliedFiltersQuery used for charts, metrics, and trends
   const appliedFiltersQuery = useMemo(() => buildFilterParams(appliedFilters), [appliedFilters]);
@@ -607,6 +694,7 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
     [filterOptionsUrl],
   );
 
+
   // [FIX] Scoped Filter Options for Multi-Dim section
   const multiDimCompany = useMemo(() => {
     if (authUser?.role === "client_admin") return authUser.clientName;
@@ -618,7 +706,7 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
     const p = new URLSearchParams();
     if (multiDimCompany) {
       if (Array.isArray(multiDimCompany)) {
-        multiDimCompany.forEach(c => p.append("company", c));
+        multiDimCompany.forEach((c) => p.append("company", c));
       } else {
         p.append("company", multiDimCompany);
       }
@@ -627,20 +715,26 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
     return `${API_BASE}/usage-trends/v1/filters/options${q ? `?${q}` : ""}`;
   }, [multiDimCompany]);
 
-  const { data: multiDimFilterOptionsData } = useApi(
+  const { data: multiDimFilterOptionsData } = useApi(multiDimFilterOptionsUrl, [
     multiDimFilterOptionsUrl,
-    [multiDimFilterOptionsUrl],
-  );
+  ]);
 
   const dateRangeUrl = `${API_BASE}/usage-trends/v1/filters/date-range`;
   const { data: dateRangeData } = useApi(dateRangeUrl, [dateRangeUrl]);
 
-  const validateUrl = workingFiltersQuery ? `${API_BASE}/usage-trends/v1/filters/validate?${workingFiltersQuery}` : null;
+  const validateUrl = workingFiltersQuery
+    ? `${API_BASE}/usage-trends/v1/filters/validate?${workingFiltersQuery}`
+    : null;
   const { data: validateData } = useApi(validateUrl, [validateUrl]);
 
-  const minDate = dateRangeData?.min_date || filterOptionsData?.date_range?.min_date || "";
-  const maxDate = dateRangeData?.max_date || filterOptionsData?.date_range?.max_date || "";
-  const sliderDates = useMemo(() => enumerateDates(minDate, maxDate), [minDate, maxDate]);
+  const minDate =
+    dateRangeData?.min_date || filterOptionsData?.date_range?.min_date || "";
+  const maxDate =
+    dateRangeData?.max_date || filterOptionsData?.date_range?.max_date || "";
+  const sliderDates = useMemo(
+    () => enumerateDates(minDate, maxDate),
+    [minDate, maxDate],
+  );
 
   const [multiDimStartIndex, setMultiDimStartIndex] = useState(0);
   const [multiDimEndIndex, setMultiDimEndIndex] = useState(0);
@@ -654,8 +748,24 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
     }
   }, [sliderDates]);
 
+  const applyMultiDimFilters = useCallback((nextFilters) => {
+    setAppliedMultiDimFilters((prev) => {
+      const sameCompany = areStringArraysEqual(
+        prev.company || [],
+        nextFilters.company || [],
+      );
+      const sameUser = areStringArraysEqual(
+        prev.user || [],
+        nextFilters.user || [],
+      );
+      const sameFrom = prev.dateFrom === nextFilters.dateFrom;
+      const sameTo = prev.dateTo === nextFilters.dateTo;
+      return sameCompany && sameUser && sameFrom && sameTo ? prev : nextFilters;
+    });
+  }, []);
+
   const handleApplyMultiDimFilters = () => {
-    setAppliedMultiDimFilters({
+    applyMultiDimFilters({
       company: clientFilter,
       user: userFilter,
       dateFrom: sliderDates[multiDimStartIndex] || "",
@@ -663,11 +773,39 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
     });
   };
 
+  useEffect(() => {
+    if (!sliderDates.length) return;
+
+    // Debounce multi-dim filter syncing so drag/select interactions don't spam API calls.
+    const timer = window.setTimeout(() => {
+      applyMultiDimFilters({
+        company: clientFilter,
+        user: userFilter,
+        dateFrom: sliderDates[multiDimStartIndex] || "",
+        dateTo: sliderDates[multiDimEndIndex] || "",
+      });
+    }, MULTI_DIM_APPLY_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    clientFilter,
+    userFilter,
+    multiDimStartIndex,
+    multiDimEndIndex,
+    sliderDates,
+    applyMultiDimFilters,
+  ]);
+
   // ── API URLs ──────────────────────────────────────────────────────────────
   const metricsUrl = `${API_BASE}/usage-trends/v1/pipeline-metrics?granularity=${encodeURIComponent(granularity)}${appliedFiltersQuerySuffix}`;
-  const { data: metricsData, loading: metricsLoading, error: metricsError } = useApi(metricsUrl, [metricsUrl]);
+  const {
+    data: metricsData,
+    loading: metricsLoading,
+    error: metricsError,
+  } = useApi(metricsUrl, [metricsUrl]);
 
-  const forecastMetric = resolvedMetric === "turnaround_time" ? "uploaded_count" : resolvedMetric;
+  const forecastMetric =
+    resolvedMetric === "turnaround_time" ? "uploaded_count" : resolvedMetric;
   const predictionUrl = useMemo(() => {
     if (!isPredicting) return null;
     let url =
@@ -677,7 +815,14 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
       `&prediction_length=${predictionLength}${appliedFiltersQuerySuffix}`;
     if (cutoffDate) url += `&cutoff_date=${encodeURIComponent(cutoffDate)}`;
     return url;
-  }, [isPredicting, forecastMetric, granularity, predictionLength, cutoffDate, appliedFiltersQuerySuffix]);
+  }, [
+    isPredicting,
+    forecastMetric,
+    granularity,
+    predictionLength,
+    cutoffDate,
+    appliedFiltersQuerySuffix,
+  ]);
 
   const prediction = useApi(predictionUrl, [predictionUrl]);
 
@@ -687,14 +832,24 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
     params.append("analysis", multiDim);
     params.append("granularity", granularity);
 
-    if (appliedMultiDimFilters.company && appliedMultiDimFilters.company[0] !== "All") {
-      appliedMultiDimFilters.company.forEach(c => params.append("company", c));
+    if (
+      appliedMultiDimFilters.company &&
+      appliedMultiDimFilters.company[0] !== "All"
+    ) {
+      appliedMultiDimFilters.company.forEach((c) =>
+        params.append("company", c),
+      );
     }
-    if (appliedMultiDimFilters.user && appliedMultiDimFilters.user[0] !== "All") {
-      appliedMultiDimFilters.user.forEach(u => params.append("user", u));
+    if (
+      appliedMultiDimFilters.user &&
+      appliedMultiDimFilters.user[0] !== "All"
+    ) {
+      appliedMultiDimFilters.user.forEach((u) => params.append("user", u));
     }
-    if (appliedMultiDimFilters.dateFrom) params.append("date_from", appliedMultiDimFilters.dateFrom);
-    if (appliedMultiDimFilters.dateTo) params.append("date_to", appliedMultiDimFilters.dateTo);
+    if (appliedMultiDimFilters.dateFrom)
+      params.append("date_from", appliedMultiDimFilters.dateFrom);
+    if (appliedMultiDimFilters.dateTo)
+      params.append("date_to", appliedMultiDimFilters.dateTo);
 
     // Mix in the global applied filters too
     if (appliedFiltersQuery) {
@@ -707,7 +862,19 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
     return `${API_BASE}/usage-trends/v1/multi-dim?${params.toString()}`;
   }, [multiDim, granularity, appliedMultiDimFilters, appliedFiltersQuery]);
 
-  const { data: multiDimData, loading: multiDimLoading, error: multiDimError } = useApi(multiDimUrl, [multiDimUrl]);
+  const {
+    data: multiDimData,
+    loading: multiDimLoading,
+    error: multiDimError,
+  } = useApi(multiDimUrl, [multiDimUrl]);
+
+  const trendsUrl = `${API_BASE}/trends?metric=${encodeURIComponent(resolvedMetric)}&granularity=${encodeURIComponent(granularity)}${appliedFiltersQuerySuffix}`;
+  const trends = useApi(trendsUrl, [trendsUrl]);
+
+  const stlUrl = showStl
+    ? `${API_BASE}/usage-trends/v1/stl?metric=${encodeURIComponent(resolvedMetric)}&granularity=${encodeURIComponent(granularity)}${appliedFiltersQuerySuffix}`
+    : null;
+  const stl = useApi(stlUrl, [stlUrl]);
 
   const insightsUrl = `${API_BASE}/insights?surface=trends${appliedFiltersQuerySuffix}`;
   const insights = useApi(insightsUrl, [insightsUrl]);
@@ -740,28 +907,35 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
   const dateEndIndex = useMemo(() => {
     if (!sliderDates.length) return 0;
     const fallbackIndex = sliderDates.length - 1;
-    const index = filters.dateTo ? sliderDates.indexOf(filters.dateTo) : fallbackIndex;
+    const index = filters.dateTo
+      ? sliderDates.indexOf(filters.dateTo)
+      : fallbackIndex;
     return index >= 0 ? index : fallbackIndex;
   }, [sliderDates, filters.dateTo]);
-  const activeFilterCount = useMemo(() => (
-    Object.entries(filters).reduce((count, [key, value]) => {
-      if (key === "dateFrom" || key === "dateTo") return value ? count + 1 : count;
-      if (Array.isArray(value)) {
-        const actualFilters = value.filter(v => v !== "All");
-        return count + actualFilters.length;
-      }
-      return value && value !== "All" ? count + 1 : count;
-    }, 0)
-  ), [filters]);
+  const activeFilterCount = useMemo(
+    () =>
+      Object.entries(filters).reduce((count, [key, value]) => {
+        if (key === "dateFrom" || key === "dateTo")
+          return value ? count + 1 : count;
+        if (Array.isArray(value)) {
+          const actualFilters = value.filter((v) => v !== "All");
+          return count + actualFilters.length;
+        }
+        return value && value !== "All" ? count + 1 : count;
+      }, 0),
+    [filters],
+  );
 
   useEffect(() => {
     if (!sliderDates.length) return;
-    const nextStart = filters.dateFrom && sliderDates.includes(filters.dateFrom)
-      ? filters.dateFrom
-      : "";
-    const nextEnd = filters.dateTo && sliderDates.includes(filters.dateTo)
-      ? filters.dateTo
-      : "";
+    const nextStart =
+      filters.dateFrom && sliderDates.includes(filters.dateFrom)
+        ? filters.dateFrom
+        : "";
+    const nextEnd =
+      filters.dateTo && sliderDates.includes(filters.dateTo)
+        ? filters.dateTo
+        : "";
     if (nextStart === filters.dateFrom && nextEnd === filters.dateTo) return;
     setFilters((prev) => ({
       ...prev,
@@ -788,7 +962,9 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
       .map(([period, bucket]) => ({
         period,
         value: rateMetrics.has(resolvedMetric)
-          ? bucket.count ? bucket.sum / bucket.count : 0
+          ? bucket.count
+            ? bucket.sum / bucket.count
+            : 0
           : bucket.sum,
       }));
 
@@ -804,20 +980,25 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
   const resolvedCutoff = useMemo(() => {
     if (cutoffDate) return cutoffDate;
     // [FIX] Auto cutoff must be last data point showing in plot
-    if (historySeries.length > 0) return historySeries.at(-1).period.slice(0, 10);
+    if (historySeries.length > 0)
+      return historySeries.at(-1).period.slice(0, 10);
     if (!prediction.data?.clients) return null;
     const first = Object.values(prediction.data.clients)[0];
-    return first?.history_cutoff ? String(first.history_cutoff).slice(0, 10) : null;
+    return first?.history_cutoff
+      ? String(first.history_cutoff).slice(0, 10)
+      : null;
   }, [cutoffDate, historySeries, prediction.data]);
 
   const predictionSeries = useMemo(() => {
-    if (!isPredicting || prediction.loading || !prediction.data?.clients) return [];
+    if (!isPredicting || prediction.loading || !prediction.data?.clients)
+      return [];
 
     // Guard against stale renders while a new request is in flight
     if (
       prediction.data.metric !== forecastMetric ||
       prediction.data.prediction_length !== predictionLength
-    ) return [];
+    )
+      return [];
 
     const grouped = new Map();
     const forecastKey = `Forecast_${forecastMetric}`;
@@ -825,7 +1006,9 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
     Object.values(prediction.data.clients).forEach((clientPayload) => {
       // Skip clients that had no data before the cutoff (backend sends a warning)
       if (clientPayload?.warning) return;
-      const rows = Array.isArray(clientPayload?.forecast) ? clientPayload.forecast : [];
+      const rows = Array.isArray(clientPayload?.forecast)
+        ? clientPayload.forecast
+        : [];
       rows.forEach((row) => {
         const dateKey = String(row.Date || "").slice(0, 10);
         if (!dateKey) return;
@@ -842,19 +1025,26 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
       .map(([period, bucket]) => ({
         period,
         value: rateMetrics.has(resolvedMetric)
-          ? bucket.count ? bucket.sum / bucket.count : 0
+          ? bucket.count
+            ? bucket.sum / bucket.count
+            : 0
           : bucket.sum,
       }));
   }, [
-    prediction.data, prediction.loading,
-    resolvedMetric, forecastMetric, rateMetrics,
-    isPredicting, predictionLength,
+    prediction.data,
+    prediction.loading,
+    resolvedMetric,
+    forecastMetric,
+    rateMetrics,
+    isPredicting,
+    predictionLength,
   ]);
 
   /** Count of clients skipped because they had no data before the cutoff */
   const skippedClientsCount = useMemo(() => {
     if (!prediction.data?.clients) return 0;
-    return Object.values(prediction.data.clients).filter((c) => c?.warning).length;
+    return Object.values(prediction.data.clients).filter((c) => c?.warning)
+      .length;
   }, [prediction.data]);
 
   const summary = useMemo(() => {
@@ -877,25 +1067,46 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
   );
 
   const chartData = useMemo(() => {
-    const historyByDate = new Map(historySeries.map((p) => [p.period, Number(p.value || 0)]));
-    const predictionByDate = new Map(predictionSeries.map((p) => [p.period, Number(p.value || 0)]));
+    const historyByDate = new Map(
+      historySeries.map((p) => [p.period, Number(p.value || 0)]),
+    );
+    const predictionByDate = new Map(
+      predictionSeries.map((p) => [p.period, Number(p.value || 0)]),
+    );
 
     const labels = Array.from(
       new Set([...historyByDate.keys(), ...predictionByDate.keys()]),
     ).sort((a, b) => new Date(a) - new Date(b));
 
-    // Map of anomaly date → direction for O(1) lookup in point callbacks
-    const anomalyDates = new Map(
-      (computedAnomalies || []).map((a) => [
-        String(a.period || "").slice(0, 10),
-        a.direction, // "drop" | "spike"
-      ]),
-    );
+    // Map of anomaly date → method metadata for O(1) lookup in point callbacks
+    const anomalyPriority = {
+      zscore: 1,
+      seasonal_deviation: 2,
+      trend_reversal: 3,
+    };
+    const anomalyDates = new Map();
+    (trends.data?.anomalies || []).forEach((a) => {
+      const key = String(a.period || "").slice(0, 10);
+      const next = {
+        direction: a.direction,
+        method: a.method || "zscore",
+        severity: a.severity || "medium",
+      };
+      const current = anomalyDates.get(key);
+      if (
+        !current ||
+        anomalyPriority[next.method] >= anomalyPriority[current.method]
+      ) {
+        anomalyDates.set(key, next);
+      }
+    });
 
     const datasets = [
       {
         label: resolvedMetric.replace(/_/g, " "),
-        data: labels.map((l) => historyByDate.has(l) ? historyByDate.get(l) : null),
+        data: labels.map((l) =>
+          historyByDate.has(l) ? historyByDate.get(l) : null,
+        ),
         borderColor: "#EF4444",
         backgroundColor: "rgba(239, 68, 68, 0.15)",
         tension: 0.25,
@@ -904,27 +1115,37 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
         // Anomaly points always shown (larger + colored) regardless of showPoints toggle
         pointRadius: (ctx) => {
           const date = labels[ctx.dataIndex];
-          if (anomalyDates.has(date)) return 6;
+          const anomaly = anomalyDates.get(date);
+          if (anomaly) return anomaly.severity === "high" ? 7 : 5;
           return showPoints ? 3 : 0;
         },
         pointHoverRadius: (ctx) => {
           const date = labels[ctx.dataIndex];
-          return anomalyDates.has(date) ? 9 : 5;
+          const anomaly = anomalyDates.get(date);
+          if (anomaly) return anomaly.severity === "high" ? 10 : 8;
+          return 5;
         },
         pointBackgroundColor: (ctx) => {
           const date = labels[ctx.dataIndex];
-          if (!anomalyDates.has(date)) return "#EF4444";
-          return anomalyDates.get(date) === "drop" ? "#F59E0B" : "#34D399";
+          const anomaly = anomalyDates.get(date);
+          if (!anomaly) return "#EF4444";
+          return anomaly.direction === "drop" ? "#F59E0B" : "#34D399";
         },
         pointBorderColor: (ctx) => {
           const date = labels[ctx.dataIndex];
-          if (!anomalyDates.has(date)) return "#EF4444";
-          return anomalyDates.get(date) === "drop" ? "#92400E" : "#065F46";
+          const anomaly = anomalyDates.get(date);
+          if (!anomaly) return "#EF4444";
+          if (anomaly.method === "seasonal_deviation") return "#E5E7EB";
+          return "transparent";
         },
         pointBorderWidth: (ctx) => {
           const date = labels[ctx.dataIndex];
-          return anomalyDates.has(date) ? 2 : 0;
+          const anomaly = anomalyDates.get(date);
+          if (!anomaly) return 0;
+          return anomaly.method === "seasonal_deviation" ? 1.5 : 0;
         },
+        pointStyle: "circle",
+        anomalyMethodMeta: Object.fromEntries(anomalyDates),
       },
     ];
 
@@ -974,6 +1195,7 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
 
     return { labels, datasets };
   }, [
+
     historySeries, resolvedMetric, predictionSeries,
     isPredicting, showPoints, cutoffDate, resolvedCutoff,
     computedAnomalies, showComparison, comparisonOffset,
@@ -981,9 +1203,13 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
 
   const multiDimChartData = useMemo(() => {
     if (!multiDimData?.data || !multiDimData?.series_keys) return null;
-    const labels = multiDimData.data.map((row) => String(row.Date || "").slice(0, 10)).sort();
+    const labels = multiDimData.data
+      .map((row) => String(row.Date || "").slice(0, 10))
+      .sort();
     const dataByDate = {};
-    multiDimData.data.forEach((row) => { dataByDate[String(row.Date || "").slice(0, 10)] = row; });
+    multiDimData.data.forEach((row) => {
+      dataByDate[String(row.Date || "").slice(0, 10)] = row;
+    });
     const datasets = multiDimData.series_keys.map((key, idx) => ({
       label: multiDimData.labels?.[key] || key.replace(/_/g, " "),
       data: labels.map((d) => Number(dataByDate[d]?.[key] || 0)),
@@ -998,27 +1224,78 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
     return { labels, datasets };
   }, [multiDimData, showPoints]);
 
-  const chartOptions = useMemo(() => ({
-    responsive: true,
-    maintainAspectRatio: false,
-    animation: false,
-    interaction: { mode: "index", intersect: false },
-    plugins: { legend: { labels: { color: "#d1d5db" } } },
-    scales: {
-      x: { ticks: { color: "#9ca3af" }, grid: { color: "rgba(255,255,255,0.05)" } },
-      y: { ticks: { color: "#9ca3af" }, grid: { color: "rgba(255,255,255,0.05)" } },
-    },
-  }), []);
+  const chartOptions = useMemo(
+    () => ({
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { labels: { color: "#d1d5db" } },
+        // Draw a subtle cross marker inside trend reversal anomaly dots.
+        anomalyReversalMarker: {
+          id: "anomalyReversalMarker",
+          afterDatasetsDraw(chart) {
+            const labels = chart.data.labels || [];
+            const dataset = chart.data.datasets?.[0];
+            const methodMeta = dataset?.anomalyMethodMeta;
+            if (!dataset || !methodMeta) return;
+
+            const meta = chart.getDatasetMeta(0);
+            const points = meta?.data || [];
+            const ctx = chart.ctx;
+            ctx.save();
+            ctx.strokeStyle = "#E5E7EB";
+            ctx.lineWidth = 1;
+
+            points.forEach((point, index) => {
+              const date = String(labels[index] || "").slice(0, 10);
+              const anomaly = methodMeta[date];
+              if (!anomaly || anomaly.method !== "trend_reversal") return;
+
+              const { x, y } = point.getProps(["x", "y"], true);
+              const crossSize = 2;
+              ctx.beginPath();
+              ctx.moveTo(x - crossSize, y);
+              ctx.lineTo(x + crossSize, y);
+              ctx.moveTo(x, y - crossSize);
+              ctx.lineTo(x, y + crossSize);
+              ctx.stroke();
+            });
+
+            ctx.restore();
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: "#9ca3af" },
+          grid: { color: "rgba(255,255,255,0.05)" },
+        },
+        y: {
+          ticks: { color: "#9ca3af" },
+          grid: { color: "rgba(255,255,255,0.05)" },
+        },
+      },
+    }),
+    [],
+  );
 
   // ── Export handlers ───────────────────────────────────────────────────────
   const handleExportCsv = () => {
     if (!chartData) return;
     let csv = `Date,${resolvedMetric}${isPredicting ? ",AI_Forecast" : ""}\n`;
     chartData.labels.forEach((label, i) => {
-      const historyVal = chartData.datasets[0].data[i] !== null ? chartData.datasets[0].data[i] : "";
-      const forecastVal = isPredicting && chartData.datasets[1]
-        ? chartData.datasets[1].data[i] !== null ? chartData.datasets[1].data[i] : ""
-        : "";
+      const historyVal =
+        chartData.datasets[0].data[i] !== null
+          ? chartData.datasets[0].data[i]
+          : "";
+      const forecastVal =
+        isPredicting && chartData.datasets[1]
+          ? chartData.datasets[1].data[i] !== null
+            ? chartData.datasets[1].data[i]
+            : ""
+          : "";
       csv += `${label},${historyVal}${isPredicting ? `,${forecastVal}` : ""}\n`;
     });
     const blob = new Blob([csv], { type: "text/csv" });
@@ -1041,9 +1318,18 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
   };
 
   // ── Early returns ─────────────────────────────────────────────────────────
-  if (metricsLoading) return <div className="p-6"><UsageTrendsSkeleton /></div>;
+  if (metricsLoading)
+    return (
+      <div className="p-6">
+        <UsageTrendsSkeleton />
+      </div>
+    );
   if (metricsError)
-    return <div className="p-6 text-red-500 font-medium">Failed to load data: {metricsError}</div>;
+    return (
+      <div className="p-6 text-red-500 font-medium">
+        Failed to load data: {metricsError}
+      </div>
+    );
 
   const anomalies = computedAnomalies;
   const needsClientFilter = CLIENT_OPTIONAL_DIMS.has(multiDim);
@@ -1053,8 +1339,14 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
   const handleDateRangeChange = (nextStartIndex, nextEndIndex) => {
     if (!sliderDates.length) return;
     const maxIndex = sliderDates.length - 1;
-    const safeStart = Math.min(Math.max(Math.min(nextStartIndex, nextEndIndex), 0), maxIndex);
-    const safeEnd = Math.min(Math.max(Math.max(nextStartIndex, nextEndIndex), 0), maxIndex);
+    const safeStart = Math.min(
+      Math.max(Math.min(nextStartIndex, nextEndIndex), 0),
+      maxIndex,
+    );
+    const safeEnd = Math.min(
+      Math.max(Math.max(nextStartIndex, nextEndIndex), 0),
+      maxIndex,
+    );
     setFilters((prev) => ({
       ...prev,
       dateFrom: safeStart === 0 ? "" : sliderDates[safeStart],
@@ -1142,7 +1434,6 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
           {/* ── Controls bar ──────────────────────────────────────────────── */}
           <section className="relative z-[60] rounded-[24px] border border-neutral-800/80 bg-[#101010]/80 backdrop-blur-md p-6 shadow-xl transition-all duration-300 hover:border-neutral-700/80">
             <div className="flex flex-wrap lg:flex-nowrap items-start gap-5">
-
               {/* Metric */}
               <div className="group shrink-0">
                 <div className="h-5 mb-2 flex items-end">
@@ -1168,7 +1459,10 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
                     Granularity
                   </label>
                 </div>
-                <GranularityPills value={granularity} onChange={setGranularity} />
+                <GranularityPills
+                  value={granularity}
+                  onChange={setGranularity}
+                />
               </div>
 
               {/* Forecast toggle + controls */}
@@ -1188,14 +1482,16 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
                         return next;
                       });
                     }}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full border transition-all ${isPredicting
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full border transition-all ${
+                      isPredicting
                         ? "border-red-500/60 bg-red-500/20"
                         : "border-neutral-700 bg-[#0a0a0a]/90"
-                      }`}
+                    }`}
                   >
                     <span
-                      className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${isPredicting ? "translate-x-6" : "translate-x-1"
-                        }`}
+                      className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
+                        isPredicting ? "translate-x-6" : "translate-x-1"
+                      }`}
                     />
                   </button>
                 </div>
@@ -1249,8 +1545,9 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
                   <div className="mt-1.5 flex items-center gap-1.5">
                     <AlertTriangle size={11} className="text-amber-500/70" />
                     <span className="text-[10px] text-amber-500/70">
-                      {skippedClientsCount} client{skippedClientsCount > 1 ? "s" : ""} skipped
-                      — no data before cutoff date
+                      {skippedClientsCount} client
+                      {skippedClientsCount > 1 ? "s" : ""} skipped — no data
+                      before cutoff date
                     </span>
                   </div>
                 )}
@@ -1269,7 +1566,9 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
                     {formatMetricValue(resolvedMetric, summary.latestValue)}
                   </div>
                   <div className="mt-0.5 text-[11px] text-neutral-500">
-                    {summary.latestPeriod ? formatLongPeriod(summary.latestPeriod) : "No data"}
+                    {summary.latestPeriod
+                      ? formatLongPeriod(summary.latestPeriod)
+                      : "No data"}
                   </div>
                 </div>
 
@@ -1284,15 +1583,29 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
                           VS Last Period
                         </div>
                         <div className="mt-1 text-lg font-bold leading-tight text-white">
-                          {deltaNum === null ? "—" : (
-                            <span className={`inline-flex items-center gap-1 ${deltaUp ? "text-emerald-400" : "text-red-400"}`}>
-                              {deltaUp ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+                          {deltaNum === null ? (
+                            "—"
+                          ) : (
+                            <span
+                              className={`inline-flex items-center gap-1 ${deltaUp ? "text-emerald-400" : "text-red-400"}`}
+                            >
+                              {deltaUp ? (
+                                <TrendingUp size={14} />
+                              ) : (
+                                <TrendingDown size={14} />
+                              )}
                               {Math.abs(deltaNum).toFixed(1)}%
                             </span>
                           )}
                         </div>
                         <div className="mt-0.5 text-[11px] text-neutral-500">
-                          {deltaNum === null ? "—" : deltaUp ? "Increase" : Math.abs(deltaNum) > 50 ? "Significant drop" : "Decrease"}
+                          {deltaNum === null
+                            ? "—"
+                            : deltaUp
+                              ? "Increase"
+                              : Math.abs(deltaNum) > 50
+                                ? "Significant drop"
+                                : "Decrease"}
                         </div>
                       </>
                     );
@@ -1315,21 +1628,22 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
                 </div>
               </section>
             </div>
-
           </section>
         </>
       )}
 
       <section
-        className={`${isMaximized
+        className={`${
+          isMaximized
             ? "h-full"
             : "grid grid-cols-1 lg:grid-cols-[auto_1fr] xl:grid-cols-[auto_minmax(0,1fr)_300px] gap-6 items-stretch"
-          }`}
+        }`}
       >
         {!isMaximized && (
           <aside
-            className={`rounded-[24px] border border-neutral-800 bg-[#0e0e0e] shadow-xl transition-all duration-300 hover:border-neutral-700 flex flex-col h-auto lg:h-[560px] w-full ${isFiltersOpen ? "lg:w-[240px]" : "lg:w-[56px]"
-              }`}
+            className={`rounded-[24px] border border-neutral-800 bg-[#0e0e0e] shadow-xl transition-all duration-300 hover:border-neutral-700 flex flex-col h-auto lg:h-[560px] w-full ${
+              isFiltersOpen ? "lg:w-[240px]" : "lg:w-[56px]"
+            }`}
           >
             <div className="flex-shrink-0 border-b border-neutral-800/60 bg-[#121212] px-3 py-3 rounded-t-[24px]">
               <div className="hidden lg:flex items-center justify-between gap-2">
@@ -1391,44 +1705,103 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
                 <div className="flex-1 overflow-y-auto frammer-scrollbar min-h-0">
                   <div className="space-y-3 p-3">
                     {/* HIDE Client filter for client_admin and user roles */}
-                    {authUser?.role !== "client_admin" && authUser?.role !== "user" && (
+                    {authUser?.role !== "client_admin" &&
+                      authUser?.role !== "user" && (
+                        <div className="group">
+                          <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">
+                            Client
+                          </label>
+                          <FloatingDropdown
+                            value={filters.company}
+                            onChange={(value) =>
+                              setFilters((prev) => ({
+                                ...prev,
+                                company: value,
+                                channel: ["All"],
+                                user: ["All"],
+                                language: ["All"],
+                                inputType: ["All"],
+                                outputType: ["All"],
+                              }))
+                            }
+                            options={toOptionList(filterOptions.company)}
+                            minWidth="100%"
+                            multiSelect={true}
+                          />
+                        </div>
+                      )}
+                    <div className="group">
+                      <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">
+                        Channel
+                      </label>
+                      <FloatingDropdown
+                        value={filters.channel}
+                        onChange={(v) =>
+                          setFilters((p) => ({ ...p, channel: v }))
+                        }
+                        options={toOptionList(filterOptions.channel)}
+                        minWidth="100%"
+                        multiSelect={true}
+                      />
+                    </div>
+                    {/* HIDE User filter for user role */}
+                    {authUser?.role !== "user" && (
                       <div className="group">
-                        <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">Client</label>
+                        <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">
+                          User
+                        </label>
                         <FloatingDropdown
-                          value={filters.company}
-                          onChange={(value) => setFilters((prev) => ({
-                            ...prev, company: value,
-                            channel: ["All"], user: ["All"], language: ["All"],
-                            inputType: ["All"], outputType: ["All"],
-                          }))}
-                          options={toOptionList(filterOptions.company)}
+                          value={filters.user}
+                          onChange={(v) =>
+                            setFilters((p) => ({ ...p, user: v }))
+                          }
+                          options={toOptionList(filterOptions.user)}
                           minWidth="100%"
                           multiSelect={true}
                         />
                       </div>
                     )}
                     <div className="group">
-                      <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">Channel</label>
-                      <FloatingDropdown value={filters.channel} onChange={(v) => setFilters((p) => ({ ...p, channel: v }))} options={toOptionList(filterOptions.channel)} minWidth="100%" multiSelect={true} />
-                    </div>
-                    {/* HIDE User filter for user role */}
-                    {authUser?.role !== "user" && (
-                      <div className="group">
-                        <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">User</label>
-                        <FloatingDropdown value={filters.user} onChange={(v) => setFilters((p) => ({ ...p, user: v }))} options={toOptionList(filterOptions.user)} minWidth="100%" multiSelect={true} />
-                      </div>
-                    )}
-                    <div className="group">
-                      <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">Language</label>
-                      <FloatingDropdown value={filters.language} onChange={(v) => setFilters((p) => ({ ...p, language: v }))} options={toOptionList(filterOptions.language)} minWidth="100%" multiSelect={true} />
-                    </div>
-                    <div className="group">
-                      <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">Input Type</label>
-                      <FloatingDropdown value={filters.inputType} onChange={(v) => setFilters((p) => ({ ...p, inputType: v }))} options={toOptionList(filterOptions.input_type)} minWidth="100%" multiSelect={true} />
+                      <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">
+                        Language
+                      </label>
+                      <FloatingDropdown
+                        value={filters.language}
+                        onChange={(v) =>
+                          setFilters((p) => ({ ...p, language: v }))
+                        }
+                        options={toOptionList(filterOptions.language)}
+                        minWidth="100%"
+                        multiSelect={true}
+                      />
                     </div>
                     <div className="group">
-                      <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">Output Type</label>
-                      <FloatingDropdown value={filters.outputType} onChange={(v) => setFilters((p) => ({ ...p, outputType: v }))} options={toOptionList(filterOptions.output_type)} minWidth="100%" multiSelect={true} />
+                      <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">
+                        Input Type
+                      </label>
+                      <FloatingDropdown
+                        value={filters.inputType}
+                        onChange={(v) =>
+                          setFilters((p) => ({ ...p, inputType: v }))
+                        }
+                        options={toOptionList(filterOptions.input_type)}
+                        minWidth="100%"
+                        multiSelect={true}
+                      />
+                    </div>
+                    <div className="group">
+                      <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">
+                        Output Type
+                      </label>
+                      <FloatingDropdown
+                        value={filters.outputType}
+                        onChange={(v) =>
+                          setFilters((p) => ({ ...p, outputType: v }))
+                        }
+                        options={toOptionList(filterOptions.output_type)}
+                        minWidth="100%"
+                        multiSelect={true}
+                      />
                     </div>
 
                     <DateRangeSlider
@@ -1440,16 +1813,34 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
 
                     {/* Validation status */}
                     <div className="rounded-xl border border-neutral-800 bg-[#0a0a0a] px-3 py-2 text-[10px]">
-                      {filterOptionsLoading && <span className="text-neutral-600">Loading options…</span>}
-                      {filterOptionsError && <span className="text-amber-400">Failed to load options.</span>}
-                      {!filterOptionsLoading && workingFiltersQuery && hasDataForFilters === false && (
-                        <span className="text-red-400">No data for this combination.</span>
+                      {filterOptionsLoading && (
+                        <span className="text-neutral-600">
+                          Loading options…
+                        </span>
                       )}
-                      {!filterOptionsLoading && workingFiltersQuery && hasDataForFilters === true && (
-                        <span className="text-emerald-400">Filters validated.</span>
+                      {filterOptionsError && (
+                        <span className="text-amber-400">
+                          Failed to load options.
+                        </span>
                       )}
+                      {!filterOptionsLoading &&
+                        workingFiltersQuery &&
+                        hasDataForFilters === false && (
+                          <span className="text-red-400">
+                            No data for this combination.
+                          </span>
+                        )}
+                      {!filterOptionsLoading &&
+                        workingFiltersQuery &&
+                        hasDataForFilters === true && (
+                          <span className="text-emerald-400">
+                            Filters validated.
+                          </span>
+                        )}
                       {!filterOptionsLoading && !workingFiltersQuery && (
-                        <span className="text-neutral-600">Using full dataset.</span>
+                        <span className="text-neutral-600">
+                          Using full dataset.
+                        </span>
                       )}
                     </div>
                   </div>
@@ -1462,13 +1853,17 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
                     onClick={() => setAppliedFilters(filters)}
                     className="w-full rounded-xl bg-red-500 px-3 py-2.5 text-[11px] font-bold uppercase tracking-[0.15em] text-white transition-all hover:bg-red-400 shadow-lg shadow-red-500/20"
                   >
-                    Apply Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
+                    Apply Filters
+                    {activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
                   </button>
                   <button
                     type="button"
                     onClick={() => {
                       const resetVal = {
-                        company: authUser?.role === "client_admin" ? [authUser.clientName] : ["All"],
+                        company:
+                          authUser?.role === "client_admin"
+                            ? [authUser.clientName]
+                            : ["All"],
                         channel: ["All"],
                         user: ["All"],
                         language: ["All"],
@@ -1491,8 +1886,9 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
         )}
 
         <div
-          className={`rounded-[24px] border border-neutral-800 bg-[#0e0e0e] flex flex-col overflow-hidden shadow-xl transition-all duration-300 hover:border-neutral-700 ${isMaximized ? "flex-1 h-full" : "h-[400px] lg:h-[560px]"
-            }`}
+          className={`rounded-[24px] border border-neutral-800 bg-[#0e0e0e] flex flex-col overflow-hidden shadow-xl transition-all duration-300 hover:border-neutral-700 ${
+            isMaximized ? "flex-1 h-full" : "h-[400px] lg:h-[560px]"
+          }`}
         >
           {/* Chart header */}
           <div className="flex-shrink-0 flex items-center justify-between border-b border-neutral-800/60 bg-[#121212] px-6 py-4">
@@ -1507,10 +1903,11 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
               <div className="flex items-center gap-2 mr-2">
                 <button
                   onClick={() => setShowComparison(!showComparison)}
-                  className={`p-1.5 rounded-lg transition-all duration-300 ${showComparison
+                  className={`p-1.5 rounded-lg transition-all duration-300 ${
+                    showComparison
                       ? "bg-purple-500/20 text-purple-400 border border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.2)]"
                       : "text-neutral-500 hover:text-neutral-300 border border-transparent"
-                    }`}
+                  }`}
                   title="Compare with Past Period"
                 >
                   <History size={18} />
@@ -1524,7 +1921,9 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
                         min="1"
                         max="12"
                         value={comparisonOffset}
-                        onChange={(e) => setComparisonOffset(parseInt(e.target.value))}
+                        onChange={(e) =>
+                          setComparisonOffset(parseInt(e.target.value))
+                        }
                         className="w-24 accent-purple-500 comparison-slider frammer-range cursor-pointer"
                       />
                     </div>
@@ -1537,18 +1936,49 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
 
               <div className="h-4 w-px bg-neutral-800 mx-1" />
 
-              <button onClick={() => setShowPoints(!showPoints)} className={`text-neutral-400 hover:text-white transition-colors ${showPoints ? "text-white" : ""}`} title="Toggle Data Points">
+              <button
+                onClick={() => setShowPoints(!showPoints)}
+                className={`text-neutral-400 hover:text-white transition-colors ${showPoints ? "text-white" : ""}`}
+                title="Toggle Data Points"
+              >
                 <CircleDot size={18} />
               </button>
-              <button onClick={handleExportCsv} className="text-neutral-400 hover:text-white transition-colors" title="Export CSV">
+              <button
+                onClick={handleExportCsv}
+                className="text-neutral-400 hover:text-white transition-colors"
+                title="Export CSV"
+              >
                 <Download size={18} />
               </button>
-              <button onClick={handleExportImage} className="text-neutral-400 hover:text-white transition-colors" title="Export Graph Image">
+              <button
+                onClick={handleExportImage}
+                className="text-neutral-400 hover:text-white transition-colors"
+                title="Export Graph Image"
+              >
                 <ImageIcon size={18} />
               </button>
+              <button
+                onClick={() => setShowStl(!showStl)}
+                className={`transition-colors ${
+                  showStl
+                    ? "text-amber-400 hover:text-amber-300"
+                    : "text-neutral-400 hover:text-white"
+                }`}
+                title="Toggle STL Decomposition"
+              >
+                <Layers size={18} />
+              </button>
               <div className="mx-1 h-5 w-px bg-neutral-800" />
-              <button onClick={() => setIsMaximized(!isMaximized)} className="text-neutral-400 hover:text-white transition-colors" title={isMaximized ? "Minimize" : "Maximize"}>
-                {isMaximized ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+              <button
+                onClick={() => setIsMaximized(!isMaximized)}
+                className="text-neutral-400 hover:text-white transition-colors"
+                title={isMaximized ? "Minimize" : "Maximize"}
+              >
+                {isMaximized ? (
+                  <Minimize2 size={18} />
+                ) : (
+                  <Maximize2 size={18} />
+                )}
               </button>
             </div>
           </div>
@@ -1574,9 +2004,7 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
 
         {/* ── Col 3: Anomaly panel — same fixed height, scrolls internally ── */}
         {!isMaximized && (
-          <div
-            className="rounded-[24px] border border-neutral-800 bg-[#0e0e0e] flex flex-col overflow-hidden shadow-xl transition-all duration-300 hover:border-neutral-700 h-[400px] lg:h-[560px] lg:col-span-2 xl:col-span-1"
-          >
+          <div className="rounded-[24px] border border-neutral-800 bg-[#0e0e0e] flex flex-col overflow-hidden shadow-xl transition-all duration-300 hover:border-neutral-700 h-[400px] lg:h-[560px] lg:col-span-2 xl:col-span-1">
             {/* Panel header — fixed, never scrolls */}
             <div className="flex-shrink-0 flex items-center gap-2 border-b border-neutral-800/60 bg-[#121212] px-6 py-4">
               <AlertTriangle size={16} className="text-amber-500" />
@@ -1586,43 +2014,209 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
             </div>
             {/* Scrollable list — fills remaining height */}
             <div className="flex-1 min-h-0 overflow-y-auto frammer-anomaly-scroll p-5 space-y-4">
-              {anomalies.map((anomaly) => (
-                <div
-                  key={`${anomaly.period}-${anomaly.direction}`}
-                  className="group relative overflow-hidden rounded-xl border border-neutral-800 bg-[#121212] p-5 transition-all hover:border-neutral-600 hover:bg-[#161616]"
-                >
-                  <div className={`absolute top-0 left-0 w-1 h-full ${anomaly.direction === "drop" ? "bg-amber-500" : "bg-emerald-500"}`} />
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <div className="text-sm font-bold text-white capitalize tracking-wide">
-                        {anomaly.direction === "drop" ? "Significant Drop" : "Abnormal Spike"}
+              {trends.loading && (
+                <Skeleton className="h-20 w-full rounded-xl" />
+              )}
+              {!trends.loading &&
+                anomalies.map((anomaly, idx) => (
+                  <div
+                    key={`${anomaly.period}-${anomaly.direction}-${anomaly.method || "zscore"}-${idx}`}
+                    className="group relative overflow-hidden rounded-xl border border-neutral-800 bg-[#121212] p-5 transition-all hover:border-neutral-600 hover:bg-[#161616]"
+                  >
+                    <div
+                      className={`absolute top-0 left-0 w-1 h-full ${anomaly.direction === "drop" ? "bg-amber-500" : "bg-emerald-500"}`}
+                    />
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="text-sm font-bold text-white capitalize tracking-wide whitespace-nowrap">
+                          {anomaly.direction === "drop"
+                            ? "Significant Drop"
+                            : "Abnormal Spike"}
+                        </div>
+                        <div className="mt-1 text-xs text-neutral-400 font-medium tracking-wider">
+                          Occurred around {anomaly.period}
+                        </div>
                       </div>
-                      <div className="mt-1 text-xs text-neutral-400 font-medium tracking-wider">
-                        Occurred around {anomaly.period}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-lg font-black text-white">
-                        {formatMetricValue(resolvedMetric, anomaly.value)}
-                      </div>
-                      <div className="text-[10px] uppercase font-bold text-neutral-500 tracking-wider">
-                        Z-Score {Number(anomaly.zScore).toFixed(1)}
+                      <div className="text-right">
+                        <div className="text-lg font-black text-white">
+                          {formatMetricValue(resolvedMetric, anomaly.value)}
+                        </div>
+                        <div className="mt-1 flex items-center justify-end gap-2">
+                          <div className="text-[10px] uppercase font-bold text-neutral-500 tracking-wider">
+                            {Number(anomaly.zScore).toFixed(1)}
+                          </div>
+                          <span
+                            className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
+                              anomaly.method === "seasonal_deviation"
+                                ? "bg-violet-500/20 text-violet-200 ring-1 ring-violet-500/35"
+                                : anomaly.method === "trend_reversal"
+                                  ? "bg-orange-500/20 text-orange-200 ring-1 ring-orange-500/35"
+                                  : "bg-neutral-500/20 text-neutral-200 ring-1 ring-neutral-500/35"
+                            }`}
+                          >
+                            {anomaly.method === "seasonal_deviation"
+                              ? "SEASONAL"
+                              : anomaly.method === "trend_reversal"
+                                ? "REVERSAL"
+                                : "Z-SCORE"}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
-              {!anomalies.length && (
+                ))}
+              {!trends.loading && !anomalies.length && (
                 <div className="flex flex-col items-center justify-center p-8 text-center border border-dashed border-neutral-800 rounded-xl">
-                  <div className="text-emerald-500/20 mb-3"><AlertTriangle size={32} /></div>
-                  <div className="text-sm font-semibold text-neutral-300 mb-1">System Normal</div>
-                  <div className="text-xs text-neutral-500">No significant statistical anomalies detected.</div>
+                  <div className="text-emerald-500/20 mb-3">
+                    <AlertTriangle size={32} />
+                  </div>
+                  <div className="text-sm font-semibold text-neutral-300 mb-1">
+                    System Normal
+                  </div>
+                  <div className="text-xs text-neutral-500">
+                    No significant statistical anomalies detected.
+                  </div>
                 </div>
               )}
             </div>
           </div>
         )}
       </section>
+
+      {showStl && !isMaximized && (
+        <section className="rounded-[24px] border border-neutral-800/80 bg-[#101010]/80 backdrop-blur-md p-6 shadow-xl transition-all duration-300 hover:border-neutral-700/80">
+          <div className="mb-4 flex items-center gap-2">
+            <Layers size={16} className="text-amber-400" />
+            <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-300">
+              STL Decomposition
+            </h3>
+          </div>
+
+          {stl.loading && (
+            <div className="space-y-4">
+              <ChartSkeleton height={180} />
+              <ChartSkeleton height={180} />
+              <ChartSkeleton height={180} />
+            </div>
+          )}
+
+          {!stl.loading && stl.error && (
+            <div className="rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-400">
+              Failed to load STL decomposition: {stl.error}
+            </div>
+          )}
+
+          {!stl.loading &&
+            !stl.error &&
+            (() => {
+              const rows = Array.isArray(stl.data?.data) ? stl.data.data : [];
+              const labels = rows.map((row) =>
+                String(row.Date || "").slice(0, 10),
+              );
+
+              const trendData = {
+                labels,
+                datasets: [
+                  {
+                    label: "Trend",
+                    data: rows.map((row) => Number(row.trend || 0)),
+                    borderColor: "#38BDF8",
+                    backgroundColor: "rgba(56,189,248,0.1)",
+                    borderWidth: 2,
+                    tension: 0.25,
+                    fill: false,
+                    pointRadius: 0,
+                  },
+                ],
+              };
+
+              const seasonalData = {
+                labels,
+                datasets: [
+                  {
+                    label: "Seasonal",
+                    data: rows.map((row) => Number(row.seasonal || 0)),
+                    borderColor: "#A78BFA",
+                    backgroundColor: "rgba(167,139,250,0.1)",
+                    borderWidth: 2,
+                    tension: 0.25,
+                    fill: false,
+                    pointRadius: 0,
+                  },
+                ],
+              };
+
+              const residualData = {
+                labels,
+                datasets: [
+                  {
+                    label: "Residual",
+                    data: rows.map((row) => Number(row.residual || 0)),
+                    borderColor: "#F59E0B",
+                    backgroundColor: "rgba(245,158,11,0.1)",
+                    borderWidth: 2,
+                    tension: 0.25,
+                    fill: false,
+                    pointRadius: 0,
+                  },
+                ],
+              };
+
+              const topChartOptions = {
+                ...chartOptions,
+                scales: {
+                  ...chartOptions.scales,
+                  x: {
+                    ...chartOptions.scales.x,
+                    display: false,
+                  },
+                },
+              };
+
+              const bottomChartOptions = {
+                ...chartOptions,
+                scales: {
+                  ...chartOptions.scales,
+                  x: {
+                    ...chartOptions.scales.x,
+                    display: true,
+                  },
+                },
+              };
+
+              return (
+                <div className="space-y-4">
+                  <div className="rounded-xl border border-neutral-800 bg-[#0e0e0e] p-3">
+                    <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-neutral-500">
+                      Trend
+                    </div>
+                    <div className="h-[180px]">
+                      <Line data={trendData} options={topChartOptions} />
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-neutral-800 bg-[#0e0e0e] p-3">
+                    <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-neutral-500">
+                      Seasonal
+                    </div>
+                    <div className="h-[180px]">
+                      <Line data={seasonalData} options={topChartOptions} />
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-neutral-800 bg-[#0e0e0e] p-3">
+                    <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-neutral-500">
+                      Residual
+                    </div>
+                    <div className="h-[180px]">
+                      <Line data={residualData} options={bottomChartOptions} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+        </section>
+      )}
 
       {/* ── Multi-dim section ────────────────────────────────────────────── */}
       {/* ── Multi-dim section ────────────────────────────────────────────── */}
@@ -1649,37 +2243,72 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
             {needsClientFilter && authUser?.role === "website_admin" && (
               <div className="w-full lg:flex-1 lg:min-w-[180px] group">
                 <label className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-500 mb-2 block group-hover:text-neutral-300 transition-colors">
-                  Client Scope
+                  Comparison Type
                 </label>
                 <FloatingDropdown
-                  value={clientFilter}
-                  onChange={(val) => {
-                    setClientFilter(val);
-                    setUserFilter(["All"]);
-                  }}
-                  options={toOptionList(filterOptions.company)}
-                  multiSelect={true}
+                  value={multiDim}
+                  onChange={setMultiDim}
+                  options={MULTI_DIM_OPTIONS}
                   minWidth=""
                   className="w-full"
                 />
               </div>
-            )}
 
-            {needsUserFilter && authUser?.role !== "user" && (
-              <div className="w-full lg:flex-1 lg:min-w-[180px] group">
+              {/* Scope Boundaries */}
+              {needsClientFilter && authUser?.role === "website_admin" && (
+                <div className="flex-1 min-w-[180px] group">
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-500 mb-2 block group-hover:text-neutral-300 transition-colors">
+                    Client Scope
+                  </label>
+                  <FloatingDropdown
+                    value={clientFilter}
+                    onChange={(val) => {
+                      setClientFilter(val);
+                      setUserFilter(["All"]);
+                    }}
+                    options={toOptionList(filterOptions.company)}
+                    multiSelect={true}
+                    minWidth=""
+                    className="w-full"
+                  />
+                </div>
+              )}
+
+              {needsUserFilter && authUser?.role !== "user" && (
+                <div className="flex-1 min-w-[180px] group">
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-500 mb-2 block group-hover:text-neutral-300 transition-colors">
+                    User Scope
+                  </label>
+                  <FloatingDropdown
+                    value={userFilter}
+                    onChange={setUserFilter}
+                    options={toOptionList(
+                      multiDimFilterOptionsData?.filters?.user || ["All"],
+                    )}
+                    multiSelect={true}
+                    minWidth=""
+                    className="w-full"
+                  />
+                </div>
+              )}
+
+              {/* Time Horizon Slider */}
+              <div className="flex-[2] min-w-[240px]">
                 <label className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-500 mb-2 block group-hover:text-neutral-300 transition-colors">
-                  User Scope
+                  Date window
                 </label>
-                <FloatingDropdown
-                  value={userFilter}
-                  onChange={setUserFilter}
-                  options={toOptionList(multiDimFilterOptionsData?.filters?.user || ["All"])}
-                  multiSelect={true}
-                  minWidth=""
-                  className="w-full"
-                />
+                <div className="h-full flex flex-col justify-end">
+                  <DateRangeSlider
+                    dates={sliderDates}
+                    startIndex={multiDimStartIndex}
+                    endIndex={multiDimEndIndex}
+                    onChange={(start, end) => {
+                      setMultiDimStartIndex(start);
+                      setMultiDimEndIndex(end);
+                    }}
+                  />
+                </div>
               </div>
-            )}
 
             {/* Time Horizon Slider */}
             <div className="w-full lg:flex-[2] lg:min-w-[240px]">
@@ -1725,22 +2354,30 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
                 )}
 
                 {multiDimError && (
-                  <div className="flex flex-col items-center justify-center p-6 sm:p-12 text-center h-[280px] sm:h-[320px] relative z-10">
-                    <div className="text-xl font-black text-red-400 mb-2 tracking-tight">Data Error</div>
+                  <div className="flex flex-col items-center justify-center p-12 text-center h-[320px] relative z-10">
+                    <div className="text-xl font-black text-red-400 mb-2 tracking-tight">
+                      Data Error
+                    </div>
                     <div className="text-sm text-neutral-500 max-w-xs leading-relaxed">
                       {multiDimError}
                     </div>
                   </div>
                 )}
 
-                {!multiDimLoading && !multiDimError && !multiDimChartData && !needsClientFilter && (
-                  <div className="flex flex-col items-center justify-center p-6 sm:p-12 text-center h-[280px] sm:h-[320px] relative z-10">
-                    <div className="text-xl font-black text-neutral-300 mb-2 tracking-tight">No Temporal Data</div>
-                    <div className="text-sm text-neutral-500 max-w-xs leading-relaxed">
-                      Your current synchronization parameters yielded zero results. Try broadening your filter horizons.
+                {!multiDimLoading &&
+                  !multiDimError &&
+                  !multiDimChartData &&
+                  !needsClientFilter && (
+                    <div className="flex flex-col items-center justify-center p-12 text-center h-[320px] relative z-10">
+                      <div className="text-xl font-black text-neutral-300 mb-2 tracking-tight">
+                        No Temporal Data
+                      </div>
+                      <div className="text-sm text-neutral-500 max-w-xs leading-relaxed">
+                        Your current synchronization parameters yielded zero
+                        results. Try broadening your filter horizons.
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
                 {!multiDimLoading && !multiDimError && multiDimChartData && (
                   <div className="h-[280px] sm:h-[320px] w-full relative z-10">

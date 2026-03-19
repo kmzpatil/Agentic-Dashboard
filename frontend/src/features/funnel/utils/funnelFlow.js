@@ -141,7 +141,7 @@ export function buildFromTotals(links = []) {
   }, {});
 }
 
-export function makeSankeyOptions(fromTotals = {}, extras = {}) {
+export function makeSankeyOptions(fromTotals = {}, extras = {}, { interactive = false, hiddenSources = 0 } = {}) {
   return {
     responsive: true,
     maintainAspectRatio: false,
@@ -162,14 +162,24 @@ export function makeSankeyOptions(fromTotals = {}, extras = {}) {
         callbacks: {
           title: (items) => {
             const raw = items?.[0]?.raw || {};
-            return `${raw.from || 'Source'} -> ${raw.to || 'Target'}`;
+            const fromLabel = raw.from === 'Other' && hiddenSources > 0
+              ? `Other (${hiddenSources} sources)`
+              : (raw.from || 'Source');
+            return `${fromLabel} → ${raw.to || 'Target'}`;
           },
           label: (ctx) => {
             const raw = ctx?.raw || {};
             const flow = Number(raw.flow || 0);
             const fromTotal = Number(fromTotals[raw.from] || 0);
             const share = fromTotal > 0 ? (flow / fromTotal) * 100 : 0;
-            return `${formatNumber(Math.round(flow))} flow (${share.toFixed(1)}% of ${raw.from || 'source'})`;
+            const lines = [`${formatNumber(Math.round(flow))} flow (${share.toFixed(1)}% of ${raw.from || 'source'})`];
+            if (interactive && !raw.grouped) {
+              const toLower = (raw.to || '').toLowerCase();
+              if (toLower === 'published' || toLower === 'not published') {
+                lines.push('Click to filter by this source');
+              }
+            }
+            return lines;
           },
         },
       },

@@ -66,6 +66,23 @@ def get_frammer_schema() -> str:
         schema_info += "2. created_assets maps to raw_videos via 'Video_ID'. published_posts maps to created_assets via 'Asset_ID'.\n"
         schema_info += "3. IMPORTANT FOR CONVERSION/RETENTION: To group by 'Channel_Name' or 'User_Name' for assets, you MUST NOT group by post_distribution.'Channel_Name'. This drops unpublished assets. You MUST join created_assets ca to raw_videos rv (ca.\"Video_ID\"=rv.\"Video_ID\"), then to raw_video_channel rvc (rvc.\"Video_ID\"=rv.\"Video_ID\") and use rvc.\"Channel_Name\" or users.\"User_Name\".\n"
         schema_info += "4. CARDINALITY RULE: Multiple assets can be bundled into a single published post. To count 'published volume' correctly, ALWAYS use COUNT(DISTINCT pp.\"Asset_ID\") instead of Post_ID. Counting Post_ID will result in deflated conversion rates (e.g. 2% instead of 100%).\n"
+
+        # Append sample values from cached profile (built once at MCP init)
+        try:
+            profile = db.get_schema_profile(schema=schema)
+            value_lines = []
+            for table_name, cols in profile.items():
+                for col_name, info in cols.items():
+                    vals = info.get("values")
+                    if vals:
+                        value_lines.append(f"  {table_name}.{col_name}: {vals}")
+            if value_lines:
+                schema_info += "\n--- TEXT COLUMN SAMPLE VALUES ---\n"
+                schema_info += "(Exact strings stored in the DB — always use these when filtering by text)\n"
+                schema_info += "\n".join(value_lines) + "\n"
+        except Exception as e:
+            logger.warning("Could not append sample values to schema: %s", e)
+
         return schema_info
 
     except Exception as exc:

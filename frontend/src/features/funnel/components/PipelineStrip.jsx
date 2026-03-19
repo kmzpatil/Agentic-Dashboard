@@ -36,23 +36,41 @@ export default function PipelineStrip({ data }) {
       ? 'text-amber-300'
       : 'text-emerald-300';
 
+  // Compute stage-to-stage conversion/dropout rates
+  const stageConversions = [
+    { rate: uploaded > 0 ? ((created / uploaded) * 100) : 0, isExpansion: created >= uploaded },
+    { rate: created > 0 ? ((published / created) * 100) : 0, isExpansion: false },
+    { rate: published > 0 ? ((platformPosts / published) * 100) : 0, isExpansion: platformPosts >= published },
+  ];
+
   const transitions = [
     {
       text: `×${assetsM.toFixed(1)} assets`,
       tone: assetsM >= 1 ? 'text-sky-300' : 'text-amber-300',
       note: assetsM >= 1 ? 'expansion' : 'weak expansion',
+      conversionLabel: stageConversions[0].isExpansion
+        ? `${stageConversions[0].rate.toFixed(1)}% expansion`
+        : `${stageConversions[0].rate.toFixed(1)}% conversion`,
     },
     {
       text: `${notPubPct > 0 ? '−' : '+'}${Math.abs(notPubPct).toFixed(1)}%`,
       tone: notPublishedTone,
       note: notPubPct > 35 ? 'high loss' : notPubPct > 20 ? 'moderate loss' : 'healthy retention',
+      conversionLabel: `${(100 - notPubPct).toFixed(1)}% conversion`,
     },
     {
       text: `×${platformM.toFixed(1)} platforms`,
       tone: platformM >= 1.5 ? 'text-indigo-300' : 'text-neutral-300',
       note: platformM >= 1.5 ? 'strong distribution' : 'limited distribution',
+      conversionLabel: stageConversions[2].isExpansion
+        ? `${stageConversions[2].rate.toFixed(1)}% amplification`
+        : `${stageConversions[2].rate.toFixed(1)}% reach`,
     },
   ];
+
+  // Compute proportional widths (min 15% to keep small stages visible)
+  const maxStageValue = Math.max(uploaded, created, published, platformPosts, 1);
+  const stageWidths = stages.map(s => Math.max(15, (s.value / maxStageValue) * 100));
 
   const getKpiTone = (level) => {
     if (level === 'risk') return 'text-rose-300';
@@ -107,7 +125,10 @@ export default function PipelineStrip({ data }) {
         <div className="mx-auto grid max-w-[1220px] grid-cols-1 gap-y-3 sm:grid-cols-2 lg:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] lg:items-end lg:gap-x-5">
           {stages.map((s, i) => (
             <React.Fragment key={s.label}>
-              <div className={`text-center py-2 lg:py-2 rounded-xl border ${s.tone}`}>
+              <div
+                className={`text-center py-2 lg:py-2 rounded-xl border transition-all ${s.tone}`}
+                style={{ minWidth: 0, width: `${stageWidths[i]}%`, margin: '0 auto' }}
+              >
                 <div className="text-[12px] font-medium text-neutral-400 mb-1.5">{s.label}</div>
                 <div className="text-[34px] font-bold text-white leading-none font-mono tracking-tight">
                   {formatNumber(s.value)}
@@ -121,6 +142,7 @@ export default function PipelineStrip({ data }) {
                     {transitions[i].text}
                   </span>
                   <span className="text-[9px] uppercase tracking-wide text-neutral-600 mt-0.5">{transitions[i].note}</span>
+                  <span className="text-[9px] font-medium text-neutral-500 mt-0.5">{transitions[i].conversionLabel}</span>
                 </div>
               )}
             </React.Fragment>

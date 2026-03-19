@@ -13,6 +13,9 @@ async def run_agent(*args, **kwargs):
     from .agent import run_agent as _run_agent
     return await _run_agent(*args, **kwargs)
 
-# It's now safe to export AgentResult too if we want, 
-# but we'll stick to lazy run_agent for now.
-# from .agent import AgentResult
+
+async def run_agent_stream(*args, **kwargs):
+    """Lazy import of the streaming run_agent_stream."""
+    from .agent import run_agent_stream as _run_agent_stream
+    async for event in _run_agent_stream(*args, **kwargs):
+        yield event
