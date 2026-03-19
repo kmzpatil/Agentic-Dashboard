@@ -25,18 +25,6 @@ function readRouteState() {
   return Object.fromEntries(params.entries());
 }
 
-function StatusPill({ label, ok, detail }) {
-  const tone = ok
-    ? 'border-emerald-500/30 text-emerald-300 bg-emerald-500/10'
-    : 'border-amber-500/30 text-amber-300 bg-amber-500/10';
-
-  return (
-    <div className={`rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em] ${tone}`}>
-      {label}: {ok ? 'online' : 'degraded'}
-      {detail ? <span className="ml-2 normal-case tracking-normal text-[10px] opacity-80">{detail}</span> : null}
-    </div>
-  );
-}
 
 export default function AppShell() {
   const [authToken, setAuthToken] = useState(() => localStorage.getItem('frammer_auth_token') || '');
@@ -222,32 +210,21 @@ export default function AppShell() {
             <p className="mt-2 text-sm text-neutral-500">A single workspace for performance monitoring, operating priorities, and AI-guided analysis.</p>
           </div>
 
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            {health.data?.services && (
-              <>
-                <StatusPill
-                  label="DB"
-                  ok={Boolean(health.data.services.database?.ok)}
-                  detail={health.data.services.database?.missing_tables?.length
-                    ? `${health.data.services.database.missing_tables.length} missing`
-                    : health.data.services.database?.database}
-                />
-                <StatusPill
-                  label="AI"
-                  ok={Boolean(health.data.services.ai?.ok)}
-                  detail={health.data.services.ai?.detail || health.data.services.ai?.error}
-                />
-                <StatusPill
-                  label="MCP"
-                  ok={Boolean(health.data.services.mcp?.ok)}
-                  detail={health.data.services.mcp?.detail}
-                />
-              </>
-            )}
-            <div className="ml-2 text-xs text-neutral-500">
-              {authUser.username} · <span className="text-neutral-400">{authUser.role.replace(/_/g, ' ')}</span>
-              {authUser.clientName ? ` · ${authUser.clientName}` : ''}
-            </div>
+          <div className="flex items-center gap-3">
+            {/* DB status — single dot indicator */}
+            {health.data?.services?.database && (() => {
+              const dbOk = Boolean(health.data.services.database.ok);
+              return (
+                <div className="flex items-center gap-2 rounded-full border border-neutral-800 bg-[#111111] px-3 py-1.5">
+                  <div className={`h-2 w-2 rounded-full ${dbOk ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)]' : 'bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.6)]'}`} />
+                  <span className="text-xs font-semibold text-neutral-400">DB</span>
+                </div>
+              );
+            })()}
+
+            <div className="h-4 w-px bg-neutral-800" />
+
+            <span className="text-sm text-neutral-400">{authUser.username}</span>
             <button
               onClick={handleLogout}
               className="rounded-full bg-neutral-800 px-3 py-1.5 text-xs text-neutral-300 transition-colors hover:bg-neutral-700"

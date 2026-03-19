@@ -312,7 +312,7 @@ function CutoffDatePicker({ value, onChange, maxDate }) {
     <div className="relative flex items-center">
       <CalendarDays
         size={14}
-        className="absolute left-3 text-sky-400 pointer-events-none"
+        className="absolute left-3 text-sky-400 pointer-events-none z-10"
       />
       <input
         type="date"
@@ -321,7 +321,7 @@ function CutoffDatePicker({ value, onChange, maxDate }) {
         onChange={(e) => onChange(e.target.value)}
         className="pl-8 pr-8 py-3 rounded-xl border border-sky-500/30 bg-sky-500/5 text-sky-100 text-sm font-bold
                     focus:outline-none focus:ring-2 focus:ring-sky-500/40 transition-all
-                    [color-scheme:dark] w-[160px]"
+                    [color-scheme:dark] w-[180px]"
         title="Forecast start date (cutoff)"
       />
       {value && (
@@ -1494,11 +1494,10 @@ export default function UsageTrendsModule({
 
               {/* Forecast toggle + controls */}
               <div className="group shrink-0">
-                <div className="h-5 mb-2 flex items-end justify-between gap-3">
+                <div className="h-5 mb-2 flex items-center gap-3">
                   <label className="text-[10px] font-bold uppercase tracking-[0.2em] leading-none text-neutral-500 group-hover:text-neutral-300 transition-colors">
                     Forecast
                   </label>
-                  {/* Toggle */}
                   <button
                     type="button"
                     aria-pressed={isPredicting}
@@ -1509,15 +1508,15 @@ export default function UsageTrendsModule({
                         return next;
                       });
                     }}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full border transition-all ${
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full border transition-all ${
                       isPredicting
                         ? "border-red-500/60 bg-red-500/20"
                         : "border-neutral-700 bg-[#0a0a0a]/90"
                     }`}
                   >
                     <span
-                      className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
-                        isPredicting ? "translate-x-6" : "translate-x-1"
+                      className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                        isPredicting ? "translate-x-[18px]" : "translate-x-0.5"
                       }`}
                     />
                   </button>
@@ -1526,13 +1525,12 @@ export default function UsageTrendsModule({
                 {/* Forecast sub-controls — only visible when predicting */}
                 <div className="min-h-[46px]">
                   {isPredicting && (
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {/* Period length */}
+                    <div className="flex items-center gap-3">
                       <FloatingDropdown
                         value={predictionLength}
                         onChange={setPredictionLength}
                         themeColor="forecast"
-                        minWidth="150px"
+                        minWidth="130px"
                         options={[
                           { value: 7, label: "7 Periods" },
                           { value: 30, label: "30 Periods" },
@@ -1540,15 +1538,11 @@ export default function UsageTrendsModule({
                           { value: 90, label: "90 Periods" },
                         ]}
                       />
-
-                      {/* Cutoff date picker */}
-                      <div className="flex flex-col gap-1">
-                        <CutoffDatePicker
-                          value={cutoffDate}
-                          onChange={setCutoffDate}
-                          maxDate={todayIso()}
-                        />
-                      </div>
+                      <CutoffDatePicker
+                        value={cutoffDate}
+                        onChange={setCutoffDate}
+                        maxDate={todayIso()}
+                      />
                     </div>
                   )}
                 </div>
