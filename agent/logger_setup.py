@@ -122,11 +122,20 @@ def setup_logging(level: int = logging.INFO) -> None:
     """
     Call once at startup to configure colored logging for the entire Frammer stack.
     Silences noisy third-party loggers to WARNING.
+
+    Idempotent: checks root handler types to avoid duplicate setup even when
+    this module is imported under multiple names (e.g. 'logger_setup' vs 'agent.logger_setup').
     """
     root = logging.getLogger()
+
+    # Guard: if root already has our formatter, skip setup entirely
+    for h in root.handlers:
+        if isinstance(h.formatter, FrammerColorFormatter):
+            return
+
     root.setLevel(level)
 
-    # Remove existing handlers
+    # Remove existing handlers to prevent duplication
     root.handlers.clear()
 
     handler = logging.StreamHandler()
@@ -134,7 +143,7 @@ def setup_logging(level: int = logging.INFO) -> None:
     root.addHandler(handler)
 
     # Silence noisy libs
-    for noisy in ("httpx", "httpcore", "groq._base_client", "langchain", "openai"):
+    for noisy in ("httpx", "httpcore", "groq._base_client", "langchain", "openai", "anthropic"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
     # Keep our loggers at INFO

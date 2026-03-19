@@ -29,8 +29,7 @@ def _legacy_modules():
         sys.path.insert(0, str(AGENT_DIR))
 
     agent = importlib.import_module("agent")
-    importlib.reload(agent)
-    
+
     return {
         "agent": agent,
         "conversations": importlib.import_module("conversations"),
@@ -40,6 +39,12 @@ def _legacy_modules():
 
 def ensure_assistant_tables() -> None:
     _legacy_modules()["conversations"].ensure_tables()
+    # Pre-warm the schema profile cache so the first agent request pays no init cost
+    try:
+        from tools._db import get_db as _get_agent_db
+        _get_agent_db().get_schema_profile()
+    except Exception:
+        pass
 
 
 def _conversation_owner_guard(conversation: dict | None, auth: AuthContext) -> None:
@@ -111,6 +116,7 @@ def _serialize_message(raw_message: dict[str, Any]) -> dict[str, Any]:
         "suggested_actions": metadata.get("suggested_actions", []),
         "actions": metadata.get("actions", []),
         "intent": metadata.get("intent", "analytics"),
+        "sql": metadata.get("sql", ""),
         "error": metadata.get("error", ""),
     }
 
@@ -140,14 +146,56 @@ async def chat(
     conversation_api.append_message(conversation_id, "user", message)
 
     scoped_prompt = f"{_normalise_filter_prompt(filters)}{message}"
-    result = await agent_api.run_agent(scoped_prompt, auth=auth, working_memory=working_memory)
+    prior_messages = conversation.get("messages", [])
+    result = await agent_api.run_agent(scoped_prompt, auth=auth, working_memory=working_memory, history=prior_messages)
 
-    rows = _extract_rows(getattr(result, "chart_data", {}) or {})
-    datasets, artifacts = build_assistant_artifacts(
-        rows,
-        sql=getattr(result, "sql", "") or "",
-        title="Copilot",
-    )
+    # Build artifacts from multiple charts (new architecture) or fall back to legacy single chart
+    all_datasets = []
+    all_artifacts = []
+    agent_charts = getattr(result, "charts", []) or []
+
+    if agent_charts:
+        for i, chart in enumerate(agent_charts):
+            _ga = lambda obj, key, default="": getattr(obj, key, default) if hasattr(obj, key) else obj.get(key, default)
+            chart_rows = _ga(chart, "data_records", [])
+            chart_sql = _ga(chart, "sql", "")
+            chart_title = _ga(chart, "title", f"Analysis {i+1}")
+            chart_type = _ga(chart, "chart_type", None) or None
+            size_col = _ga(chart, "size_column", "")
+            group_col = _ga(chart, "group_column", "")
+
+            extra_spec = {}
+            if size_col:
+                extra_spec["sizeField"] = size_col
+            if group_col:
+                extra_spec["groupField"] = group_col
+
+            if chart_rows:
+                ds, arts = build_assistant_artifacts(
+                    chart_rows,
+                    sql=chart_sql,
+                    dataset_id=f"query_result_{i}",
+                    title=chart_title,
+                    chart_type_hint=chart_type,
+                    extra_spec=extra_spec if extra_spec else None,
+                )
+                all_datasets.extend(ds)
+                all_artifacts.extend(arts)
+
+    # Fallback to legacy single chart_data if no structured charts
+    if not all_artifacts:
+        rows = _extract_rows(getattr(result, "chart_data", {}) or {})
+        if rows:
+            ds, arts = build_assistant_artifacts(
+                rows,
+                sql=getattr(result, "sql", "") or "",
+                title="Copilot",
+            )
+            all_datasets.extend(ds)
+            all_artifacts.extend(arts)
+
+    datasets = all_datasets
+    artifacts = all_artifacts
     suggested_actions = _suggested_actions(message, filters, [artifact.model_dump() for artifact in artifacts])
 
     metadata = {
@@ -181,8 +229,16 @@ async def chat(
         datasets=datasets,
         suggested_actions=suggested_actions,
         intent=getattr(result, "intent", "analytics"),
+        sql=getattr(result, "sql", "") or "",
         error=getattr(result, "error", ""),
     )
+
+    # Collect all chart XMLs
+    chart_xmls = []
+    for chart in agent_charts:
+        xml = getattr(chart, "chart_xml", "") if hasattr(chart, "chart_xml") else chart.get("chart_xml", "")
+        if xml:
+            chart_xmls.append(xml)
 
     return ChatEnvelope(
         conversation_id=conversation_id,
@@ -190,9 +246,126 @@ async def chat(
         response=getattr(result, "response", ""),
         actions=getattr(result, "actions", []),
         chart_data=getattr(result, "chart_data", {}) or {},
-        chart_xml=getattr(result, "chart_xml", "") or "",
+        chart_xml=chart_xmls[0] if chart_xmls else (getattr(result, "chart_xml", "") or ""),
+        chart_xmls=chart_xmls,
         error=getattr(result, "error", "") or "",
     )
+
+
+async def chat_stream(
+    *,
+    message: str,
+    auth: AuthContext,
+    filters: dict[str, Any] | None = None,
+    conversation_id: str | None = None,
+) -> Any:
+    """
+    Streaming version of chat(). Yields SSE event dicts as the agent progresses.
+    Persists conversation only after the final 'complete' event.
+    """
+    import json as _json
+
+    modules = _legacy_modules()
+    conversation_api = modules["conversations"]
+    memory_api = modules["memory"]
+    agent_api = modules["agent"]
+
+    ensure_assistant_tables()
+
+    conversation = conversation_api.get_conversation(conversation_id) if conversation_id else None
+    _conversation_owner_guard(conversation, auth)
+    if not conversation:
+        conversation = conversation_api.create_conversation(user_id=auth.auth_user_id, title="New conversation")
+        conversation_id = conversation["id"]
+
+    working_memory = conversation.get("working_memory", "")
+    is_first_message = len(conversation.get("messages", [])) == 0
+    conversation_api.append_message(conversation_id, "user", message)
+
+    scoped_prompt = f"{_normalise_filter_prompt(filters)}{message}"
+    prior_messages = conversation.get("messages", [])
+
+    # Yield conversation_id first so frontend can track it
+    yield {"type": "init", "conversation_id": conversation_id}
+
+    # Stream agent events
+    final_message = None
+    async for event in agent_api.run_agent_stream(
+        scoped_prompt, auth=auth, working_memory=working_memory, history=prior_messages
+    ):
+        if event.get("type") == "complete":
+            final_message = event.get("message", {})
+            # Build artifacts for the final message
+            agent_charts = final_message.get("charts", [])
+            all_datasets = []
+            all_artifacts = []
+            for i, chart in enumerate(agent_charts):
+                chart_rows = chart.get("data_records", [])
+                chart_type = chart.get("chart_type") or None
+                extra_spec = {}
+                if chart.get("size_column"):
+                    extra_spec["sizeField"] = chart["size_column"]
+                if chart.get("group_column"):
+                    extra_spec["groupField"] = chart["group_column"]
+                if chart_rows:
+                    ds, arts = build_assistant_artifacts(
+                        chart_rows,
+                        sql=chart.get("sql", ""),
+                        dataset_id=f"query_result_{i}",
+                        title=chart.get("title", f"Analysis {i+1}"),
+                        chart_type_hint=chart_type,
+                        extra_spec=extra_spec if extra_spec else None,
+                    )
+                    all_datasets.extend(ds)
+                    all_artifacts.extend(arts)
+
+            # Persist to conversation
+            metadata = {
+                "intent": final_message.get("intent", "analytics"),
+                "actions": final_message.get("actions", []),
+                "artifacts": [a.model_dump() for a in all_artifacts],
+                "datasets": [d.model_dump(by_alias=True) for d in all_datasets],
+                "suggested_actions": [a.model_dump() for a in _suggested_actions(message, filters, [a.model_dump() for a in all_artifacts])],
+                "sql": final_message.get("sql", ""),
+                "error": "",
+            }
+            conversation_api.append_message(conversation_id, "assistant", final_message.get("response", ""), metadata=metadata)
+
+            new_memory = memory_api.build_memory_update(
+                working_memory, message,
+                final_message.get("actions", []),
+                final_message.get("response", ""),
+            )
+            conversation_api.update_working_memory(conversation_id, new_memory)
+
+            if is_first_message:
+                try:
+                    conversation_api.update_title(conversation_id, memory_api.generate_title(message))
+                except Exception:
+                    pass
+
+            # Yield final complete event with full message structure
+            yield {
+                "type": "complete",
+                "conversation_id": conversation_id,
+                "message": {
+                    "markdown": final_message.get("response", ""),
+                    "artifacts": [a.model_dump() for a in all_artifacts],
+                    "datasets": [d.model_dump(by_alias=True) for d in all_datasets],
+                    "suggested_actions": [a.model_dump() for a in _suggested_actions(message, filters, [a.model_dump() for a in all_artifacts])],
+                    "actions": final_message.get("actions", []),
+                    "intent": final_message.get("intent", "analytics"),
+                    "sql": final_message.get("sql", ""),
+                    "error": "",
+                },
+                "response": final_message.get("response", ""),
+                "actions": final_message.get("actions", []),
+            }
+        elif event.get("type") == "error":
+            yield event
+        else:
+            # Pass through phase, plan, step_complete events
+            yield event
 
 
 def list_conversations(auth: AuthContext) -> dict[str, Any]:

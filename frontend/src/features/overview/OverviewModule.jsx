@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, Users, PlaySquare, AlertCircle, Plus, X } from "lucide-react";
+import { TrendingUp, Users, PlaySquare, AlertCircle, Plus, X, Wand2 } from "lucide-react";
 import { Line } from 'react-chartjs-2';
 import { useApi } from '../../hooks/useApi';
 import { API_BASE } from '../../lib/constants';
@@ -9,6 +9,7 @@ import { OverviewSkeleton } from '../../components/common/Skeleton';
 import InsightCard from '../../components/insights/InsightCard';
 import KpiDetailsModal from './KpiDetailsModal';
 import { KPI_DEFINITIONS } from './kpiDefinitions';
+import KPICreator from '../../components/KPICreator';
 
 export default function OverviewModule({ onNavigate }) {
   const overview = useApi(`${API_BASE}/overview`, []);
@@ -22,6 +23,9 @@ export default function OverviewModule({ onNavigate }) {
   const [isSelectionPanelOpen, setIsSelectionPanelOpen] = useState(false);
   const [selectedKpi, setSelectedKpi] = useState(null);
   const [activeOutputTab, setActiveOutputTab] = useState(null);
+  const [showKpiCreator, setShowKpiCreator] = useState(false);
+  const [editingKpi, setEditingKpi] = useState(null);  // custom KPI being edited
+  const [customKpis, setCustomKpis] = useState([]);  // KPIs created by user
 
   useEffect(() => {
     if (data?.outputStats?.length > 0 && !activeOutputTab) {
@@ -70,6 +74,106 @@ export default function OverviewModule({ onNavigate }) {
     if (kpi) setSelectedKpi(kpi);
   };
 
+  const _formatKpiValue = (value, dsl) => {
+    if (value === null || value === undefined) return '—';
+    const num = parseFloat(value);
+    if (Number.isNaN(num)) return '—';
+    const metric = dsl?.metric || '';
+    const formula = dsl?.formula || '';
+    const operands = dsl?.operands || [];
+    const durationAtoms = ['uploaded_duration', 'created_duration', 'published_duration'];
+    const rateMetrics = ['publish_conversion_rate', 'creation_rate', 'processing_efficiency'];
+    // Known single-metric types
+    if (rateMetrics.includes(metric)) return formatPct(num);
+    if (metric === 'waste_index') return `${num.toFixed(2)}s`;  // seconds difference
+    if (durationAtoms.includes(metric)) return formatHours(num);
+    // Formula: if it contains division → it's a dimensionless ratio regardless of operand types
+    const hasDiv = formula.includes('/');
+    const isRate = hasDiv && (formula.includes('* 100') || formula.includes('*100'));
+    if (isRate) return formatPct(num);
+    // Duration atoms summed/subtracted (no division) → display as hours
+    if (!hasDiv && operands.length > 0 && operands.every(o => durationAtoms.includes(o))) return formatHours(num);
+    // Dimensionless ratio or count
+    if (hasDiv) return num.toFixed(2);
+    return num >= 1000 ? formatNumber(Math.round(num)) : num % 1 === 0 ? formatNumber(num) : num.toFixed(2);
+  };
+
+  const buildCustomKpiObj = (record, timeSeries = null) => {
+    const values = (timeSeries || []).map(p => parseFloat(p.value) || 0);
+    // Use last non-zero value so trailing empty periods don't show "0" on the card
+    const latestValue = [...values].reverse().find(v => v !== 0) ?? (values.length > 0 ? values[values.length - 1] : null);
+    const granularity = record.dsl_json?.time_granularity || 'month';
+    return {
+      id: `custom_${record.id}`,
+      kpi_db_id: record.id,
+      title: record.name.toUpperCase(),
+      name: record.name,
+      description: record.description || '',
+      definition: record.description || 'User-defined custom KPI.',
+      formula: record.dsl_json?.formula || record.dsl_json?.metric || 'Custom formula',
+      significance: `Custom KPI created via ${record.dsl_json?.type === 'formula' ? 'formula' : 'natural language'}.`,
+      isCustom: true,
+      dsl_json: record.dsl_json,
+      getValue: () => latestValue !== null ? _formatKpiValue(latestValue, record.dsl_json) : '—',
+      getSubtitle: () => granularity,
+      trendData: values.length > 1 ? values : null,
+      detailsData: {},
+    };
+  };
+
+  const _fetchAndPatchKpi = async (record, stateId) => {
+    try {
+      const token = localStorage.getItem('frammer_auth_token');
+      const res = await fetch(`${API_BASE}/kpi/${record.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const timeSeries = data.time_series || [];
+      if (!timeSeries.length) return;
+      const updated = buildCustomKpiObj(record, timeSeries);
+      setCustomKpis(prev => prev.map(k => k.id === stateId ? updated : k));
+    } catch {
+      // silently ignore — card stays with '—' placeholder
+    }
+  };
+
+  const handleCustomKpiCreated = (record) => {
+    const customKpi = buildCustomKpiObj(record, null);
+    if (editingKpi) {
+      setCustomKpis((prev) => prev.map((k) => k.id === editingKpi.id ? customKpi : k));
+      setEditingKpi(null);
+    } else {
+      setCustomKpis((prev) => [customKpi, ...prev]);
+    }
+    setShowKpiCreator(false);
+    // Async fetch real values to replace the placeholder
+    _fetchAndPatchKpi(record, customKpi.id);
+  };
+
+  const handleCustomKpiClick = (kpi) => {
+    setSelectedKpi(kpi);
+  };
+
+  const handleEditCustomKpi = (kpi) => {
+    setEditingKpi(kpi);
+    setShowKpiCreator(true);
+  };
+
+  const handleRemoveCustomKpi = async (kpi) => {
+    // Optimistically remove from UI
+    setCustomKpis((prev) => prev.filter((k) => k.id !== kpi.id));
+    try {
+      const token = localStorage.getItem('frammer_auth_token');
+      await fetch(`${API_BASE}/kpi/${kpi.kpi_db_id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch {
+      // silently ignore — record will be cleaned up on next list fetch
+    }
+  };
+
   const sparklines = data?.sparklines || {};
 
   return (
@@ -105,30 +209,55 @@ export default function OverviewModule({ onNavigate }) {
         />
         
         {visibleExtraKpis.map(kpi => (
-          <KpiCard 
+          <KpiCard
             key={kpi.id}
-            title={kpi.title} 
-            value={kpi.getValue(kpis)} 
-            subtitle={kpi.getSubtitle(kpis)} 
+            title={kpi.title}
+            value={kpi.getValue(kpis)}
+            subtitle={kpi.getSubtitle(kpis)}
             trendData={kpi.trendData}
             onRemove={() => handleRemoveKpi(kpi.id)}
             onClick={() => setSelectedKpi(kpi)}
           />
         ))}
-        
-        <button 
-          onClick={handleAddMore}
-          className={`flex flex-col items-center justify-center rounded-xl p-5 border border-dashed transition-colors min-h-[140px] ${
-            isSelectionPanelOpen 
-              ? 'bg-[#161616] border-neutral-500 text-white' 
-              : 'bg-[#111111] border-neutral-700 hover:border-neutral-500 hover:bg-[#161616] text-neutral-400 hover:text-white'
-          }`}
-        >
-          <Plus size={24} className={`mb-2 transition-transform duration-300 ${isSelectionPanelOpen ? 'rotate-45' : ''}`} />
-          <span className="text-sm font-bold uppercase tracking-wider">
-            {isSelectionPanelOpen ? 'Close Selection' : 'Add More'}
-          </span>
-        </button>
+
+        {/* Custom KPI cards */}
+        {customKpis.map(kpi => (
+          <KpiCard
+            key={kpi.id}
+            title={kpi.title}
+            value={kpi.getValue(kpis)}
+            subtitle={kpi.getSubtitle(kpis)}
+            trendData={kpi.trendData}
+            onEdit={() => handleEditCustomKpi(kpi)}
+            onRemove={() => handleRemoveCustomKpi(kpi)}
+            onClick={() => handleCustomKpiClick(kpi)}
+          />
+        ))}
+
+        {/* Add More + Create KPI — combined in one grid slot, stacked vertically */}
+        <div className="flex flex-col gap-2 min-h-[140px]">
+          <button
+            onClick={handleAddMore}
+            className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-4 border border-dashed transition-colors ${
+              isSelectionPanelOpen
+                ? 'bg-[#161616] border-neutral-500 text-white'
+                : 'bg-[#111111] border-neutral-700 hover:border-neutral-500 hover:bg-[#161616] text-neutral-400 hover:text-white'
+            }`}
+          >
+            <Plus size={18} className={`transition-transform duration-300 ${isSelectionPanelOpen ? 'rotate-45' : ''}`} />
+            <span className="text-sm font-bold uppercase tracking-wider">
+              {isSelectionPanelOpen ? 'Close' : 'Add More'}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setShowKpiCreator(true)}
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl px-4 border border-dashed border-purple-800/50 bg-purple-950/10 hover:bg-purple-950/20 hover:border-purple-600 text-purple-400 hover:text-purple-300 transition-colors"
+          >
+            <Wand2 size={18} />
+            <span className="text-sm font-bold uppercase tracking-wider">Create KPI</span>
+          </button>
+        </div>
       </section>
 
       {/* Staging Panel */}
@@ -299,6 +428,19 @@ export default function OverviewModule({ onNavigate }) {
         </div>
       </section>
       <KpiDetailsModal kpi={selectedKpi} onClose={() => setSelectedKpi(null)} />
+      {showKpiCreator && (
+        <KPICreator
+          onCreated={handleCustomKpiCreated}
+          onClose={() => { setShowKpiCreator(false); setEditingKpi(null); }}
+          initialData={editingKpi ? {
+            name: editingKpi.name,
+            description: editingKpi.description,
+            mode: editingKpi.dsl_json?.type === 'formula' ? 'formula' : editingKpi.dsl_json?.type === 'single_metric' ? 'formula' : 'formula',
+            expression: editingKpi.dsl_json?.formula || editingKpi.dsl_json?.metric || '',
+            time_granularity: editingKpi.dsl_json?.time_granularity || 'month',
+          } : null}
+        />
+      )}
     </div>
   );
 }

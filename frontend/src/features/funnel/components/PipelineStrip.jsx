@@ -134,20 +134,51 @@ export default function PipelineStrip({ data }) {
     { label: 'Platform posts',   value: platformPosts },
   ];
 
+  const notPublishedTone = notPubPct > 35
+    ? 'text-rose-300'
+    : notPubPct > 20
+      ? 'text-amber-300'
+      : 'text-emerald-300';
+
+  // Compute stage-to-stage conversion/dropout rates
+  const stageConversions = [
+    { rate: uploaded > 0 ? ((created / uploaded) * 100) : 0, isExpansion: created >= uploaded },
+    { rate: created > 0 ? ((published / created) * 100) : 0, isExpansion: false },
+    { rate: published > 0 ? ((platformPosts / published) * 100) : 0, isExpansion: platformPosts >= published },
+  ];
+
   const transitions = [
     {
       text: `×${assetsM.toFixed(1)} assets`,
       note: assetsM >= 1 ? 'expansion' : 'weak expansion',
+      conversionLabel: stageConversions[0].isExpansion
+        ? `${stageConversions[0].rate.toFixed(1)}% expansion`
+        : `${stageConversions[0].rate.toFixed(1)}% conversion`,
     },
     {
       text: `${notPubPct > 0 ? '−' : '+'}${Math.abs(notPubPct).toFixed(1)}%`,
       note: notPubPct > 35 ? 'high loss' : notPubPct > 20 ? 'moderate loss' : 'healthy retention',
+      conversionLabel: `${(100 - notPubPct).toFixed(1)}% conversion`,
     },
     {
       text: `×${platformM.toFixed(1)} platforms`,
       note: platformM >= 1.5 ? 'strong distribution' : 'limited distribution',
+      conversionLabel: stageConversions[2].isExpansion
+        ? `${stageConversions[2].rate.toFixed(1)}% amplification`
+        : `${stageConversions[2].rate.toFixed(1)}% reach`,
     },
   ];
+
+  // Compute proportional widths (min 15% to keep small stages visible)
+  const maxStageValue = Math.max(uploaded, created, published, platformPosts, 1);
+  const stageWidths = stages.map(s => Math.max(15, (s.value / maxStageValue) * 100));
+
+  const getKpiTone = (level) => {
+    if (level === 'risk') return 'text-rose-300';
+    if (level === 'watch') return 'text-amber-300';
+    if (level === 'good') return 'text-emerald-300';
+    return 'text-neutral-100';
+  };
 
   const kpis = [
     {

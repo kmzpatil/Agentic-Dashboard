@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import importlib
-import os
+from urllib.parse import quote_plus
 from typing import List, Optional
 
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from backend.config.env import get_config
 from backend.middleware.auth import AuthContext, require_auth
 
 
@@ -17,17 +18,21 @@ router = APIRouter(
 )
 
 
-DATABASE_URL: str = (
-    os.getenv("DATABASE_URL")
-    or os.getenv("POSTGRES_URL")
-    or (
-        f"postgresql://{os.getenv('POSTGRES_USER', 'postgres')}:"
-        f"{os.getenv('POSTGRES_PASSWORD', '')}@"
-        f"{os.getenv('POSTGRES_HOST', 'localhost')}:"
-        f"{os.getenv('POSTGRES_PORT', '5432')}/"
-        f"{os.getenv('POSTGRES_DB', 'frammer_database')}"
-    )
-)
+def _database_url_from_config() -> str:
+    db = get_config().db
+    user = quote_plus(db.user)
+    password = quote_plus(db.password) if db.password else ""
+
+    if db.host.startswith("/"):
+        auth = f"{user}:{password}@" if password else f"{user}@"
+        host = quote_plus(db.host)
+        return f"postgresql://{auth}/{db.database}?host={host}&port={db.port}"
+
+    auth = f"{user}:{password}@" if password else f"{user}@"
+    return f"postgresql://{auth}{db.host}:{db.port}/{db.database}"
+
+
+DATABASE_URL: str = _database_url_from_config()
 
 _ENGINE = None
 

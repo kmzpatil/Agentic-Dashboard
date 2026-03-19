@@ -8,7 +8,7 @@ import { formatNumber } from '../../lib/formatters';
 function DualDateSlider({ startDate, endDate, onStartChange, onEndChange }) {
   const now = new Date();
   const SLIDER_MAX_DATE = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const SLIDER_MIN_DATE = new Date('2023-01-01').getTime();
+  const SLIDER_MIN_DATE = new Date('2025-01-01').getTime();
   const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
   const minVal = startDate ? new Date(startDate).getTime() : SLIDER_MIN_DATE;
@@ -38,7 +38,7 @@ function DualDateSlider({ startDate, endDate, onStartChange, onEndChange }) {
     <div className="relative w-full h-[38px] flex items-center">
       <div className="absolute w-full h-1.5 bg-neutral-800 rounded-full"></div>
       <div
-        className="absolute h-1.5 bg-orange-500 rounded-full"
+        className="absolute h-1.5 bg-[#ef4444] rounded-full"
         style={{ left: `${getPercent(minVal)}%`, width: `${getPercent(maxVal) - getPercent(minVal)}%` }}
       ></div>
       <input
@@ -48,7 +48,7 @@ function DualDateSlider({ startDate, endDate, onStartChange, onEndChange }) {
         step={MS_PER_DAY}
         value={minVal}
         onChange={handleMinChange}
-        className="absolute w-full appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border-[3px] [&::-webkit-slider-thumb]:border-orange-500 [&::-webkit-slider-thumb]:appearance-none z-20 cursor-pointer"
+        className="absolute w-full appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border-[3px] [&::-webkit-slider-thumb]:border-[#ef4444] [&::-webkit-slider-thumb]:appearance-none z-20 cursor-pointer"
       />
       <input
         type="range"
@@ -57,7 +57,7 @@ function DualDateSlider({ startDate, endDate, onStartChange, onEndChange }) {
         step={MS_PER_DAY}
         value={maxVal}
         onChange={handleMaxChange}
-        className="absolute w-full appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border-[3px] [&::-webkit-slider-thumb]:border-orange-500 [&::-webkit-slider-thumb]:appearance-none z-20 cursor-pointer"
+        className="absolute w-full appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border-[3px] [&::-webkit-slider-thumb]:border-[#ef4444] [&::-webkit-slider-thumb]:appearance-none z-20 cursor-pointer"
       />
     </div>
   );
@@ -514,8 +514,8 @@ export default function ExplorerModule({ authUser }) {
         {/* View Switcher (Admin Only) */}
         {canUseRawExplorer && (
           <div className="flex gap-2 mb-4 bg-[#111111] p-1 rounded-lg w-fit border border-neutral-800">
-            <button onClick={() => setViewTab('multi')} className={`px-4 py-2 text-[11px] font-medium rounded-md transition-colors ${viewTab === 'multi' ? 'bg-orange-500 text-white' : 'text-neutral-400 hover:text-white'}`}>Multi-Dim Analysis</button>
-            <button onClick={() => setViewTab('raw')} className={`px-4 py-2 text-[11px] font-medium rounded-md transition-colors ${viewTab === 'raw' ? 'bg-orange-500 text-white' : 'text-neutral-400 hover:text-white'}`}>Raw Table Explorer</button>
+            <button onClick={() => setViewTab('multi')} className={`px-4 py-2 text-[11px] font-medium rounded-md transition-all duration-300 ${viewTab === 'multi' ? 'bg-[#ef4444] text-white' : 'text-neutral-400 hover:text-white'}`}>Multi-Dim Analysis</button>
+            <button onClick={() => setViewTab('raw')} className={`px-4 py-2 text-[11px] font-medium rounded-md transition-all duration-300 ${viewTab === 'raw' ? 'bg-[#ef4444] text-white' : 'text-neutral-400 hover:text-white'}`}>Raw Table Explorer</button>
           </div>
         )}
 
@@ -533,7 +533,7 @@ export default function ExplorerModule({ authUser }) {
                   <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold mb-1 cursor-pointer select-none" onClick={handleTimeAnalysisToggle}>Time Analysis</label>
                   <button
                     onClick={handleTimeAnalysisToggle}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isTimeAnalysisOn ? 'bg-orange-500' : 'bg-neutral-700'}`}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isTimeAnalysisOn ? 'bg-[#ef4444]' : 'bg-neutral-700'}`}
                   >
                     <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isTimeAnalysisOn ? 'translate-x-[22px]' : 'translate-x-[4px]'}`} />
                   </button>
@@ -570,7 +570,7 @@ export default function ExplorerModule({ authUser }) {
                         </div>
 
                         <div onClick={() => toggleChannel('all')} className="flex items-center px-3 py-2 text-xs cursor-pointer hover:bg-neutral-800 transition-colors shrink-0">
-                          <div className={`w-4 h-4 rounded border mr-2 flex items-center justify-center ${selectedChannels.includes('all') ? 'bg-orange-500 border-orange-500' : 'border-neutral-600 bg-[#0A0A0A]'}`}>
+                          <div className={`w-4 h-4 rounded border mr-2 flex items-center justify-center ${selectedChannels.includes('all') ? 'bg-[#ef4444] border-[#ef4444]' : 'border-neutral-600 bg-[#0A0A0A]'}`}>
                             {selectedChannels.includes('all') && <Check size={12} className="text-white" />}
                           </div>
                           <span className={selectedChannels.includes('all') ? 'text-white font-medium' : 'text-neutral-300'}>All Channels</span>
@@ -583,7 +583,7 @@ export default function ExplorerModule({ authUser }) {
                             const isSelected = selectedChannels.includes(c);
                             return (
                               <div key={`filter-${c}`} onClick={() => toggleChannel(c)} className="flex items-center px-3 py-2 text-xs cursor-pointer hover:bg-neutral-800 transition-colors shrink-0">
-                                <div className={`w-4 h-4 rounded border mr-2 flex items-center justify-center shrink-0 ${isSelected ? 'bg-orange-500 border-orange-500' : 'border-neutral-600 bg-[#0A0A0A]'}`}>
+                                <div className={`w-4 h-4 rounded border mr-2 flex items-center justify-center shrink-0 ${isSelected ? 'bg-[#ef4444] border-[#ef4444]' : 'border-neutral-600 bg-[#0A0A0A]'}`}>
                                   {isSelected && <Check size={12} className="text-white" />}
                                 </div>
                                 <span className={`truncate ${isSelected ? 'text-white font-medium' : 'text-neutral-300'}`} title={c}>{c}</span>
@@ -642,7 +642,7 @@ export default function ExplorerModule({ authUser }) {
                           </div>
 
                           <div onClick={() => toggleDim2Value('all')} className="flex items-center px-3 py-2 text-xs cursor-pointer hover:bg-neutral-800 transition-colors shrink-0">
-                            <div className={`w-4 h-4 rounded border mr-2 flex items-center justify-center ${selectedDim2Values.includes('all') ? 'bg-orange-500 border-orange-500' : 'border-neutral-600 bg-[#0A0A0A]'}`}>
+                            <div className={`w-4 h-4 rounded border mr-2 flex items-center justify-center ${selectedDim2Values.includes('all') ? 'bg-[#ef4444] border-[#ef4444]' : 'border-neutral-600 bg-[#0A0A0A]'}`}>
                               {selectedDim2Values.includes('all') && <Check size={12} className="text-white" />}
                             </div>
                             <span className={selectedDim2Values.includes('all') ? 'text-white font-medium' : 'text-neutral-300'}>All {isTimeAnalysisOn ? 'Breakdown' : activeDim2Label}s</span>
@@ -655,7 +655,7 @@ export default function ExplorerModule({ authUser }) {
                               const isSelected = selectedDim2Values.includes(String(val));
                               return (
                                 <div key={`filter-dim2-${val}`} onClick={() => toggleDim2Value(val)} className="flex items-center px-3 py-2 text-xs cursor-pointer hover:bg-neutral-800 transition-colors shrink-0">
-                                  <div className={`w-4 h-4 rounded border mr-2 flex items-center justify-center shrink-0 ${isSelected ? 'bg-orange-500 border-orange-500' : 'border-neutral-600 bg-[#0A0A0A]'}`}>
+                                  <div className={`w-4 h-4 rounded border mr-2 flex items-center justify-center shrink-0 ${isSelected ? 'bg-[#ef4444] border-[#ef4444]' : 'border-neutral-600 bg-[#0A0A0A]'}`}>
                                     {isSelected && <Check size={12} className="text-white" />}
                                   </div>
                                   <span className={`truncate ${isSelected ? 'text-white font-medium' : 'text-neutral-300'}`} title={val}>{val}</span>
@@ -718,8 +718,9 @@ export default function ExplorerModule({ authUser }) {
                   <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold cursor-pointer">Date Range from</label>
                   <input
                     type="date"
-                    className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-1.5 text-xs text-neutral-300 w-full outline-none focus:border-orange-500 transition-colors [&::-webkit-calendar-picker-indicator]:invert-[0.8] cursor-pointer"
+                    className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-1.5 text-xs text-neutral-300 w-full outline-none focus:border-[#ef4444] transition-colors [&::-webkit-calendar-picker-indicator]:invert-[0.8] cursor-pointer"
                     style={{ colorScheme: 'dark' }}
+                    min="2025-01-01"
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
                   />
@@ -743,8 +744,9 @@ export default function ExplorerModule({ authUser }) {
                   <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold cursor-pointer">to</label>
                   <input
                     type="date"
-                    className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-1.5 text-xs text-neutral-300 w-full outline-none focus:border-orange-500 transition-colors [&::-webkit-calendar-picker-indicator]:invert-[0.8] cursor-pointer"
+                    className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-1.5 text-xs text-neutral-300 w-full outline-none focus:border-[#ef4444] transition-colors [&::-webkit-calendar-picker-indicator]:invert-[0.8] cursor-pointer"
                     style={{ colorScheme: 'dark' }}
+                    min="2025-01-01"
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
                   />
@@ -785,7 +787,7 @@ export default function ExplorerModule({ authUser }) {
                       setColumnFilters({});
                       setSortConfig({ key: null, direction: 'default' });
                     }}
-                    className="h-[34px] px-4 bg-orange-500/10 hover:bg-orange-500/20 text-orange-500 border border-orange-500/20 rounded text-xs font-semibold transition-colors flex items-center justify-center"
+                    className="h-[34px] px-4 bg-[#ef4444]/10 hover:bg-[#ef4444]/20 text-[#ef4444] border border-[#ef4444]/20 rounded text-xs font-semibold transition-colors flex items-center justify-center"
                   >
                     Clear Filters
                   </button>
@@ -807,7 +809,7 @@ export default function ExplorerModule({ authUser }) {
                 </h3>
                 {multi.loading ? (
                   <div className="flex flex-col items-center justify-center h-[360px] w-full bg-[#0A0A0A] border-2 border-dashed border-neutral-800 rounded-xl animate-pulse">
-                    <div className="w-8 h-8 border-4 border-neutral-700 border-t-orange-500 rounded-full animate-spin mb-4"></div>
+                    <div className="w-8 h-8 border-4 border-neutral-700 border-t-[#ef4444] rounded-full animate-spin mb-4"></div>
                     <span className="text-xs text-neutral-500">Loading new data...</span>
                   </div>
                 ) : multi.error ? (
@@ -867,7 +869,7 @@ export default function ExplorerModule({ authUser }) {
                     </div>
                   ) : (
                     <div className="grid grid-cols-2 lg:grid-cols-1 gap-4">
-                      <div className="bg-[#0A0A0A] border border-neutral-800 border-l-4 border-l-orange-500 rounded-lg p-4">
+                      <div className="bg-[#0A0A0A] border border-neutral-800 border-l-4 border-l-[#ef4444] rounded-lg p-4">
                         <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold mb-1">Total Records</div>
                         <div className="text-2xl font-bold">{filteredTotalRecords}</div>
                       </div>
@@ -893,7 +895,7 @@ export default function ExplorerModule({ authUser }) {
             <div className="bg-[#111111] border border-neutral-800 rounded-xl overflow-hidden">
               <div className="p-4 border-b border-neutral-800">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-300 flex items-center gap-2">
-                  <Table size={16} className="text-orange-500" /> Dimension Analysis Data
+                  <Table size={16} className="text-[#ef4444]" /> Dimension Analysis Data
                 </h3>
               </div>
               {multi.loading ? (
@@ -920,7 +922,7 @@ export default function ExplorerModule({ authUser }) {
                                 }))}
                               >
                                 {dim1}
-                                {dimTableSort.key === 'dim1' ? (dimTableSort.direction === 'asc' ? <ArrowUp size={12} className="text-orange-500" /> : <ArrowDown size={12} className="text-orange-500" />) : <ArrowUpDown size={12} />}
+                                {dimTableSort.key === 'dim1' ? (dimTableSort.direction === 'asc' ? <ArrowUp size={12} className="text-[#ef4444]" /> : <ArrowDown size={12} className="text-[#ef4444]" />) : <ArrowUpDown size={12} />}
                               </div>
                             </th>
                             {dim2 !== 'none' && (
@@ -933,7 +935,7 @@ export default function ExplorerModule({ authUser }) {
                                   }))}
                                 >
                                   {dim2}
-                                  {dimTableSort.key === 'dim2' ? (dimTableSort.direction === 'asc' ? <ArrowUp size={12} className="text-orange-500" /> : <ArrowDown size={12} className="text-orange-500" />) : <ArrowUpDown size={12} />}
+                                  {dimTableSort.key === 'dim2' ? (dimTableSort.direction === 'asc' ? <ArrowUp size={12} className="text-[#ef4444]" /> : <ArrowDown size={12} className="text-[#ef4444]" />) : <ArrowUpDown size={12} />}
                                 </div>
                               </th>
                             )}
@@ -946,7 +948,7 @@ export default function ExplorerModule({ authUser }) {
                                 }))}
                               >
                                 Value
-                                {dimTableSort.key === 'value' ? (dimTableSort.direction === 'asc' ? <ArrowUp size={12} className="text-orange-500" /> : <ArrowDown size={12} className="text-orange-500" />) : <ArrowUpDown size={12} />}
+                                {dimTableSort.key === 'value' ? (dimTableSort.direction === 'asc' ? <ArrowUp size={12} className="text-[#ef4444]" /> : <ArrowDown size={12} className="text-[#ef4444]" />) : <ArrowUpDown size={12} />}
                               </div>
                             </th>
                           </>
@@ -961,7 +963,7 @@ export default function ExplorerModule({ authUser }) {
                                 }))}
                               >
                                 Period
-                                {dimTableSort.key === 'period' ? (dimTableSort.direction === 'asc' ? <ArrowUp size={12} className="text-orange-500" /> : <ArrowDown size={12} className="text-orange-500" />) : <ArrowUpDown size={12} />}
+                                {dimTableSort.key === 'period' ? (dimTableSort.direction === 'asc' ? <ArrowUp size={12} className="text-[#ef4444]" /> : <ArrowDown size={12} className="text-[#ef4444]" />) : <ArrowUpDown size={12} />}
                               </div>
                             </th>
                             <th className="px-4 py-3 font-semibold text-neutral-400 uppercase border-b border-neutral-800">
@@ -973,7 +975,7 @@ export default function ExplorerModule({ authUser }) {
                                 }))}
                               >
                                 {dim1}
-                                {dimTableSort.key === 'dim1' ? (dimTableSort.direction === 'asc' ? <ArrowUp size={12} className="text-orange-500" /> : <ArrowDown size={12} className="text-orange-500" />) : <ArrowUpDown size={12} />}
+                                {dimTableSort.key === 'dim1' ? (dimTableSort.direction === 'asc' ? <ArrowUp size={12} className="text-[#ef4444]" /> : <ArrowDown size={12} className="text-[#ef4444]" />) : <ArrowUpDown size={12} />}
                               </div>
                             </th>
                             {dim2 !== 'none' && (
@@ -986,7 +988,7 @@ export default function ExplorerModule({ authUser }) {
                                   }))}
                                 >
                                   {isTimeAnalysisOn ? 'Breakdown' : dim2}
-                                  {dimTableSort.key === 'dim2' ? (dimTableSort.direction === 'asc' ? <ArrowUp size={12} className="text-orange-500" /> : <ArrowDown size={12} className="text-orange-500" />) : <ArrowUpDown size={12} />}
+                                  {dimTableSort.key === 'dim2' ? (dimTableSort.direction === 'asc' ? <ArrowUp size={12} className="text-[#ef4444]" /> : <ArrowDown size={12} className="text-[#ef4444]" />) : <ArrowUpDown size={12} />}
                                 </div>
                               </th>
                             )}
@@ -999,7 +1001,7 @@ export default function ExplorerModule({ authUser }) {
                                 }))}
                               >
                                 Value
-                                {dimTableSort.key === 'value' ? (dimTableSort.direction === 'asc' ? <ArrowUp size={12} className="text-orange-500" /> : <ArrowDown size={12} className="text-orange-500" />) : <ArrowUpDown size={12} />}
+                                {dimTableSort.key === 'value' ? (dimTableSort.direction === 'asc' ? <ArrowUp size={12} className="text-[#ef4444]" /> : <ArrowDown size={12} className="text-[#ef4444]" />) : <ArrowUpDown size={12} />}
                               </div>
                             </th>
                           </>
@@ -1067,7 +1069,7 @@ export default function ExplorerModule({ authUser }) {
                                     className="cursor-pointer hover:bg-neutral-800 p-1 rounded transition-colors text-neutral-500 hover:text-white"
                                   >
                                     {sortConfig.key === col ? (
-                                      sortConfig.direction === 'asc' ? <ArrowUp size={12} className="text-orange-500" /> : <ArrowDown size={12} className="text-orange-500" />
+                                      sortConfig.direction === 'asc' ? <ArrowUp size={12} className="text-[#ef4444]" /> : <ArrowDown size={12} className="text-[#ef4444]" />
                                     ) : (
                                       <ArrowUpDown size={12} />
                                     )}
@@ -1091,14 +1093,14 @@ export default function ExplorerModule({ authUser }) {
                                   <input
                                     type="date"
                                     title="Start Date"
-                                    className="w-full bg-[#0A0A0A] border border-neutral-700 rounded px-2 py-1.5 text-xs text-neutral-300 outline-none focus:border-orange-500 transition-colors [&::-webkit-calendar-picker-indicator]:invert-[0.8]"
+                                    className="w-full bg-[#0A0A0A] border border-neutral-700 rounded px-2 py-1.5 text-xs text-neutral-300 outline-none focus:border-[#ef4444] transition-colors [&::-webkit-calendar-picker-indicator]:invert-[0.8]"
                                     value={columnFilters[col]?.start || ''}
                                     onChange={(e) => handleColumnFilterChange(col, 'start', e.target.value)}
                                   />
                                   <input
                                     type="date"
                                     title="End Date"
-                                    className="w-full bg-[#0A0A0A] border border-neutral-700 rounded px-2 py-1.5 text-xs text-neutral-300 outline-none focus:border-orange-500 transition-colors [&::-webkit-calendar-picker-indicator]:invert-[0.8]"
+                                    className="w-full bg-[#0A0A0A] border border-neutral-700 rounded px-2 py-1.5 text-xs text-neutral-300 outline-none focus:border-[#ef4444] transition-colors [&::-webkit-calendar-picker-indicator]:invert-[0.8]"
                                     value={columnFilters[col]?.end || ''}
                                     onChange={(e) => handleColumnFilterChange(col, 'end', e.target.value)}
                                   />
@@ -1108,14 +1110,14 @@ export default function ExplorerModule({ authUser }) {
                                   <input
                                     type="number"
                                     placeholder=">= Min"
-                                    className="w-full bg-[#0A0A0A] border border-neutral-700 rounded px-2 py-1.5 text-xs text-neutral-300 outline-none focus:border-orange-500 transition-colors"
+                                    className="w-full bg-[#0A0A0A] border border-neutral-700 rounded px-2 py-1.5 text-xs text-neutral-300 outline-none focus:border-[#ef4444] transition-colors"
                                     value={columnFilters[col]?.min || ''}
                                     onChange={(e) => handleColumnFilterChange(col, 'min', e.target.value)}
                                   />
                                   <input
                                     type="number"
                                     placeholder="<= Max"
-                                    className="w-full bg-[#0A0A0A] border border-neutral-700 rounded px-2 py-1.5 text-xs text-neutral-300 outline-none focus:border-orange-500 transition-colors"
+                                    className="w-full bg-[#0A0A0A] border border-neutral-700 rounded px-2 py-1.5 text-xs text-neutral-300 outline-none focus:border-[#ef4444] transition-colors"
                                     value={columnFilters[col]?.max || ''}
                                     onChange={(e) => handleColumnFilterChange(col, 'max', e.target.value)}
                                   />
@@ -1156,7 +1158,7 @@ export default function ExplorerModule({ authUser }) {
                                       <div className="flex flex-col gap-1 relative min-w-[140px] max-w-[180px]">
                                         <div
                                           onClick={() => handleColumnFilterChange(col, 'dropdownOpen', !isOpen)}
-                                          className={`bg-[#0A0A0A] border rounded px-3 py-1.5 text-xs text-neutral-300 w-full flex items-center justify-between cursor-pointer select-none transition-colors ${isOpen ? 'border-orange-500' : 'border-neutral-700 hover:border-neutral-600'}`}
+                                          className={`bg-[#0A0A0A] border rounded px-3 py-1.5 text-xs text-neutral-300 w-full flex items-center justify-between cursor-pointer select-none transition-colors ${isOpen ? 'border-[#ef4444]' : 'border-neutral-700 hover:border-neutral-600'}`}
                                         >
                                           <span className="truncate pr-2">{getLabel()}</span>
                                           <ChevronDown size={14} className={`text-neutral-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
@@ -1181,7 +1183,7 @@ export default function ExplorerModule({ authUser }) {
                                               </div>
 
                                               <div onClick={() => toggleValue('all')} className="flex items-center px-3 py-2 text-xs cursor-pointer hover:bg-neutral-800 transition-colors shrink-0">
-                                                <div className={`w-4 h-4 rounded border mr-2 flex items-center justify-center ${selectedArr.includes('all') ? 'bg-orange-500 border-orange-500' : 'border-neutral-600 bg-[#0A0A0A]'}`}>
+                                                <div className={`w-4 h-4 rounded border mr-2 flex items-center justify-center ${selectedArr.includes('all') ? 'bg-[#ef4444] border-[#ef4444]' : 'border-neutral-600 bg-[#0A0A0A]'}`}>
                                                   {selectedArr.includes('all') && <Check size={12} className="text-white" />}
                                                 </div>
                                                 <span className={selectedArr.includes('all') ? 'text-white font-medium' : 'text-neutral-300'}>All Values</span>
@@ -1194,7 +1196,7 @@ export default function ExplorerModule({ authUser }) {
                                                   const isSelected = selectedArr.includes(String(c));
                                                   return (
                                                     <div key={`ms-${c}`} onClick={() => toggleValue(String(c))} className="flex items-center px-3 py-2 text-xs cursor-pointer hover:bg-neutral-800 transition-colors shrink-0">
-                                                      <div className={`w-4 h-4 rounded border mr-2 flex items-center justify-center shrink-0 ${isSelected ? 'bg-orange-500 border-orange-500' : 'border-neutral-600 bg-[#0A0A0A]'}`}>
+                                                      <div className={`w-4 h-4 rounded border mr-2 flex items-center justify-center shrink-0 ${isSelected ? 'bg-[#ef4444] border-[#ef4444]' : 'border-neutral-600 bg-[#0A0A0A]'}`}>
                                                         {isSelected && <Check size={12} className="text-white" />}
                                                       </div>
                                                       <span className={`truncate ${isSelected ? 'text-white font-medium' : 'text-neutral-300'}`} title={c}>{c}</span>
@@ -1214,7 +1216,7 @@ export default function ExplorerModule({ authUser }) {
                                         type={isNumericCol ? "number" : "text"}
                                         list={isNumericCol ? undefined : `list-${col}`}
                                         placeholder={`Filter${isNumericCol ? ' number' : ''}...`}
-                                        className="w-full bg-[#0A0A0A] border border-neutral-700 rounded px-2 py-1.5 text-xs text-neutral-300 outline-none focus:border-orange-500 transition-colors"
+                                        className="w-full bg-[#0A0A0A] border border-neutral-700 rounded px-2 py-1.5 text-xs text-neutral-300 outline-none focus:border-[#ef4444] transition-colors"
                                         value={columnFilters[col]?.text || ''}
                                         onChange={(e) => handleColumnFilterChange(col, 'text', e.target.value)}
                                       />

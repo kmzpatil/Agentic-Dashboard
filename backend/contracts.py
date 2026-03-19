@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -55,6 +55,7 @@ class AssistantMessage(BaseModel):
     datasets: list[Dataset] = Field(default_factory=list)
     suggested_actions: list[InsightAction] = Field(default_factory=list)
     intent: str = "analytics"
+    sql: str = ""
     error: str = ""
 
 
@@ -64,7 +65,8 @@ class ChatEnvelope(BaseModel):
     response: str
     actions: list[str] = Field(default_factory=list)
     chart_data: dict[str, Any] = Field(default_factory=dict)
-    chart_xml: str = ""
+    chart_xml: str = ""  # Legacy: first chart XML
+    chart_xmls: list[str] = Field(default_factory=list)  # All chart XMLs
     error: str = ""
 
 
@@ -80,3 +82,29 @@ class ServiceStatus(BaseModel):
 class HealthStatus(BaseModel):
     ok: bool
     services: dict[str, ServiceStatus]
+
+
+# ── Custom KPI ────────────────────────────────────────────────────────────────
+
+class KPICreateRequest(BaseModel):
+    name: str
+    description: str | None = None
+    mode: Literal["formula", "natural_language"]
+    expression: str
+    time_granularity: Literal["day", "week", "month"] = "month"
+
+
+class KPIResponse(BaseModel):
+    id: int
+    name: str
+    description: str | None = None
+    dsl_json: dict[str, Any]
+    created_at: str | None = None
+
+
+class KPIExecuteResponse(BaseModel):
+    id: int
+    name: str
+    dsl_json: dict[str, Any]
+    time_series: list[dict[str, Any]] = Field(default_factory=list)
+    insights: dict[str, Any] = Field(default_factory=dict)
