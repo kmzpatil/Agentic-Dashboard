@@ -6,13 +6,13 @@ CLIENT_EXPR_WITH_UNKNOWN = build_client_name_expr("ch", "u", include_unknown=Tru
 
 
 BREAKDOWN_EXPR_MAP = {
-  "channel": 'COALESCE(rvc."Channel_Name", \'Unknown\')',
-  "input_type": 'COALESCE(rv."Input_Type", \'Unknown\')',
-  "language": 'COALESCE(rv."Language", \'Unknown\')',
-  "output_type": 'COALESCE(ca."Output_Type", \'Unknown\')',
-  "client": CLIENT_EXPR_WITH_UNKNOWN,
-  "user": 'COALESCE(u."User_Name", \'Unknown\')',
-  "team": 'COALESCE(u."Team_Name", \'Unknown\')',
+  "channel": 'COALESCE(NULLIF(BTRIM(rvc."Channel_Name"), \'\'), \'Unknown\')',
+  "input_type": 'COALESCE(NULLIF(BTRIM(rv."Input_Type"), \'\'), \'Unknown\')',
+  "language": 'COALESCE(NULLIF(BTRIM(rv."Language"), \'\'), \'Unknown\')',
+  "output_type": 'COALESCE(NULLIF(BTRIM(ca."Output_Type"), \'\'), \'Unknown\')',
+  "client": f'COALESCE(NULLIF(BTRIM({CLIENT_EXPR_WITH_UNKNOWN}), \'\'), \'Unknown\')',
+  "user": 'COALESCE(NULLIF(BTRIM(u."User_Name"), \'\'), \'Unknown\')',
+  "team": 'COALESCE(NULLIF(BTRIM(u."Team_Name"), \'\'), \'Unknown\')',
 }
 
 
@@ -802,12 +802,12 @@ def _normalize_option_predicates(predicates: list[str]) -> list[str]:
 def get_filter_options_clients_query(access_filter: dict) -> str:
     if access_filter.get("predicates"):
         preds = _normalize_option_predicates(access_filter["predicates"])
-        where = f"WHERE COALESCE(ch.\"Client_Name\", u.\"Client_Name\") IS NOT NULL AND {' AND '.join(preds)}"
+        where = f"WHERE NULLIF(BTRIM(COALESCE(ch.\"Client_Name\", u.\"Client_Name\")), '') IS NOT NULL AND {' AND '.join(preds)}"
     else:
-        where = 'WHERE COALESCE(ch."Client_Name", u."Client_Name") IS NOT NULL'
+        where = 'WHERE NULLIF(BTRIM(COALESCE(ch."Client_Name", u."Client_Name")), \'\') IS NOT NULL'
 
     return f'''
-    SELECT DISTINCT COALESCE(ch."Client_Name", u."Client_Name") AS value
+    SELECT DISTINCT BTRIM(COALESCE(ch."Client_Name", u."Client_Name")) AS value
     FROM raw_videos rv
     LEFT JOIN users u ON u."User_ID" = rv."User_ID"
     LEFT JOIN raw_video_channel rvc ON rvc."Video_ID" = rv."Video_ID"
@@ -820,17 +820,17 @@ def get_filter_options_clients_query(access_filter: dict) -> str:
 def get_filter_options_input_types_query(access_filter: dict = None) -> str:
     if access_filter and access_filter.get("predicates"):
         return f'''
-        SELECT DISTINCT rv."Input_Type" AS value
+        SELECT DISTINCT BTRIM(rv."Input_Type") AS value
         FROM raw_videos rv
         {access_filter["join"]}
-        WHERE rv."Input_Type" IS NOT NULL
+        WHERE NULLIF(BTRIM(rv."Input_Type"), '') IS NOT NULL
           AND {' AND '.join(access_filter["predicates"])}
         ORDER BY 1;
       '''
     return '''
-    SELECT DISTINCT "Input_Type" AS value
+    SELECT DISTINCT BTRIM("Input_Type") AS value
     FROM raw_videos
-    WHERE "Input_Type" IS NOT NULL
+    WHERE NULLIF(BTRIM("Input_Type"), '') IS NOT NULL
     ORDER BY 1;
   '''
 
@@ -838,17 +838,17 @@ def get_filter_options_input_types_query(access_filter: dict = None) -> str:
 def get_filter_options_languages_query(access_filter: dict = None) -> str:
     if access_filter and access_filter.get("predicates"):
         return f'''
-        SELECT DISTINCT rv."Language" AS value
+        SELECT DISTINCT BTRIM(rv."Language") AS value
         FROM raw_videos rv
         {access_filter["join"]}
-        WHERE rv."Language" IS NOT NULL
+        WHERE NULLIF(BTRIM(rv."Language"), '') IS NOT NULL
           AND {' AND '.join(access_filter["predicates"])}
         ORDER BY 1;
       '''
     return '''
-    SELECT DISTINCT "Language" AS value
+    SELECT DISTINCT BTRIM("Language") AS value
     FROM raw_videos
-    WHERE "Language" IS NOT NULL
+    WHERE NULLIF(BTRIM("Language"), '') IS NOT NULL
     ORDER BY 1;
   '''
 
@@ -856,9 +856,9 @@ def get_filter_options_languages_query(access_filter: dict = None) -> str:
 def get_filter_options_channels_query(access_filter: dict = None) -> str:
     if access_filter and access_filter.get("predicates"):
         preds = _normalize_option_predicates(access_filter["predicates"])
-        where = f"WHERE ch.\"Channel_Name\" IS NOT NULL AND {' AND '.join(preds)}"
+        where = f"WHERE NULLIF(BTRIM(ch.\"Channel_Name\"), '') IS NOT NULL AND {' AND '.join(preds)}"
         return f'''
-        SELECT DISTINCT ch."Channel_Name" AS value
+        SELECT DISTINCT BTRIM(ch."Channel_Name") AS value
         FROM raw_videos rv
         LEFT JOIN users u ON u."User_ID" = rv."User_ID"
         LEFT JOIN raw_video_channel rvc ON rvc."Video_ID" = rv."Video_ID"
@@ -867,8 +867,9 @@ def get_filter_options_channels_query(access_filter: dict = None) -> str:
         ORDER BY 1;
       '''
     return '''
-    SELECT DISTINCT "Channel_Name" AS value
+    SELECT DISTINCT BTRIM("Channel_Name") AS value
     FROM channels
+    WHERE NULLIF(BTRIM("Channel_Name"), '') IS NOT NULL
     ORDER BY 1;
   '''
 
@@ -878,18 +879,18 @@ def get_filter_options_users_query(access_filter: dict = None) -> str:
         preds = _normalize_option_predicates(access_filter["predicates"])
         where = f"AND {' AND '.join(preds)}"
         return f'''
-        SELECT DISTINCT u."User_Name" AS value
+        SELECT DISTINCT BTRIM(u."User_Name") AS value
         FROM raw_videos rv
         LEFT JOIN users u ON u."User_ID" = rv."User_ID"
         LEFT JOIN raw_video_channel rvc ON rvc."Video_ID" = rv."Video_ID"
         LEFT JOIN channels ch ON ch."Channel_Name" = rvc."Channel_Name"
-        WHERE u."User_Name" IS NOT NULL {where}
+        WHERE NULLIF(BTRIM(u."User_Name"), '') IS NOT NULL {where}
         ORDER BY 1;
       '''
     return '''
-    SELECT DISTINCT "User_Name" AS value
+    SELECT DISTINCT BTRIM("User_Name") AS value
     FROM users
-    WHERE "User_Name" IS NOT NULL
+    WHERE NULLIF(BTRIM("User_Name"), '') IS NOT NULL
     ORDER BY 1;
   '''
 
@@ -899,17 +900,36 @@ def get_filter_options_teams_query(access_filter: dict = None) -> str:
         preds = _normalize_option_predicates(access_filter["predicates"])
         where = f"AND {' AND '.join(preds)}"
         return f'''
-        SELECT DISTINCT u."Team_Name" AS value
+        SELECT DISTINCT BTRIM(u."Team_Name") AS value
         FROM raw_videos rv
         LEFT JOIN users u ON u."User_ID" = rv."User_ID"
         LEFT JOIN raw_video_channel rvc ON rvc."Video_ID" = rv."Video_ID"
         LEFT JOIN channels ch ON ch."Channel_Name" = rvc."Channel_Name"
-        WHERE u."Team_Name" IS NOT NULL {where}
+        WHERE NULLIF(BTRIM(u."Team_Name"), '') IS NOT NULL {where}
         ORDER BY 1;
       '''
     return '''
-    SELECT DISTINCT "Team_Name" AS value
+    SELECT DISTINCT BTRIM("Team_Name") AS value
     FROM users
-    WHERE "Team_Name" IS NOT NULL
+    WHERE NULLIF(BTRIM("Team_Name"), '') IS NOT NULL
+    ORDER BY 1;
+  '''
+
+
+def get_filter_options_output_types_query(access_filter: dict = None) -> str:
+    if access_filter and access_filter.get("predicates"):
+        return f'''
+        SELECT DISTINCT BTRIM(ca."Output_Type") AS value
+        FROM raw_videos rv
+        LEFT JOIN created_assets ca ON ca."Video_ID" = rv."Video_ID"
+        {access_filter["join"]}
+        WHERE NULLIF(BTRIM(ca."Output_Type"), '') IS NOT NULL
+          AND {' AND '.join(access_filter["predicates"])}
+        ORDER BY 1;
+      '''
+    return '''
+    SELECT DISTINCT BTRIM("Output_Type") AS value
+    FROM created_assets
+    WHERE NULLIF(BTRIM("Output_Type"), '') IS NOT NULL
     ORDER BY 1;
   '''

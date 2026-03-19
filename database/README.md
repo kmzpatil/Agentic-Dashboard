@@ -61,3 +61,25 @@ database/
 1. Prefer `frammer_data.sql` for local PostgreSQL restoration.
 2. Use `schema.sql` only with `pg_restore` because it is not plain SQL.
 3. Treat `.local_postgres/` and `__pycache__/` as generated runtime state.
+
+## Funnel Seed Generator Integration
+
+The Funnel module filter boxes (client, channel, input type, language, user, team) are loaded dynamically from database tables via backend routes. This repository now includes a generator based on the synthetic scaling logic in `database/funnel_seed_generator.py`.
+
+- Generate CSVs only (for inspection):
+	- `python database/funnel_seed_generator.py`
+- Bootstrap PostgreSQL from the bundled snapshot **and** replace funnel tables with generated values:
+	- PowerShell: `$env:USE_GENERATED_FUNNEL_SEED='1'; python database/bootstrap_postgres.py`
+- Optional deterministic seed override:
+	- PowerShell: `$env:GENERATED_FUNNEL_SEED='42'; $env:USE_GENERATED_FUNNEL_SEED='1'; python database/bootstrap_postgres.py`
+
+When `USE_GENERATED_FUNNEL_SEED` is enabled, the following tables are regenerated and reloaded:
+
+- `clients`
+- `users`
+- `channels`
+- `raw_videos`
+- `raw_video_channel`
+- `created_assets`
+- `published_posts`
+- `post_distribution`

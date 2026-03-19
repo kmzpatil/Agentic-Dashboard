@@ -1,6 +1,17 @@
 import os
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+
+_CONFIG_DIR = Path(__file__).resolve().parent
+_BACKEND_DIR = _CONFIG_DIR.parent
+_PROJECT_ROOT = _BACKEND_DIR.parent
+
+load_dotenv(_BACKEND_DIR / ".env")
+load_dotenv(_PROJECT_ROOT / ".env")
 
 
 @dataclass(frozen=True)

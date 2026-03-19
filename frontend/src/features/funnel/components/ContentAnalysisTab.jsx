@@ -1,5 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Chart } from 'react-chartjs-2';
+import { useApi } from '../../../hooks/useApi';
+import { API_BASE } from '../../../lib/constants';
 
 const C = {
   red: '#ef4444',
@@ -34,13 +36,35 @@ const CardTitle = ({ title, desc }) => (
 );
 
 const barOptions = {
-  responsive: true, maintainAspectRatio: false,
+  responsive: true,
+  maintainAspectRatio: false,
   plugins: { legend: { display: false } },
   scales: {
     x: { ticks: { color: '#a3a3a3', font: { size: 10 } }, grid: { display: false } },
     y: { ticks: { color: '#a3a3a3', font: { size: 10 } }, grid: { color: C.grid } },
   },
 };
+
+const predictorSelectClass = [
+  'w-full rounded-md border border-neutral-800 bg-[#0d0d0d] px-3 py-2',
+  'text-[12px] text-neutral-200 outline-none',
+  'focus:border-neutral-600',
+].join(' ');
+
+const predictorNumberClass = [
+  'w-full rounded-md border border-neutral-800 bg-[#0d0d0d] px-3 py-2',
+  'text-[22px] leading-none text-neutral-100 outline-none',
+  'focus:border-neutral-600',
+].join(' ');
+
+function PredictorField({ label, children }) {
+  return (
+    <div>
+      <div className="mb-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-neutral-600">{label}</div>
+      {children}
+    </div>
+  );
+}
 
 function heatCellStyle(value, minValue, maxValue) {
   const safe = Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -76,16 +100,138 @@ function heatCellStyle(value, minValue, maxValue) {
 
 function formatHeatPct(value) {
   const safe = Number.isFinite(Number(value)) ? Number(value) : 0;
-  return `${safe.toFixed(safe >= 1 ? 2 : 2).replace(/\.00$/, '')}%`;
+  return `${safe.toFixed(2).replace(/\.00$/, '')}%`;
 }
 
-export default function ContentAnalysisTab({ authUser, data, breakdown = 'channel', filters }) {
+function sortUnique(values = []) {
+  return Array.from(new Set(values.filter(Boolean))).sort((left, right) => left.localeCompare(right));
+}
+
+export default function ContentAnalysisTab({ authUser, data, breakdown = 'channel', filters, filterOptions, filterOptionsLoading }) {
   const isAdmin = authUser?.role === 'website_admin';
   const breakdownRows = data?.breakdown || [];
   const showClientHeatmap = isAdmin && breakdown === 'client';
   const viewLabel = breakdown.replace('_', ' ');
   const heatmapRows = data?.inputTypeClientHeatmap || [];
-  const activeFilters = Object.entries(filters || {}).filter(([, v]) => v);
+  const activeFilters = Object.entries(filters || {}).filter(([, value]) => value);
+
+  const [predictorCollapsed, setPredictorCollapsed] = useState(false);
+  const [predictorClient, setPredictorClient] = useState('');
+  const [predictorChannel, setPredictorChannel] = useState('');
+  const [predictorInputType, setPredictorInputType] = useState('');
+  const [predictorLanguage, setPredictorLanguage] = useState('');
+  const [predictorOutputType, setPredictorOutputType] = useState('');
+  const [uploadedDuration, setUploadedDuration] = useState('357');
+  const [createdDuration, setCreatedDuration] = useState('1312');
+  const [uploadToCreateDays, setUploadToCreateDays] = useState('2');
+  const [predictResult, setPredictResult] = useState(null);
+  const [predictLoading, setPredictLoading] = useState(false);
+  const [predictError, setPredictError] = useState('');
+
+  const optionsQuery = useMemo(() => {
+    const params = new URLSearchParams();
+    if (predictorClient) params.set('client', predictorClient);
+    if (predictorChannel) params.set('channel', predictorChannel);
+    if (predictorInputType) params.set('input_type', predictorInputType);
+    if (predictorLanguage) params.set('language', predictorLanguage);
+    return params.toString();
+  }, [predictorClient, predictorChannel, predictorInputType, predictorLanguage]);
+
+  const optionsUrl = useMemo(
+    () => `${API_BASE}/funnel/filter-options${optionsQuery ? `?${optionsQuery}` : ''}`,
+    [optionsQuery],
+  );
+  const { data: scopedOptionsData } = useApi(optionsUrl, [optionsUrl]);
+  
+  // Use filter options passed from parent FunnelModule instead of making redundant base call
+  const baseOptionsData = filterOptions || {};
+
+  const predictorClients = useMemo(() => sortUnique(baseOptionsData?.clients || []), [baseOptionsData?.clients]);
+  const predictorChannels = useMemo(() => sortUnique(baseOptionsData?.channels || []), [baseOptionsData?.channels]);
+  const predictorInputTypes = useMemo(() => sortUnique(baseOptionsData?.input_types || []), [baseOptionsData?.input_types]);
+  const predictorLanguages = useMemo(() => sortUnique(baseOptionsData?.languages || []), [baseOptionsData?.languages]);
+  const predictorOutputTypes = useMemo(() => {
+    const backendTypes = baseOptionsData?.output_types || [];
+    if (backendTypes.length > 0) return sortUnique(backendTypes);
+    const fallbackTypes = (data?.outputTypeSurvival || []).map((row) => row.output_type);
+    return sortUnique(fallbackTypes);
+  }, [baseOptionsData?.output_types, data?.outputTypeSurvival]);
+
+  const canChooseChannel = Boolean(predictorClient);
+  const canChooseInputType = Boolean(predictorChannel);
+  const canChooseLanguage = Boolean(predictorInputType);
+  const canChooseOutputType = Boolean(predictorLanguage);
+
+  const canPredict = Boolean(
+    predictorClient
+      && predictorChannel
+      && predictorInputType
+      && predictorLanguage
+      && predictorOutputType
+      && Number(uploadedDuration) > 0
+        && Number(createdDuration) > 0
+      && Number(uploadToCreateDays) >= 0,
+  );
+
+  useEffect(() => {
+    let ignore = false;
+
+    const runPrediction = async () => {
+      if (!canPredict) {
+        setPredictResult(null);
+        setPredictError('');
+        return;
+      }
+
+      setPredictLoading(true);
+      setPredictError('');
+      try {
+        const token = localStorage.getItem('frammer_auth_token');
+        const response = await fetch(`${API_BASE}/funnel/predictor/predict`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            client: predictorClient,
+            channel: predictorChannel,
+            input_type: predictorInputType,
+            language: predictorLanguage,
+            output_type: predictorOutputType,
+            uploaded_duration: Number(uploadedDuration),
+            created_duration: Number(createdDuration),
+            upload_to_create_days: Number(uploadToCreateDays),
+          }),
+        });
+
+        if (!response.ok) throw new Error(`Predict failed: ${response.status}`);
+        const payload = await response.json();
+        if (!ignore) setPredictResult(payload);
+      } catch (error) {
+        if (!ignore) {
+          setPredictResult(null);
+          setPredictError(error?.message || 'Prediction unavailable');
+        }
+      } finally {
+        if (!ignore) setPredictLoading(false);
+      }
+    };
+
+    runPrediction();
+    return () => { ignore = true; };
+  }, [
+    canPredict,
+    predictorClient,
+    predictorChannel,
+    predictorInputType,
+    predictorLanguage,
+    predictorOutputType,
+    uploadedDuration,
+    createdDuration,
+    uploadToCreateDays,
+  ]);
+
   const heatRange = useMemo(() => {
     const allValues = heatmapRows.flatMap((row) => (
       (row.clients || [])
@@ -99,10 +245,10 @@ export default function ContentAnalysisTab({ authUser, data, breakdown = 'channe
 
   const outputTypeSurvivalData = useMemo(() => {
     return {
-      labels: breakdownRows.map((r) => r.label),
+      labels: breakdownRows.map((row) => row.label),
       datasets: [{
         label: 'Conversion %',
-        data: breakdownRows.map((r) => Number(r.conversion || 0)),
+        data: breakdownRows.map((row) => Number(row.conversion || 0)),
         backgroundColor: redGrayPalette(breakdownRows.length, 0.9),
         borderRadius: 4,
       }],
@@ -112,12 +258,13 @@ export default function ContentAnalysisTab({ authUser, data, breakdown = 'channe
   const publishByClientData = useMemo(() => {
     const rows = data?.publishByClient || [];
     return {
-      labels: rows.map((r) => r.client_name),
+      labels: rows.map((row) => row.client_name),
       datasets: [{
         label: 'Conversion %',
-        data: rows.map((r) => Number(r.conversion_pct || 0)),
+        data: rows.map((row) => Number(row.conversion_pct || 0)),
         backgroundColor: redGrayPalette(rows.length, 0.72),
-        borderRadius: 5, barPercentage: 0.58,
+        borderRadius: 5,
+        barPercentage: 0.58,
       }],
     };
   }, [data?.publishByClient]);
@@ -135,7 +282,153 @@ export default function ContentAnalysisTab({ authUser, data, breakdown = 'channe
         )}
       </div>
 
-      {/* Input type × client heatmap — client view (admins only) */}
+      <Card>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-[13px] font-semibold uppercase tracking-[0.08em] text-neutral-300">Publish Predictor</h3>
+          <button
+            type="button"
+            onClick={() => setPredictorCollapsed((prev) => !prev)}
+            className="rounded-md border border-neutral-800 px-2.5 py-1 text-[11px] text-neutral-500 hover:text-neutral-300"
+          >
+            {predictorCollapsed ? 'expand +' : 'collapse −'}
+          </button>
+        </div>
+
+        {!predictorCollapsed && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
+              <PredictorField label="Client">
+                <select
+                  className={predictorSelectClass}
+                  value={predictorClient}
+                  onChange={(event) => {
+                    setPredictorClient(event.target.value);
+                    setPredictorChannel('');
+                    setPredictorInputType('');
+                    setPredictorLanguage('');
+                    setPredictorOutputType('');
+                  }}
+                >
+                  <option value="">— client —</option>
+                  {predictorClients.map((value) => (
+                    <option key={value} value={value}>{value}</option>
+                  ))}
+                </select>
+              </PredictorField>
+
+              <PredictorField label="Channel">
+                <select
+                  className={predictorSelectClass}
+                  value={predictorChannel}
+                  onChange={(event) => {
+                    setPredictorChannel(event.target.value);
+                    setPredictorInputType('');
+                    setPredictorLanguage('');
+                    setPredictorOutputType('');
+                  }}
+                  disabled={!canChooseChannel}
+                >
+                  <option value="">— channel —</option>
+                  {predictorChannels.map((value) => (
+                    <option key={value} value={value}>{value}</option>
+                  ))}
+                </select>
+              </PredictorField>
+
+              <PredictorField label="Input type">
+                <select
+                  className={predictorSelectClass}
+                  value={predictorInputType}
+                  onChange={(event) => {
+                    setPredictorInputType(event.target.value);
+                    setPredictorLanguage('');
+                    setPredictorOutputType('');
+                  }}
+                  disabled={!canChooseInputType}
+                >
+                  <option value="">— input —</option>
+                  {predictorInputTypes.map((value) => (
+                    <option key={value} value={value}>{value}</option>
+                  ))}
+                </select>
+              </PredictorField>
+
+              <PredictorField label="Language">
+                <select
+                  className={predictorSelectClass}
+                  value={predictorLanguage}
+                  onChange={(event) => {
+                    setPredictorLanguage(event.target.value);
+                    setPredictorOutputType('');
+                  }}
+                  disabled={!canChooseLanguage}
+                >
+                  <option value="">— lang —</option>
+                  {predictorLanguages.map((value) => (
+                    <option key={value} value={value}>{value}</option>
+                  ))}
+                </select>
+              </PredictorField>
+
+              <PredictorField label="Output type">
+                <select
+                  className={predictorSelectClass}
+                  value={predictorOutputType}
+                  onChange={(event) => setPredictorOutputType(event.target.value)}
+                  disabled={!canChooseOutputType}
+                >
+                  <option value="">— output —</option>
+                  {predictorOutputTypes.map((value) => (
+                    <option key={value} value={value}>{value}</option>
+                  ))}
+                </select>
+              </PredictorField>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_0.55fr]">
+              <PredictorField label="Upload dur (s)">
+                <input
+                  type="number"
+                  className={predictorNumberClass}
+                  value={uploadedDuration}
+                  onChange={(event) => setUploadedDuration(event.target.value)}
+                />
+              </PredictorField>
+              <PredictorField label="Created dur (s)">
+                <input
+                  type="number"
+                  className={predictorNumberClass}
+                  value={createdDuration}
+                  onChange={(event) => setCreatedDuration(event.target.value)}
+                />
+              </PredictorField>
+              <PredictorField label="Upload - Create days">
+                <input
+                  type="number"
+                  className={predictorNumberClass}
+                  value={uploadToCreateDays}
+                  onChange={(event) => setUploadToCreateDays(event.target.value)}
+                />
+              </PredictorField>
+            </div>
+
+            <div className="rounded-lg border border-neutral-800 bg-[#0c0c0c] px-3 py-2 text-[12px]">
+              {!canPredict && <span className="text-neutral-500">Select client → channel → input type → language → output type to run prediction.</span>}
+              {predictLoading && <span className="text-neutral-400">Predicting…</span>}
+              {!predictLoading && predictError && <span className="text-red-400">{predictError}</span>}
+              {!predictLoading && !predictError && predictResult && (
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                  <span className="text-neutral-200 font-semibold">{predictResult.prediction}</span>
+                  <span className="text-neutral-400">Probability: {predictResult.probability_pct}%</span>
+                  <span className="text-neutral-500">Confidence: {predictResult.confidence_pct}%</span>
+                  <span className="text-neutral-500">Bucket: {predictResult.publish_timeframe_bucket}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </Card>
+
       {showClientHeatmap ? (
         <Card>
           <CardTitle
@@ -158,13 +451,13 @@ export default function ContentAnalysisTab({ authUser, data, breakdown = 'channe
                     <td className="sticky left-0 z-10 bg-[#111111] py-2 pr-4 text-neutral-200 text-[12px] font-medium max-w-[230px] truncate" title={row.input_type}>
                       {row.input_type}
                     </td>
-                    {(row.clients || []).map((cell, i) => {
+                    {(row.clients || []).map((cell, index) => {
                       const conversion = Number(cell.conversion_pct);
                       const safeConversion = Number.isFinite(conversion) ? conversion : 0;
                       const cellStyle = heatCellStyle(safeConversion, heatRange.min, heatRange.max);
                       return (
                         <td
-                          key={i}
+                          key={index}
                           className="rounded-md border px-4 py-2 text-center font-semibold text-[11.5px] font-mono min-w-[120px]"
                           style={cellStyle}
                           title={`Created: ${cell.assets_created || 0}, Published: ${cell.posts_published || 0}`}
@@ -196,7 +489,6 @@ export default function ContentAnalysisTab({ authUser, data, breakdown = 'channe
         </Card>
       )}
 
-      {/* Publish by client — admins only */}
       {isAdmin && publishByClientData.labels.length > 0 && (
         <Card>
           <CardTitle
@@ -204,13 +496,29 @@ export default function ContentAnalysisTab({ authUser, data, breakdown = 'channe
             desc="Published ÷ created by client for the current filter context."
           />
           <div className="h-[220px]">
-            <Chart type="bar" data={publishByClientData} options={{
-              ...barOptions,
-              scales: {
-                ...barOptions.scales,
-                y: { ...barOptions.scales.y, ticks: { ...barOptions.scales.y.ticks, callback: (v) => `${v}%` }, title: { display: true, text: 'Conversion rate (%)', color: '#a3a3a3', font: { size: 10 } } },
-              },
-            }} />
+            <Chart
+              type="bar"
+              data={publishByClientData}
+              options={{
+                ...barOptions,
+                scales: {
+                  ...barOptions.scales,
+                  y: {
+                    ...barOptions.scales.y,
+                    ticks: {
+                      ...barOptions.scales.y.ticks,
+                      callback: (value) => `${value}%`,
+                    },
+                    title: {
+                      display: true,
+                      text: 'Conversion rate (%)',
+                      color: '#a3a3a3',
+                      font: { size: 10 },
+                    },
+                  },
+                },
+              }}
+            />
           </div>
         </Card>
       )}

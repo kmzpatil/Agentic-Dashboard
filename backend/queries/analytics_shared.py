@@ -386,7 +386,7 @@ def build_funnel_filter(filters: dict[str, str] | None = None, start_index: int 
         if not needs_channel_join:
           join_parts.append('LEFT JOIN raw_video_channel rvc_filter ON rv."Video_ID" = rvc_filter."Video_ID"')
           needs_channel_join = True
-        predicates.append(f'rvc_filter."Channel_Name" = ${next_index}')
+        predicates.append(f'BTRIM(rvc_filter."Channel_Name") = BTRIM(${next_index}::text)')
         params.append(value)
         next_index += 1
 
@@ -398,17 +398,17 @@ def build_funnel_filter(filters: dict[str, str] | None = None, start_index: int 
           join_parts.append('LEFT JOIN raw_video_channel rvc_filter ON rv."Video_ID" = rvc_filter."Video_ID"')
           needs_channel_join = True
         join_parts.append('LEFT JOIN channels ch_filter ON ch_filter."Channel_Name" = rvc_filter."Channel_Name"')
-        predicates.append(f'{build_client_name_expr("ch_filter", "u_filter")} = ${next_index}')
+        predicates.append(f'BTRIM({build_client_name_expr("ch_filter", "u_filter")}) = BTRIM(${next_index}::text)')
         params.append(value)
         next_index += 1
 
       elif dimension == "input_type":
-        predicates.append(f'rv."Input_Type" = ${next_index}')
+        predicates.append(f'BTRIM(rv."Input_Type") = BTRIM(${next_index}::text)')
         params.append(value)
         next_index += 1
 
       elif dimension == "language":
-        predicates.append(f'rv."Language" = ${next_index}')
+        predicates.append(f'BTRIM(rv."Language") = BTRIM(${next_index}::text)')
         params.append(value)
         next_index += 1
 
@@ -416,7 +416,7 @@ def build_funnel_filter(filters: dict[str, str] | None = None, start_index: int 
         if not needs_user_join:
           join_parts.append('LEFT JOIN users u_filter ON rv."User_ID" = u_filter."User_ID"')
           needs_user_join = True
-        predicates.append(f'u_filter."User_Name" = ${next_index}')
+        predicates.append(f'BTRIM(u_filter."User_Name") = BTRIM(${next_index}::text)')
         params.append(value)
         next_index += 1
 
@@ -424,13 +424,13 @@ def build_funnel_filter(filters: dict[str, str] | None = None, start_index: int 
         if not needs_user_join:
           join_parts.append('LEFT JOIN users u_filter ON rv."User_ID" = u_filter."User_ID"')
           needs_user_join = True
-        predicates.append(f'u_filter."Team_Name" = ${next_index}')
+        predicates.append(f'BTRIM(u_filter."Team_Name") = BTRIM(${next_index}::text)')
         params.append(value)
         next_index += 1
 
       elif dimension == "output_type":
         join_parts.append('LEFT JOIN created_assets ca_filter ON ca_filter."Video_ID" = rv."Video_ID"')
-        predicates.append(f'ca_filter."Output_Type" = ${next_index}')
+        predicates.append(f'BTRIM(ca_filter."Output_Type") = BTRIM(${next_index}::text)')
         params.append(value)
         next_index += 1
 

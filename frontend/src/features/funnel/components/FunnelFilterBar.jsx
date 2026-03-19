@@ -38,22 +38,20 @@ function FilterSelect({ label, value, onChange, children, disabled }) {
   );
 }
 
-export default function FunnelFilterBar({ authUser, breakdown, filters, onBreakdownChange, onFiltersChange }) {
+export default function FunnelFilterBar({ authUser, breakdown, filters, filterOptions, filterOptionsLoading, onBreakdownChange, onFiltersChange }) {
   const role    = authUser?.role || 'user';
   const isAdmin = role === 'website_admin';
   const isAdminOrClientAdmin = role === 'website_admin' || role === 'client_admin';
 
-  const { data: opts, loading: optionsLoading, error: optionsError } = useApi(`${API_BASE}/funnel/filter-options`, []);
-  const options = opts || { clients: [], input_types: [], languages: [], channels: [], users: [], teams: [] };
-  const filtersDisabled = Boolean(optionsError) || optionsLoading;
-
-  const allowedViewBy = ALL_VIEW_BY.filter((o) => o.roles.includes(role));
+  const options = filterOptions || { clients: [], input_types: [], languages: [], channels: [], users: [], teams: [] };
+  const filtersDisabled = filterOptionsLoading;
 
   const update = (key, value) => onFiltersChange({ ...filters, [key]: value || '' });
   const clear  = (key)        => onFiltersChange({ ...filters, [key]: '' });
   const reset  = ()           => onFiltersChange({ client: '', input_type: '', language: '', channel: '', user: '', team: '' });
 
   const active = Object.entries(filters).filter(([, v]) => v);
+  const allowedViewBy = ALL_VIEW_BY.filter((o) => o.roles.includes(role));
 
   return (
     <div className="pb-4 border-b border-neutral-900 space-y-2.5">
@@ -136,12 +134,6 @@ export default function FunnelFilterBar({ authUser, breakdown, filters, onBreakd
       </div>
 
       {/* Active pills */}
-      {optionsError && (
-        <div className="rounded-lg border border-amber-600/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-300">
-          Filter options are temporarily unavailable. Retry in a moment.
-        </div>
-      )}
-
       {active.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {active.map(([key, value]) => (

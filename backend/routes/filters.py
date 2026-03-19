@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import importlib
-import os
 from typing import List, Optional
 
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from backend.config.env import get_config
 from backend.middleware.auth import AuthContext, require_auth
 
 
@@ -16,20 +16,20 @@ router = APIRouter(
     tags=["Filters"],
 )
 
-
-DATABASE_URL: str = (
-    os.getenv("DATABASE_URL")
-    or os.getenv("POSTGRES_URL")
-    or (
-        f"postgresql://{os.getenv('POSTGRES_USER', 'postgres')}:"
-        f"{os.getenv('POSTGRES_PASSWORD', '')}@"
-        f"{os.getenv('POSTGRES_HOST', 'localhost')}:"
-        f"{os.getenv('POSTGRES_PORT', '5432')}/"
-        f"{os.getenv('POSTGRES_DB', 'frammer_database')}"
-    )
-)
-
 _ENGINE = None
+
+
+def _clean_dataframe_strings(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+
+    cleaned = df.copy()
+    cleaned.columns = cleaned.columns.str.strip()
+
+    string_columns = cleaned.select_dtypes(include=["object"]).columns
+    for column in string_columns:
+        cleaned[column] = cleaned[column].apply(lambda value: value.strip() if isinstance(value, str) else value)
+    return cleaned
 
 
 def _get_engine():
@@ -41,7 +41,17 @@ def _get_engine():
             raise RuntimeError(
                 "sqlalchemy is required - install from backend/requirements.txt"
             ) from exc
-        _ENGINE = sqlalchemy.create_engine(DATABASE_URL)
+        db = get_config().db
+        db_url = sqlalchemy.engine.URL.create(
+            "postgresql+psycopg2",
+            username=db.user,
+            password=db.password,
+            host=db.host,
+            port=db.port,
+            database=db.database,
+            query={"sslmode": db.sslmode} if db.sslmode else None,
+        )
+        _ENGINE = sqlalchemy.create_engine(db_url)
     return _ENGINE
 
 
@@ -54,12 +64,12 @@ def _sorted_unique(series: pd.Series) -> List[str]:
 
 
 def _read(query: str) -> pd.DataFrame:
-    return pd.read_sql(query, _get_engine())
+    return _clean_dataframe_strings(pd.read_sql(query, _get_engine()))
 
 
 def _read_optional(query: str, columns: List[str]) -> pd.DataFrame:
     try:
-        return pd.read_sql(query, _get_engine())
+        return _clean_dataframe_strings(pd.read_sql(query, _get_engine()))
     except Exception:
         return pd.DataFrame(columns=columns)
 

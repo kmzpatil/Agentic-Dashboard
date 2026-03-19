@@ -72,6 +72,12 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
   }, [breakdown, effectiveFilters]);
 
   const { data, loading, error } = useApi(`${API_BASE}/funnel?${queryString}`, [queryString]);
+  
+  // Single API call for filter options instead of redundant calls in child components
+  const { data: filterOptions, loading: filterOptionsLoading } = useApi(
+    `${API_BASE}/funnel/filter-options`,
+    []
+  );
 
   const navigate = (overrides = {}) => onNavigate?.({
     view: 'funnel',
@@ -266,6 +272,8 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
           authUser={authUser}
           breakdown={breakdown}
           filters={effectiveFilters}
+          filterOptions={filterOptions}
+          filterOptionsLoading={filterOptionsLoading}
           onBreakdownChange={handleBreakdownChange}
           onFiltersChange={handleFiltersChange}
         />
@@ -327,7 +335,7 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
               )}
 
               {analysisTab === 'channel'  && <ChannelEfficiencyTab  authUser={authUser} data={data} breakdown={breakdown} filters={effectiveFilters} />}
-              {analysisTab === 'content'  && <ContentAnalysisTab   authUser={authUser} data={data} breakdown={breakdown} filters={effectiveFilters} />}
+              {analysisTab === 'content'  && <ContentAnalysisTab   authUser={authUser} data={data} breakdown={breakdown} filters={effectiveFilters} filterOptions={filterOptions} filterOptionsLoading={filterOptionsLoading} />}
               {analysisTab === 'explorer' && <DataExplorerTab       authUser={authUser} data={data} breakdown={breakdown} filters={effectiveFilters} />}
             </div>
           </>
