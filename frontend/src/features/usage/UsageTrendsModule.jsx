@@ -428,6 +428,32 @@ function dropTrailingZeros(series) {
   return series.slice(0, end + 1);
 }
 
+function computeAnomaliesFromSeries(series) {
+  if (!Array.isArray(series) || series.length < 3) return [];
+  const values = series.map((point) => Number(point.value || 0));
+  const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+  const variance = values.reduce((sum, val) => sum + (val - mean) ** 2, 0) / values.length;
+  const std = Math.sqrt(variance);
+
+  const ranked = series.map((point) => {
+    const value = Number(point.value || 0);
+    const z = std === 0 ? 0 : (value - mean) / std;
+    return { period: point.period, value, z };
+  });
+
+  return ranked
+    .filter((point) => Math.abs(point.z) >= 1.5)
+    .sort((a, b) => Math.abs(b.z) - Math.abs(a.z))
+    .slice(0, 8)
+    .map((point) => ({
+      period: point.period,
+      value: Number(point.value.toFixed(2)),
+      zScore: Number(point.z.toFixed(2)),
+      severity: Math.abs(point.z) >= 2.5 ? "high" : "medium",
+      direction: point.z > 0 ? "spike" : "drop",
+    }));
+}
+
 function toOptionList(values = []) {
   return values.map((value) => ({ value, label: value }));
 }
@@ -499,7 +525,10 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
   const [appliedFilters, setAppliedFilters] = useState(filters);
 
   const [isMaximized, setIsMaximized] = useState(false);
-  const [isFiltersOpen, setIsFiltersOpen] = useState(true);
+  const [isFiltersOpen, setIsFiltersOpen] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return !window.matchMedia("(max-width: 1023px)").matches;
+  });
   const [showPoints, setShowPoints] = useState(false);
   const [showComparison, setShowComparison] = useState(false);
   const [comparisonOffset, setComparisonOffset] = useState(1);
@@ -522,6 +551,17 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
     }, 80);
     return () => window.clearTimeout(timer);
   }, [isMaximized]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const mediaQuery = window.matchMedia("(max-width: 1023px)");
+    const handleChange = (event) => {
+      if (event.matches) setIsFiltersOpen(false);
+    };
+    if (mediaQuery.matches) setIsFiltersOpen(false);
+    mediaQuery.addEventListener("change", handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
+  }, []);
 
   // Prediction mode only supports uploaded_count today
   useEffect(() => {
@@ -548,9 +588,20 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
   const appliedFiltersQuery = useMemo(() => buildFilterParams(appliedFilters), [appliedFilters]);
   const appliedFiltersQuerySuffix = appliedFiltersQuery ? `&${appliedFiltersQuery}` : "";
 
-  const effectiveCompany = filters.company && filters.company.length > 0 && filters.company[0] !== "All" ? filters.company[0] : "";
+  const effectiveCompany = filters.company && filters.company.length > 0 && filters.company[0] !== "All"
+    ? filters.company[0]
+    : "";
+  const effectiveChannel = filters.channel && filters.channel.length > 0 && filters.channel[0] !== "All"
+    ? filters.channel[0]
+    : "";
 
-  const filterOptionsUrl = `${API_BASE}/usage-trends/v1/filters/options${effectiveCompany ? `?company=${encodeURIComponent(effectiveCompany)}` : ""}`;
+  const filterOptionsUrl = useMemo(() => {
+    const params = new URLSearchParams();
+    if (effectiveCompany) params.set("company", effectiveCompany);
+    if (effectiveChannel) params.set("channel", effectiveChannel);
+    const query = params.toString();
+    return `${API_BASE}/usage-trends/v1/filters/options${query ? `?${query}` : ""}`;
+  }, [effectiveCompany, effectiveChannel]);
   const { data: filterOptionsData, loading: filterOptionsLoading, error: filterOptionsError } = useApi(
     filterOptionsUrl,
     [filterOptionsUrl],
@@ -657,9 +708,6 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
   }, [multiDim, granularity, appliedMultiDimFilters, appliedFiltersQuery]);
 
   const { data: multiDimData, loading: multiDimLoading, error: multiDimError } = useApi(multiDimUrl, [multiDimUrl]);
-
-  const trendsUrl = `${API_BASE}/trends?metric=${encodeURIComponent(resolvedMetric)}&granularity=${encodeURIComponent(granularity)}${appliedFiltersQuerySuffix}`;
-  const trends = useApi(trendsUrl, [trendsUrl]);
 
   const insightsUrl = `${API_BASE}/insights?surface=trends${appliedFiltersQuerySuffix}`;
   const insights = useApi(insightsUrl, [insightsUrl]);
@@ -823,6 +871,11 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
     };
   }, [historySeries]);
 
+  const computedAnomalies = useMemo(
+    () => computeAnomaliesFromSeries(historySeries),
+    [historySeries],
+  );
+
   const chartData = useMemo(() => {
     const historyByDate = new Map(historySeries.map((p) => [p.period, Number(p.value || 0)]));
     const predictionByDate = new Map(predictionSeries.map((p) => [p.period, Number(p.value || 0)]));
@@ -833,7 +886,7 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
 
     // Map of anomaly date → direction for O(1) lookup in point callbacks
     const anomalyDates = new Map(
-      (trends.data?.anomalies || []).map((a) => [
+      (computedAnomalies || []).map((a) => [
         String(a.period || "").slice(0, 10),
         a.direction, // "drop" | "spike"
       ]),
@@ -878,10 +931,10 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
     if (isPredicting && predictionSeries.length > 0) {
       datasets.push({
         label: cutoffDate
-          ? `AI Forecast (from ${cutoffDate})`
+          ? `Forecast (from ${cutoffDate})`
           : resolvedCutoff
-            ? `AI Forecast (from ${resolvedCutoff})`
-            : "AI Forecast",
+            ? `Forecast (from ${resolvedCutoff})`
+            : "Forecast",
         data: labels.map((l) => predictionByDate.has(l) ? predictionByDate.get(l) : null),
         borderColor: "#38BDF8",
         backgroundColor: "rgba(56, 189, 248, 0.08)",
@@ -923,7 +976,7 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
   }, [
     historySeries, resolvedMetric, predictionSeries,
     isPredicting, showPoints, cutoffDate, resolvedCutoff,
-    trends.data, showComparison, comparisonOffset,
+    computedAnomalies, showComparison, comparisonOffset,
   ]);
 
   const multiDimChartData = useMemo(() => {
@@ -992,7 +1045,7 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
   if (metricsError)
     return <div className="p-6 text-red-500 font-medium">Failed to load data: {metricsError}</div>;
 
-  const anomalies = trends.data?.anomalies || [];
+  const anomalies = computedAnomalies;
   const needsClientFilter = CLIENT_OPTIONAL_DIMS.has(multiDim);
   const needsUserFilter = USER_OPTIONAL_DIMS.has(multiDim);
   const hasDataForFilters = validateData?.has_data;
@@ -1012,7 +1065,7 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div
-      className={`h-full overflow-y-auto bg-[#050505] px-4 md:px-8 py-8 text-neutral-200 frammer-scrollbar ${isMaximized ? "fixed inset-0 z-50 overflow-hidden !p-8 bg-[#0a0a0a]" : "space-y-8"
+      className={`h-full overflow-y-auto bg-[#050505] px-4 md:px-8 text-neutral-200 frammer-scrollbar ${isMaximized ? "fixed inset-0 z-50 overflow-hidden !p-8 bg-[#0a0a0a]" : "space-y-8"
         }`}
     >
       {/* ── Custom scrollbar styles ── */}
@@ -1118,11 +1171,11 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
                 <GranularityPills value={granularity} onChange={setGranularity} />
               </div>
 
-              {/* AI Forecast toggle + controls */}
+              {/* Forecast toggle + controls */}
               <div className="group shrink-0">
                 <div className="h-5 mb-2 flex items-end justify-between gap-3">
                   <label className="text-[10px] font-bold uppercase tracking-[0.2em] leading-none text-neutral-500 group-hover:text-neutral-300 transition-colors">
-                    AI Forecast
+                    Forecast
                   </label>
                   {/* Toggle */}
                   <button
@@ -1278,35 +1331,46 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
             className={`rounded-[24px] border border-neutral-800 bg-[#0e0e0e] shadow-xl transition-all duration-300 hover:border-neutral-700 flex flex-col h-auto lg:h-[560px] w-full ${isFiltersOpen ? "lg:w-[240px]" : "lg:w-[56px]"
               }`}
           >
-            <div className="flex-shrink-0 flex items-center justify-between border-b border-neutral-800/60 bg-[#121212] px-3 py-3 rounded-t-[24px] gap-2">
-              {isFiltersOpen && (
-                <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
-                  <SlidersHorizontal size={14} className={`flex-shrink-0 ${activeFilterCount > 0 ? "text-red-400" : "text-neutral-500"}`} />
-                  <div className="min-w-0 overflow-hidden">
-                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-300 leading-none truncate">Filters</div>
-                    <div className={`mt-0.5 text-[10px] font-semibold leading-none ${activeFilterCount > 0 ? "text-red-400" : "text-neutral-600"}`}>
-                      {activeFilterCount > 0 ? `${activeFilterCount} applied` : "None applied"}
+            <div className="flex-shrink-0 border-b border-neutral-800/60 bg-[#121212] px-3 py-3 rounded-t-[24px]">
+              <div className="hidden lg:flex items-center justify-between gap-2">
+                {isFiltersOpen && (
+                  <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+                    <SlidersHorizontal size={14} className={`flex-shrink-0 ${activeFilterCount > 0 ? "text-red-400" : "text-neutral-500"}`} />
+                    <div className="min-w-0 overflow-hidden">
+                      <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-300 leading-none truncate">Filters</div>
+                      <div className={`mt-0.5 text-[10px] font-semibold leading-none ${activeFilterCount > 0 ? "text-red-400" : "text-neutral-600"}`}>
+                        {activeFilterCount > 0 ? `${activeFilterCount} applied` : "None applied"}
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsFiltersOpen((prev) => !prev)}
+                  className="flex-shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-full border border-neutral-800 bg-[#0f0f0f] text-neutral-400 transition-colors hover:border-neutral-700 hover:text-white"
+                  title={isFiltersOpen ? "Collapse" : "Expand filters"}
+                >
+                  <ChevronDown
+                    size={13}
+                    className={`transition-transform duration-200 ${isFiltersOpen ? "rotate-90" : "-rotate-90"}`}
+                  />
+                </button>
+              </div>
               <button
                 type="button"
                 onClick={() => setIsFiltersOpen((prev) => !prev)}
-                className="flex-shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-full border border-neutral-800 bg-[#0f0f0f] text-neutral-400 transition-colors hover:border-neutral-700 hover:text-white"
+                className="flex w-full items-center justify-between text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-400 lg:hidden"
                 title={isFiltersOpen ? "Collapse" : "Expand filters"}
               >
-                <ChevronDown
-                  size={13}
-                  className={`transition-transform duration-200 ${isFiltersOpen ? "rotate-0" : "-rotate-90"}`}
-                />
+                <span>Filters</span>
+                <ChevronDown size={14} className={`transition-transform ${isFiltersOpen ? "rotate-180" : "rotate-0"}`} />
               </button>
             </div>
 
             {/* Collapsed state — icon badge only */}
             {!isFiltersOpen && (
-              <div className="flex flex-col items-center gap-3 pt-4 pb-3">
-                <div className="relative">
+              <div className="flex flex-col items-center gap-3 pt-4 pb-3 lg:flex">
+                <div className="relative hidden lg:block">
                   <div className={`flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${activeFilterCount > 0 ? "border-red-500/30 bg-red-500/10" : "border-neutral-800 bg-transparent"
                     }`}>
                     <SlidersHorizontal size={14} className={activeFilterCount > 0 ? "text-red-400" : "text-neutral-600"} />
@@ -1522,8 +1586,7 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
             </div>
             {/* Scrollable list — fills remaining height */}
             <div className="flex-1 min-h-0 overflow-y-auto frammer-anomaly-scroll p-5 space-y-4">
-              {trends.loading && <Skeleton className="h-20 w-full rounded-xl" />}
-              {!trends.loading && anomalies.map((anomaly) => (
+              {anomalies.map((anomaly) => (
                 <div
                   key={`${anomaly.period}-${anomaly.direction}`}
                   className="group relative overflow-hidden rounded-xl border border-neutral-800 bg-[#121212] p-5 transition-all hover:border-neutral-600 hover:bg-[#161616]"
@@ -1549,7 +1612,7 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
                   </div>
                 </div>
               ))}
-              {!trends.loading && !anomalies.length && (
+              {!anomalies.length && (
                 <div className="flex flex-col items-center justify-center p-8 text-center border border-dashed border-neutral-800 rounded-xl">
                   <div className="text-emerald-500/20 mb-3"><AlertTriangle size={32} /></div>
                   <div className="text-sm font-semibold text-neutral-300 mb-1">System Normal</div>
@@ -1564,12 +1627,12 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
       {/* ── Multi-dim section ────────────────────────────────────────────── */}
       {/* ── Multi-dim section ────────────────────────────────────────────── */}
       {!isMaximized && (
-        <section className="relative z-50 rounded-[24px] border border-neutral-800/80 bg-[#101010]/80 backdrop-blur-md p-6 shadow-xl transition-all duration-300 hover:border-neutral-700/80">
+        <section className="relative z-50 rounded-[24px] border border-neutral-800/80 bg-[#101010]/80 backdrop-blur-md p-4 sm:p-6 shadow-xl transition-all duration-300 hover:border-neutral-700/80">
           <div className="flex flex-col">
-            <div className="flex flex-wrap items-end gap-6">
+            <div className="flex flex-col lg:flex-row lg:flex-wrap items-stretch lg:items-end gap-4 lg:gap-6">
             
             {/* Comparison Type */}
-            <div className="flex-1 min-w-[200px] group">
+            <div className="w-full lg:flex-1 lg:min-w-[200px] group">
               <label className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-500 mb-2 block group-hover:text-neutral-300 transition-colors">
                 Comparison Type
               </label>
@@ -1584,7 +1647,7 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
 
             {/* Scope Boundaries */}
             {needsClientFilter && authUser?.role === "website_admin" && (
-              <div className="flex-1 min-w-[180px] group">
+              <div className="w-full lg:flex-1 lg:min-w-[180px] group">
                 <label className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-500 mb-2 block group-hover:text-neutral-300 transition-colors">
                   Client Scope
                 </label>
@@ -1603,7 +1666,7 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
             )}
 
             {needsUserFilter && authUser?.role !== "user" && (
-              <div className="flex-1 min-w-[180px] group">
+              <div className="w-full lg:flex-1 lg:min-w-[180px] group">
                 <label className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-500 mb-2 block group-hover:text-neutral-300 transition-colors">
                   User Scope
                 </label>
@@ -1619,7 +1682,7 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
             )}
 
             {/* Time Horizon Slider */}
-            <div className="flex-[2] min-w-[240px]">
+            <div className="w-full lg:flex-[2] lg:min-w-[240px]">
               <label className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-500 mb-2 block group-hover:text-neutral-300 transition-colors">
                 Date window
               </label>
@@ -1637,10 +1700,10 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
             </div>
 
             {/* Sync Action */}
-            <div className="flex flex-col items-center">
+            <div className="flex flex-col items-center w-full lg:w-auto">
               <button
                 onClick={handleApplyMultiDimFilters}
-                className="group/btn relative h-[46px] flex items-center gap-3 rounded-xl bg-red-500 px-8 py-0 text-[11px] font-black uppercase tracking-[0.15em] text-white shadow-lg shadow-red-500/10 transition-all hover:bg-red-400 hover:shadow-red-500/20 hover:-translate-y-0.5 active:translate-y-0 active:scale-95"
+                className="group/btn relative h-[46px] w-full lg:w-auto flex items-center justify-center gap-3 rounded-xl bg-red-500 px-6 lg:px-8 py-0 text-[11px] font-black uppercase tracking-[0.15em] text-white shadow-lg shadow-red-500/10 transition-all hover:bg-red-400 hover:shadow-red-500/20 hover:-translate-y-0.5 active:translate-y-0 active:scale-95"
               >
                 <span>Add Filter</span>
                 <ArrowRight size={16} className="transition-transform group-hover/btn:translate-x-1" />
@@ -1649,20 +1712,20 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
           </div>
 
             {/* Results Display Area */}
-            <div className="mt-8 pt-8 border-t border-neutral-800/40">
+            <div className="mt-6 sm:mt-8 pt-6 sm:pt-8 border-t border-neutral-800/40">
 
-              <div className="relative min-h-[420px] rounded-[36px] bg-neutral-900/20 border border-neutral-800/30 p-8 shadow-inner overflow-hidden">
+              <div className="relative min-h-[360px] sm:min-h-[420px] rounded-[28px] sm:rounded-[36px] bg-neutral-900/20 border border-neutral-800/30 p-4 sm:p-8 shadow-inner overflow-hidden">
                 
                 {multiDimLoading && (
                   <div className="absolute inset-0 flex items-center justify-center bg-[#101010]/60 backdrop-blur-md z-10">
-                    <div className="w-full px-10">
-                      <ChartSkeleton height={320} />
+                    <div className="w-full px-4 sm:px-10">
+                      <ChartSkeleton height={280} />
                     </div>
                   </div>
                 )}
 
                 {multiDimError && (
-                  <div className="flex flex-col items-center justify-center p-12 text-center h-[320px] relative z-10">
+                  <div className="flex flex-col items-center justify-center p-6 sm:p-12 text-center h-[280px] sm:h-[320px] relative z-10">
                     <div className="text-xl font-black text-red-400 mb-2 tracking-tight">Data Error</div>
                     <div className="text-sm text-neutral-500 max-w-xs leading-relaxed">
                       {multiDimError}
@@ -1671,7 +1734,7 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
                 )}
 
                 {!multiDimLoading && !multiDimError && !multiDimChartData && !needsClientFilter && (
-                  <div className="flex flex-col items-center justify-center p-12 text-center h-[320px] relative z-10">
+                  <div className="flex flex-col items-center justify-center p-6 sm:p-12 text-center h-[280px] sm:h-[320px] relative z-10">
                     <div className="text-xl font-black text-neutral-300 mb-2 tracking-tight">No Temporal Data</div>
                     <div className="text-sm text-neutral-500 max-w-xs leading-relaxed">
                       Your current synchronization parameters yielded zero results. Try broadening your filter horizons.
@@ -1680,7 +1743,7 @@ export default function UsageTrendsModule({ authUser, routeState, onNavigate }) 
                 )}
 
                 {!multiDimLoading && !multiDimError && multiDimChartData && (
-                  <div className="h-[320px] w-full relative z-10">
+                  <div className="h-[280px] sm:h-[320px] w-full relative z-10">
                     <Line data={multiDimChartData} options={chartOptions} />
                   </div>
                 )}
