@@ -7,10 +7,8 @@ services:
       - .env
     environment:
       PORT: 4000
-      PGHOST: ${PGHOST:-host.docker.internal}
-      POSTGRES_HOST: ${POSTGRES_HOST:-host.docker.internal}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      PGHOST: ${PGHOST:-db}
+      POSTGRES_HOST: ${POSTGRES_HOST:-db}
     ports:
       - "4000:4000"
     restart: unless-stopped
@@ -23,6 +21,20 @@ services:
         VITE_API_BASE_URL: /api
     depends_on:
       - api
+      - db
     ports:
       - "8080:80"
     restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-NAITIK}
+      POSTGRES_DB: ${POSTGRES_DB:-frammer_database}
+    volumes:
+      - gcdata_db_data:/var/lib/postgresql/data
+
+volumes:
+  gcdata_db_data:

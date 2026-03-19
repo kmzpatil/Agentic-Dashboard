@@ -329,8 +329,13 @@ def build_access_filter(auth: Any, start_index: int = 1, video_alias: str = "rv"
     }
 
 
-def get_metric_query(metric: str, access_filter: dict[str, Any]) -> str:
+def get_metric_query(
+    metric: str,
+    access_filter: dict[str, Any],
+    asset_predicates: list[str] | None = None,
+) -> str:
     scoped_videos_where = build_where_clause(access_filter["predicates"])
+    scoped_assets_where = build_where_clause(asset_predicates or [])
     scoped_videos_cte = f'''
     WITH scoped_videos AS (
       SELECT DISTINCT rv."Video_ID", rv."User_ID", rv."Upload_Date", rv."Uploaded_Duration"
@@ -342,6 +347,7 @@ def get_metric_query(metric: str, access_filter: dict[str, Any]) -> str:
       SELECT DISTINCT ON (ca."Asset_ID") ca.*
       FROM created_assets ca
       JOIN scoped_videos sv ON sv."Video_ID" = ca."Video_ID"
+      {scoped_assets_where}
       ORDER BY ca."Asset_ID"
     ),
     scoped_posts AS (
