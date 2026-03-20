@@ -63,6 +63,7 @@ def _chart_spec(
     dataset: Dataset,
     chart_type_hint: str | None = None,
     extra_spec: dict[str, Any] | None = None,
+    valid_chart_types: list[str] | None = None,
 ) -> dict[str, Any] | None:
     numeric_columns = _numeric_columns(dataset)
     if not numeric_columns:
@@ -85,6 +86,8 @@ def _chart_spec(
         "yFields": numeric_columns[:4],
         "maxRows": 50,
     }
+    if valid_chart_types:
+        spec["validChartTypes"] = valid_chart_types
     if extra_spec:
         spec.update(extra_spec)
     return spec
@@ -99,6 +102,7 @@ def build_dataset_artifacts(
     include_table: bool = True,
     chart_type_hint: str | None = None,
     extra_spec: dict[str, Any] | None = None,
+    valid_chart_types: list[str] | None = None,
 ) -> list[Artifact]:
     artifacts: list[Artifact] = []
     numeric_columns = _numeric_columns(dataset)
@@ -123,7 +127,12 @@ def build_dataset_artifacts(
             )
         )
 
-    chart_spec = _chart_spec(dataset, chart_type_hint=chart_type_hint, extra_spec=extra_spec)
+    chart_spec = _chart_spec(
+        dataset,
+        chart_type_hint=chart_type_hint,
+        extra_spec=extra_spec,
+        valid_chart_types=valid_chart_types
+    )
     if dataset.rows and len(dataset.rows) > 1 and chart_spec:
         artifacts.append(
             Artifact(
@@ -161,10 +170,12 @@ def build_assistant_artifacts(
     title: str = "Analysis",
     chart_type_hint: str | None = None,
     extra_spec: dict[str, Any] | None = None,
+    valid_chart_types: list[str] | None = None,
 ) -> tuple[list[Dataset], list[Artifact]]:
     dataset = build_dataset(dataset_id, f"{title} Dataset", rows)
     artifacts = build_dataset_artifacts(
         dataset, title_prefix=title, sql=sql,
         chart_type_hint=chart_type_hint, extra_spec=extra_spec,
+        valid_chart_types=valid_chart_types,
     )
     return [dataset], artifacts

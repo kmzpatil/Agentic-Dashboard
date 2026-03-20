@@ -14,7 +14,7 @@ AGENT_BASE = os.getenv("AGENT_BASE_URL", "http://localhost:8000")
 
 router = APIRouter()
 
-_client = httpx.AsyncClient(base_url=AGENT_BASE, timeout=120.0)
+_client = httpx.AsyncClient(base_url=AGENT_BASE, timeout=300.0)
 
 
 async def _proxy(method: str, path: str, request: Request) -> Response:

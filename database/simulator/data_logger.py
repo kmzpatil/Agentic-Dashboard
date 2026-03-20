@@ -8,7 +8,8 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
-from psycopg2.pool import SimpleConnectionPool
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
 
 LOG_TABLE = "_simulation_log"
 
@@ -28,10 +29,10 @@ CREATE TABLE IF NOT EXISTS {LOG_TABLE} (
 
 
 class DataLogger:
-    """Append-only structured logger backed by the simulator's Postgres pool."""
+    """Append-only structured logger backed by the simulator's Postgres engine."""
 
-    def __init__(self, pool: SimpleConnectionPool) -> None:
-        self._pool = pool
+    def __init__(self, engine: Engine) -> None:
+        self._engine = engine
         self._execute(CREATE_LOG_SQL, commit=True)
 
     def log_pending(
@@ -46,32 +47,32 @@ class DataLogger:
             f"""
             INSERT INTO {LOG_TABLE}
                 (timestamp, operation, table_name, row_id, old_values, new_values, status)
-            VALUES (%s, %s, %s, %s, %s, %s, 'PENDING')
+            VALUES (:ts, :op, :tbl, :rid, :old, :new, 'PENDING')
             RETURNING id
             """,
-            (
-                _now(),
-                operation,
-                table_name,
-                row_id,
-                _json(old_values),
-                _json(new_values),
-            ),
+            {
+                "ts": _now(),
+                "op": operation,
+                "tbl": table_name,
+                "rid": row_id,
+                "old": _json(old_values),
+                "new": _json(new_values),
+            },
             commit=True,
         )
         return int(row[0]) if row else 0
 
     def mark_success(self, log_id: int) -> None:
         self._execute(
-            f"UPDATE {LOG_TABLE} SET status = 'SUCCESS', timestamp = %s WHERE id = %s",
-            (_now(), log_id),
+            f"UPDATE {LOG_TABLE} SET status = 'SUCCESS', timestamp = :ts WHERE id = :id",
+            {"ts": _now(), "id": log_id},
             commit=True,
         )
 
     def mark_error(self, log_id: int, error_message: str) -> None:
         self._execute(
-            f"UPDATE {LOG_TABLE} SET status = 'ERROR', error_message = %s, timestamp = %s WHERE id = %s",
-            (error_message, _now(), log_id),
+            f"UPDATE {LOG_TABLE} SET status = 'ERROR', error_message = :err, timestamp = :ts WHERE id = :id",
+            {"err": error_message, "ts": _now(), "id": log_id},
             commit=True,
         )
 
@@ -85,10 +86,10 @@ class DataLogger:
             f"""
             INSERT INTO {LOG_TABLE}
                 (timestamp, operation, table_name, row_id, old_values, new_values, status, error_message)
-            VALUES (%s, 'QUALITY_CHECK', %s, NULL, NULL, %s, 'QUALITY_ISSUE', %s)
+            VALUES (:ts, 'QUALITY_CHECK', :tbl, NULL, NULL, :details, 'QUALITY_ISSUE', :err)
             RETURNING id
             """,
-            (_now(), table_name, _json(details), message),
+            {"ts": _now(), "tbl": table_name, "details": _json(details), "err": message},
             commit=True,
         )
         return int(row[0]) if row else 0
@@ -98,10 +99,10 @@ class DataLogger:
             f"""
             INSERT INTO {LOG_TABLE}
                 (timestamp, operation, table_name, status, error_message)
-            VALUES (%s, %s, %s, 'INFO', %s)
+            VALUES (:ts, :op, :tbl, 'INFO', :msg)
             RETURNING id
             """,
-            (_now(), operation, table_name, message),
+            {"ts": _now(), "op": operation, "tbl": table_name, "msg": message},
             commit=True,
         )
         return int(row[0]) if row else 0
@@ -114,31 +115,21 @@ class DataLogger:
         table_filter: str | None = None,
     ) -> list[dict[str, Any]]:
         query = f"SELECT * FROM {LOG_TABLE} WHERE 1=1"
-        params: list[Any] = []
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
         if status_filter:
-            query += " AND status = %s"
-            params.append(status_filter)
+            query += " AND status = :status"
+            params["status"] = status_filter
         if table_filter:
-            query += " AND table_name = %s"
-            params.append(table_filter)
-        query += " ORDER BY id DESC LIMIT %s OFFSET %s"
-        params += [limit, offset]
+            query += " AND table_name = :table"
+            params["table"] = table_filter
+        query += " ORDER BY id DESC LIMIT :limit OFFSET :offset"
 
         rows = self._fetchall(query, params)
         if not rows:
             return []
-        columns = [
-            "id",
-            "timestamp",
-            "operation",
-            "table_name",
-            "row_id",
-            "old_values",
-            "new_values",
-            "status",
-            "error_message",
-        ]
-        return [dict(zip(columns, row)) for row in rows]
+        
+        # SQLAlchemy rows can be converted to dicts via _mapping
+        return [dict(row._mapping) for row in rows]
 
     def get_counts(self) -> dict[str, int]:
         rows = self._fetchall(
@@ -158,9 +149,9 @@ class DataLogger:
             WHERE status = 'SUCCESS'
             GROUP BY bucket
             ORDER BY bucket DESC
-            LIMIT %s
+            LIMIT :lim
             """,
-            (limit_points,),
+            {"lim": limit_points},
         )
         rows.reverse()
 
@@ -177,56 +168,48 @@ class DataLogger:
     def _execute(
         self,
         sql: str,
-        params: Iterable[Any] | None = None,
+        params: dict[str, Any] | None = None,
         commit: bool = False,
     ) -> None:
-        conn = self._pool.getconn()
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute(sql, params or [])
-            if commit:
-                conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            self._pool.putconn(conn)
+        with self._engine.connect() as conn:
+            try:
+                conn.execute(text(sql), params or {})
+                if commit:
+                    conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
 
     def _fetchone(
         self,
         sql: str,
-        params: Iterable[Any] | None = None,
+        params: dict[str, Any] | None = None,
         commit: bool = False,
-    ) -> tuple[Any, ...] | None:
-        conn = self._pool.getconn()
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute(sql, params or [])
-                row = cursor.fetchone()
-            if commit:
-                conn.commit()
-            return row
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            self._pool.putconn(conn)
+    ) -> Any | None:
+        with self._engine.connect() as conn:
+            try:
+                result = conn.execute(text(sql), params or {})
+                row = result.fetchone()
+                if commit:
+                    conn.commit()
+                return row
+            except Exception:
+                conn.rollback()
+                raise
 
     def _fetchall(
         self,
         sql: str,
-        params: Iterable[Any] | None = None,
-    ) -> list[tuple[Any, ...]]:
-        conn = self._pool.getconn()
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute(sql, params or [])
-                return cursor.fetchall()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            self._pool.putconn(conn)
+        params: dict[str, Any] | None = None,
+    ) -> list[Any]:
+        with self._engine.connect() as conn:
+            try:
+                result = conn.execute(text(sql), params or {})
+                return result.fetchall()
+            except Exception:
+                # No commit needed for fetchall usually, but rollback if inside transaction
+                conn.rollback()
+                raise
 
 
 def _now() -> str:

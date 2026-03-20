@@ -12,15 +12,8 @@ Usage:
 
 from __future__ import annotations
 
-import os
-import sqlite3
-import tempfile
-from pathlib import Path
-
-import psycopg2
-from psycopg2.extras import execute_values
-from dotenv import load_dotenv
-
+from sqlalchemy import create_engine, text, inspect
+from sqlalchemy.engine import Engine
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 DATABASE_DIR = ROOT_DIR / "database"
@@ -64,12 +57,10 @@ INDEXES = (
 def env_value(*names: str) -> str | None:
     for name in names:
         value = os.getenv(name)
-        if value is None:
-            continue
-
-        normalized = value.strip()
-        if normalized:
-            return normalized
+        if value is not None:
+            normalized = value.strip()
+            if normalized:
+                return normalized
 
     return None
 
@@ -82,11 +73,11 @@ def sqlite_type_to_postgres(declared_type: str) -> str:
     return SQLITE_TO_POSTGRES.get((declared_type or "").upper().strip(), "TEXT")
 
 
-def resolve_postgres_connection():
+def resolve_postgres_engine() -> Engine:
     for env_name in ("POSTGRES_URL", "PGDATABASE_URL", "DATABASE_URL"):
         value = env_value(env_name)
         if value and value.startswith("postgres"):
-            return psycopg2.connect(value)
+            return create_engine(value)
 
     host = env_value("PGHOST", "POSTGRES_HOST")
     user = env_value("PGUSER", "POSTGRES_USER")
@@ -100,14 +91,9 @@ def resolve_postgres_connection():
             "Missing PostgreSQL credentials. Set PG* vars, POSTGRES_* vars, or POSTGRES_URL.",
         )
 
-    return psycopg2.connect(
-        host=host,
-        port=port,
-        dbname=database,
-        user=user,
-        password=password,
-        sslmode=sslmode,
-    )
+    creds = f"{user}:{password}@" if password else f"{user}@"
+    url = f"postgresql+psycopg2://{creds}{host}:{port}/{database}?sslmode={sslmode}"
+    return create_engine(url)
 
 
 def ensure_sqlite_source() -> tuple[Path, tempfile.TemporaryDirectory | None]:
@@ -170,9 +156,8 @@ def recreate_table(pg_conn, table_name: str, columns) -> None:
 
     ddl = f"CREATE TABLE {quoted_table} ({', '.join(column_defs)})"
 
-    with pg_conn.cursor() as cursor:
-        cursor.execute(f"DROP TABLE IF EXISTS {quoted_table} CASCADE")
-        cursor.execute(ddl)
+    pg_conn.execute(text(f"DROP TABLE IF EXISTS {quoted_table} CASCADE"))
+    pg_conn.execute(text(ddl))
 
 
 def copy_table_rows(sqlite_conn: sqlite3.Connection, pg_conn, table_name: str) -> int:
@@ -183,22 +168,29 @@ def copy_table_rows(sqlite_conn: sqlite3.Connection, pg_conn, table_name: str) -
 
     column_names = [description[0] for description in sqlite_conn.execute(f"SELECT * FROM {quoted_table} LIMIT 1").description]
     quoted_columns = ", ".join(quote_ident(name) for name in column_names)
-    insert_sql = f"INSERT INTO {quoted_table} ({quoted_columns}) VALUES %s"
+    
+    # SQLAlchemy text() with bind params is better, but for bulk insert of arbitrary rows,
+    # we can use the low-level connection or simple parameter markers.
+    placeholders = ", ".join([f":v{i}" for i in range(len(column_names))])
+    insert_sql = f"INSERT INTO {quoted_table} ({quoted_columns}) VALUES ({placeholders})"
+    
+    # Convert list of sqlite3.Row to list of dicts for naming
+    bound_rows = []
+    for row in rows:
+        bound_rows.append({f"v{i}": row[i] for i in range(len(column_names))})
 
-    with pg_conn.cursor() as cursor:
-        execute_values(cursor, insert_sql, rows, page_size=1000)
+    pg_conn.execute(text(insert_sql), bound_rows)
 
     return len(rows)
 
 
 def create_indexes(pg_conn) -> None:
-    with pg_conn.cursor() as cursor:
-        for index_name, table_name, columns in INDEXES:
-            columns_sql = ", ".join(quote_ident(column) for column in columns)
-            cursor.execute(
-                f"CREATE INDEX IF NOT EXISTS {quote_ident(index_name)} "
-                f"ON {quote_ident(table_name)} ({columns_sql})"
-            )
+    for index_name, table_name, columns in INDEXES:
+        columns_sql = ", ".join(quote_ident(column) for column in columns)
+        pg_conn.execute(text(
+            f"CREATE INDEX IF NOT EXISTS {quote_ident(index_name)} "
+            f"ON {quote_ident(table_name)} ({columns_sql})"
+        ))
 
 
 def main() -> None:
@@ -206,33 +198,33 @@ def main() -> None:
     print(f"SQLite source: {sqlite_path}")
 
     sqlite_conn = None
-    pg_conn = None
+    pg_engine = None
 
     try:
         sqlite_conn = sqlite3.connect(sqlite_path)
         sqlite_conn.row_factory = sqlite3.Row
 
-        pg_conn = resolve_postgres_connection()
-        pg_conn.autocommit = False
+        pg_engine = resolve_postgres_engine()
+        
+        with pg_engine.connect() as pg_conn:
+            tables = list_tables(sqlite_conn)
+            print(f"Found {len(tables)} table(s): {', '.join(tables)}")
 
-        tables = list_tables(sqlite_conn)
-        print(f"Found {len(tables)} table(s): {', '.join(tables)}")
+            for table_name in tables:
+                columns = fetch_table_info(sqlite_conn, table_name)
+                recreate_table(pg_conn, table_name, columns)
+                row_count = copy_table_rows(sqlite_conn, pg_conn, table_name)
+                pg_conn.commit()
+                print(f"Loaded {table_name}: {row_count} row(s)")
 
-        for table_name in tables:
-            columns = fetch_table_info(sqlite_conn, table_name)
-            recreate_table(pg_conn, table_name, columns)
-            row_count = copy_table_rows(sqlite_conn, pg_conn, table_name)
+            create_indexes(pg_conn)
             pg_conn.commit()
-            print(f"Loaded {table_name}: {row_count} row(s)")
-
-        create_indexes(pg_conn)
-        pg_conn.commit()
-        print("Bootstrap complete. Indexes created.")
+            print("Bootstrap complete. Indexes created.")
     finally:
         if sqlite_conn is not None:
             sqlite_conn.close()
-        if pg_conn is not None:
-            pg_conn.close()
+        if pg_engine is not None:
+            pg_engine.dispose()
         if temp_dir is not None:
             temp_dir.cleanup()
 
