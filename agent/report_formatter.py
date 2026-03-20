@@ -31,20 +31,10 @@ logger = logging.getLogger("frammer.report_formatter")
 
 # ── Gemini Client ────────────────────────────────────────────────────────────
 
-GEMINI_MODEL = os.getenv("GEMINI_REPORT_MODEL", "gemini-3.1-flash-lite-preview")
-GEMINI_KEYS = [k.strip() for k in os.getenv("GEMINI_KEYS", "").split(",") if k.strip()]
-
-
-def _get_gemini_llm():
-    """Create a Gemini LLM instance for report formatting."""
-    from langchain_google_genai import ChatGoogleGenerativeAI
-    api_key = GEMINI_KEYS[0] if GEMINI_KEYS else ""
-    return ChatGoogleGenerativeAI(
-        model=GEMINI_MODEL,
-        temperature=0.3,
-        google_api_key=api_key,
-        max_output_tokens=8192,
-    )
+try:
+    from gemini_client import get_gemini_llm as _get_gemini_llm
+except ImportError:
+    from agent.gemini_client import get_gemini_llm as _get_gemini_llm
 
 
 # ── Report Format Prompt ────────────────────────────────────────────────────

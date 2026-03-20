@@ -14,7 +14,6 @@ A4 HTML and exports to PDF via window.print() + CSS @page rules.
 import asyncio
 import json
 import logging
-import os
 import re
 import sys
 import time
@@ -62,20 +61,10 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 # ── Gemini Client ────────────────────────────────────────────────────────────
 
-GEMINI_MODEL = os.getenv("GEMINI_REPORT_MODEL", "gemini-2.0-flash-lite")
-GEMINI_KEYS = [k.strip() for k in os.getenv("GEMINI_KEYS", "").split(",") if k.strip()]
-
-
-def _get_gemini_llm():
-    """Create a Gemini LLM instance for report formatting."""
-    from langchain_google_genai import ChatGoogleGenerativeAI
-    api_key = GEMINI_KEYS[0] if GEMINI_KEYS else ""
-    return ChatGoogleGenerativeAI(
-        model=GEMINI_MODEL,
-        temperature=0.3,
-        google_api_key=api_key,
-        max_output_tokens=8192,
-    )
+try:
+    from gemini_client import get_gemini_llm as _get_gemini_llm
+except ImportError:
+    from agent.gemini_client import get_gemini_llm as _get_gemini_llm
 
 
 # ── Report Format Prompt ────────────────────────────────────────────────────

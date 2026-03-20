@@ -126,6 +126,84 @@ _schema_cache: Optional[str] = None
 _llm_client = LLMClient()
 
 
+# ── Report Planning ──────────────────────────────────────────────────────────
+
+REPORT_PLANNING_PROMPT = """\
+You are Frammer AI in Report Mode. Decompose the user's query into 3-6 analytical sub-questions.
+
+## Sub-question Types
+- **trend** — time-series analysis (monthly/weekly patterns)
+- **breakdown** — categorical split (by channel, segment, language, etc.)
+- **comparison** — A vs B (channel vs channel, period vs period)
+- **anomaly** — unusual patterns, spikes, drops
+- **forecast** — projection based on historical data
+
+## Database Schema
+{schema_block}
+
+## Business Metrics
+{metrics_block}
+
+## Rules
+- Produce exactly 3-6 sub-questions
+- Each must cover a different analytical angle
+- Types help the agent choose the right query patterns
+- Keep sub-questions focused and answerable with a single SQL query each
+{auth_block}
+
+## User Query
+{question}
+
+## Output Format
+Return ONLY a JSON array (no markdown fences):
+[
+  {{"id": "q1", "type": "trend", "question": "How has X changed monthly over the past year?"}},
+  {{"id": "q2", "type": "breakdown", "question": "What is the split of X by category?"}},
+  ...
+]
+"""
+
+
+async def _plan_report_sub_questions(
+    question: str,
+    schema: str,
+    metrics: str,
+    auth: Any = None,
+) -> List[Dict]:
+    """
+    Decompose a report query into typed sub-questions using a fast LLM call.
+    Returns a list of dicts with id, type, and question fields.
+    """
+    prompt = REPORT_PLANNING_PROMPT.format(
+        schema_block=schema or "",
+        metrics_block=metrics or "",
+        auth_block=_build_auth_block(auth) if auth else "",
+        question=question,
+    )
+
+    fast_client = LLMClient.fast()
+    resp = await asyncio.to_thread(fast_client.call, prompt)
+
+    # Parse JSON from response
+    raw = resp.content.strip()
+    raw = re.sub(r'^```(?:json)?\s*\n?', '', raw, flags=re.IGNORECASE)
+    raw = re.sub(r'\n?```\s*$', '', raw).strip()
+
+    try:
+        sub_questions = json.loads(raw)
+        if isinstance(sub_questions, list):
+            return sub_questions
+    except (json.JSONDecodeError, TypeError):
+        logger.warning("Failed to parse report sub-questions: %s", raw[:200])
+
+    # Fallback: generic sub-questions
+    return [
+        {"id": "q1", "type": "trend", "question": f"What are the time trends for: {question}"},
+        {"id": "q2", "type": "breakdown", "question": f"What is the breakdown by category for: {question}"},
+        {"id": "q3", "type": "comparison", "question": f"How do different segments compare for: {question}"},
+    ]
+
+
 # ── Tool definitions (for LangChain bind_tools) ─────────────────────────────
 
 from langchain_core.tools import tool
@@ -550,6 +628,17 @@ async def run_agent(
         # 2. Build LLM with tools
         agent_llm = _llm_client.llm.bind_tools([execute_queries, answer, clarify])
 
+        # 2b. Report planning phase
+        report_sub_questions: List[Dict] = []
+        if mode == "report" and not agent_state:
+            try:
+                report_sub_questions = await _plan_report_sub_questions(
+                    question, schema, metrics, auth
+                )
+                actions_log.append(f"Planned {len(report_sub_questions)} sub-questions")
+            except Exception as plan_err:
+                logger.warning("Report planning failed: %s", plan_err)
+
         # 3. ReAct loop
         answer_text = ""
         answer_charts: List[ChartResult] = []
@@ -557,7 +646,13 @@ async def run_agent(
         for iteration in range(start_iter, effective_max):
             system = _build_system_prompt(schema, metrics, auth, working_memory, all_query_results)
             if mode == "report":
+                sq_text = "\n".join(
+                    f"  {sq['id']}. [{sq['type'].upper()}] {sq['question']}"
+                    for sq in report_sub_questions
+                ) if report_sub_questions else ""
                 system += "\n\n## Mode: REPORT\nYou are gathering data for a comprehensive analytical report. This is NOT a conversational response.\nYou MUST call `execute_queries` to gather fresh data even if you have prior context. Be thorough — query multiple angles, breakdowns, and comparisons. Do NOT call `answer` until you have gathered at least 3-4 queries worth of data."
+                if sq_text:
+                    system += f"\n\n## Report Sub-Questions to Investigate\n{sq_text}\nAddress these sub-questions systematically with your queries."
             messages = _build_messages(system, question, history)
 
             logger.info("=== ITERATION %d: Calling LLM (%d messages) ===", iteration + 1, len(messages))
@@ -747,8 +842,25 @@ async def run_agent_stream(
         effective_max = MAX_ITERATIONS + 1 if mode == "report" else MAX_ITERATIONS
         answer_text = ""
         answer_charts_data = []
+        report_sub_questions: List[Dict] = []
+
+        # 3b. Report planning phase — decompose into typed sub-questions
+        if mode == "report" and not agent_state:
+            yield {"type": "phase", "phase": "planning report"}
+            try:
+                report_sub_questions = await _plan_report_sub_questions(
+                    question, schema, metrics, auth
+                )
+                actions_log.append(f"Planned {len(report_sub_questions)} sub-questions")
+                yield {
+                    "type": "report_plan",
+                    "sub_questions": report_sub_questions,
+                }
+            except Exception as plan_err:
+                logger.warning("Report planning failed, continuing without plan: %s", plan_err)
 
         # 4. ReAct loop
+        report_step_idx = 0  # Track which sub-question we're on
         for iteration in range(start_iter, effective_max):
             # Yield thinking phase
             phase_label = "thinking" if iteration == 0 else f"thinking (round {iteration + 1})"
@@ -758,7 +870,14 @@ async def run_agent_stream(
 
             system = _build_system_prompt(schema, metrics, auth, working_memory, all_query_results)
             if mode == "report":
-                system += "\n\n## Mode: REPORT\nYou are gathering data for a comprehensive report. Be thorough — query multiple angles, breakdowns, and comparisons."
+                # Inject sub-questions into the system prompt to guide data gathering
+                sq_text = "\n".join(
+                    f"  {sq['id']}. [{sq['type'].upper()}] {sq['question']}"
+                    for sq in report_sub_questions
+                ) if report_sub_questions else ""
+                system += f"\n\n## Mode: REPORT\nYou are gathering data for a comprehensive report. Be thorough — query multiple angles, breakdowns, and comparisons."
+                if sq_text:
+                    system += f"\n\n## Report Sub-Questions to Investigate\n{sq_text}\nAddress these sub-questions systematically with your queries."
             messages = _build_messages(system, question, history)
 
             logger.info("=== STREAM ITERATION %d: Calling LLM ===", iteration + 1)
@@ -834,6 +953,19 @@ async def run_agent_stream(
                         actions_log.append(f"SQL Error — {result.get('error', '')[:60]}")
 
                     yield event
+
+                    # Emit report_step progress for report mode
+                    if mode == "report" and report_sub_questions and report_step_idx < len(report_sub_questions):
+                        sq = report_sub_questions[report_step_idx]
+                        yield {
+                            "type": "report_step",
+                            "step_id": sq["id"],
+                            "step_type": sq.get("type", ""),
+                            "question": sq.get("question", ""),
+                            "status": "complete" if result.get("status") == "success" else "error",
+                            "row_count": result.get("row_count", 0),
+                        }
+                        report_step_idx += 1
 
                 continue  # Next iteration
 

@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   ChevronRight,
   Database,
+  Download,
   FileText,
   Loader2,
   MessageSquare,
@@ -41,6 +42,7 @@ const markdownComponents = {
 
 const PHASE_LABELS = {
   planning: 'Analyzing question...',
+  'planning report': 'Planning report structure...',
   thinking: 'Analyzing question...',
   'thinking (continued)': 'Continuing analysis...',
   executing: 'Running queries...',
@@ -157,36 +159,87 @@ function ErrorBanner({ error }) {
 
 function ReportViewer({ html }) {
   const iframeRef = useRef(null);
+  const [downloading, setDownloading] = useState(false);
+  const [downloaded, setDownloaded] = useState(false);
+
   useEffect(() => {
     if (iframeRef.current && html) {
       iframeRef.current.srcdoc = html;
     }
   }, [html]);
 
-  const handleOpenFullReport = () => {
-    const win = window.open('', '_blank');
-    if (win) {
-      win.document.write(html);
-      win.document.close();
+  // Extract title from the report HTML for the card header
+  const titleMatch = html?.match(/<(?:h1|title)[^>]*>(.*?)<\/(?:h1|title)>/si);
+  const reportTitle = titleMatch
+    ? titleMatch[1].replace(/<[^>]+>/g, '').trim()
+    : 'Analytical Report';
+
+  const handleSavePdf = async () => {
+    setDownloading(true);
+    setDownloaded(false);
+    try {
+      const win = window.open('', '_blank');
+      if (win) {
+        win.document.write(html);
+        win.document.close();
+        win.addEventListener('load', () => win.print());
+      }
+      setDownloaded(true);
+    } catch (err) {
+      console.error('PDF export failed:', err);
+    } finally {
+      setDownloading(false);
     }
   };
 
   return (
-    <div className="mt-4">
-      <iframe
-        ref={iframeRef}
-        className="w-full rounded-xl border border-neutral-800 bg-white"
-        style={{ height: '700px' }}
-        sandbox="allow-scripts"
-        title="Report"
-      />
-      <button
-        onClick={handleOpenFullReport}
-        className="mt-2 inline-flex items-center gap-2 text-sm text-neutral-400 hover:text-white transition-colors"
-      >
-        <FileText size={14} />
-        Open full report & export PDF
-      </button>
+    <div className="mt-4 max-w-[780px]">
+      <div className="rounded-2xl border border-neutral-800 bg-[#0C0C0C] overflow-hidden">
+        {/* Card header */}
+        <div className="flex items-start gap-3 p-5 pb-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-500/10 shrink-0">
+            <FileText size={18} className="text-red-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-red-400/70 mb-1">Report Generated</div>
+            <div className="text-[15px] font-semibold text-white leading-tight truncate">{reportTitle}</div>
+          </div>
+        </div>
+
+        {/* Iframe preview */}
+        <div className="px-5">
+          <iframe
+            ref={iframeRef}
+            className="w-full rounded-lg border border-neutral-800 bg-white"
+            style={{ height: '500px' }}
+            sandbox="allow-scripts"
+            title="Report"
+          />
+        </div>
+
+        {/* Save as PDF button */}
+        <div className="p-5 pt-3">
+          <button
+            onClick={handleSavePdf}
+            disabled={downloading}
+            className={`w-full flex items-center justify-center gap-2.5 rounded-xl px-5 py-3 text-[14px] font-semibold transition-all ${
+              downloaded
+                ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
+                : downloading
+                  ? 'bg-neutral-800 border border-neutral-700 text-neutral-400 cursor-wait'
+                  : 'bg-white text-black hover:bg-neutral-200 active:scale-[0.98]'
+            }`}
+          >
+            {downloading ? (
+              <><Loader2 size={16} className="animate-spin" /> Preparing PDF...</>
+            ) : downloaded ? (
+              <><CheckCircle2 size={16} /> Done — Click to save again</>
+            ) : (
+              <><Download size={16} /> Save Report as PDF</>
+            )}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -258,9 +311,19 @@ function UserMessage({ message }) {
   );
 }
 
-function StreamingIndicator({ phase, planSteps, completedSteps }) {
+const REPORT_TYPE_COLORS = {
+  trend: 'text-blue-400 bg-blue-400/10',
+  breakdown: 'text-purple-400 bg-purple-400/10',
+  comparison: 'text-amber-400 bg-amber-400/10',
+  anomaly: 'text-red-400 bg-red-400/10',
+  forecast: 'text-emerald-400 bg-emerald-400/10',
+};
+
+function StreamingIndicator({ phase, planSteps, completedSteps, reportSubQuestions = [], reportStepStatuses = new Map() }) {
   const phaseLabel = PHASE_LABELS[phase]
-    || (phase?.startsWith('thinking') ? 'Analyzing...' : 'Working...');
+    || (phase?.startsWith('thinking') ? 'Analyzing...'
+      : phase === 'planning report' ? 'Planning report...'
+      : 'Working...');
 
   return (
     <div className="max-w-[780px]">
@@ -275,6 +338,40 @@ function StreamingIndicator({ phase, planSteps, completedSteps }) {
           <span className="dot-flow" />
           <span className="transition-all duration-300">{phaseLabel}</span>
         </div>
+
+        {/* Report sub-question checklist */}
+        {reportSubQuestions.length > 0 && (
+          <div className="rounded-xl border border-neutral-800/60 bg-[#0D0D0D] overflow-hidden mb-3">
+            <div className="px-3 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-600 border-b border-neutral-800/60">
+              Report Analysis Plan
+            </div>
+            <div className="px-3 py-2 space-y-1.5">
+              {reportSubQuestions.map((sq) => {
+                const status = reportStepStatuses.get(sq.id);
+                const isComplete = status === 'complete';
+                const isFailed = status === 'error';
+                const typeColor = REPORT_TYPE_COLORS[sq.type] || 'text-neutral-400 bg-neutral-400/10';
+                return (
+                  <div key={sq.id} className="flex items-center gap-2 text-[12px]">
+                    {isComplete ? (
+                      <CheckCircle2 size={11} className="text-emerald-400 shrink-0" />
+                    ) : isFailed ? (
+                      <AlertTriangle size={11} className="text-red-400 shrink-0" />
+                    ) : (
+                      <div className="h-[11px] w-[11px] rounded-full border border-neutral-700 shrink-0" />
+                    )}
+                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider shrink-0 ${typeColor}`}>
+                      {sq.type}
+                    </span>
+                    <span className={`font-mono ${isComplete ? 'text-neutral-400' : isFailed ? 'text-red-400' : 'text-neutral-600'}`}>
+                      {sq.question}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {planSteps.length > 0 && (
           <div className="rounded-xl border border-neutral-800/60 bg-[#0D0D0D] overflow-hidden">
@@ -435,6 +532,8 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
   const [streamPhase, setStreamPhase] = useState('');
   const [planSteps, setPlanSteps] = useState([]);
   const [completedSteps, setCompletedSteps] = useState(new Map());
+  const [reportSubQuestions, setReportSubQuestions] = useState([]);
+  const [reportStepStatuses, setReportStepStatuses] = useState(new Map());
   const endRef = useRef(null);
 
   const voice = useVoiceInput({
@@ -503,6 +602,8 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
     setStreamPhase('');
     setPlanSteps([]);
     setCompletedSteps(new Map());
+    setReportSubQuestions([]);
+    setReportStepStatuses(new Map());
 
     try {
       const res = await fetch(`${API_BASE}/chat/stream`, {
@@ -557,6 +658,18 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
 
               case 'step_complete':
                 setCompletedSteps(prev => {
+                  const next = new Map(prev);
+                  next.set(event.step_id, event.status);
+                  return next;
+                });
+                break;
+
+              case 'report_plan':
+                setReportSubQuestions(event.sub_questions || []);
+                break;
+
+              case 'report_step':
+                setReportStepStatuses(prev => {
                   const next = new Map(prev);
                   next.set(event.step_id, event.status);
                   return next;
@@ -729,6 +842,8 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
                   phase={streamPhase}
                   planSteps={planSteps}
                   completedSteps={completedSteps}
+                  reportSubQuestions={reportSubQuestions}
+                  reportStepStatuses={reportStepStatuses}
                 />
               )}
               <div ref={endRef} />
