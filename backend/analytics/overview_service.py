@@ -12,7 +12,8 @@ from backend.queries.overview_queries import (
     get_output_top_performer_query,
     get_user_top_performer_query,
     get_output_type_stats_query,
-    get_kpi_sparklines_query
+    get_output_type_timeseries_query,
+    get_kpi_sparklines_query,
 )
 
 
@@ -28,6 +29,7 @@ def get_overview_snapshot(auth: AuthContext) -> dict:
     language_result = query(get_language_top_performer_query(access_filter), params)
     alert_result = query(get_alerts_query(access_filter), params)
     output_types_result = query(get_output_type_stats_query(access_filter), params)
+    output_ts_result = query(get_output_type_timeseries_query(access_filter), params)
     sparkline_result = query(get_kpi_sparklines_query(access_filter), params)
 
     kpis = kpi_result.rows[0] if kpi_result.rows else {}
@@ -73,6 +75,7 @@ def get_overview_snapshot(auth: AuthContext) -> dict:
             {"id": "published", "label": "Published", "count": kpis.get("published_count", 0), "duration": kpis.get("published_duration", 0)},
         ],
         "outputStats": output_types_result.rows if output_types_result.rows else [],
+        "outputTimeseries": output_ts_result.rows if output_ts_result.rows else [],
         "topPerformers": top_performers,
         "alerts": alerts,
     }
