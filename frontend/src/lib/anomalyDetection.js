@@ -5,7 +5,7 @@
 
 export function detectAnomalies(
   points,
-  { valueKey = "value", periodKey = "period" } = {},
+  { valueKey = "value", periodKey = "period", threshold = 1.5 } = {},
 ) {
   if (points.length < 3) return [];
 
@@ -22,7 +22,7 @@ export function detectAnomalies(
       const z = (value - mean) / std;
       return { period: p[periodKey], value, zScore: z };
     })
-    .filter((p) => Math.abs(p.zScore) >= 1.5)
+    .filter((p) => Math.abs(p.zScore) >= threshold)
     .sort((a, b) => Math.abs(b.zScore) - Math.abs(a.zScore))
     .slice(0, 8)
     .map((p) => ({

@@ -13,6 +13,28 @@ import { detectAnomalies } from '../../lib/anomalyDetection';
 import FloatingDropdown from '../../components/common/FloatingDropdown';
 import DateRangeSlider from '../../components/common/DateRangeSlider';
 
+// ─── Anomaly insight helper ──────────────────────────────────────────────────
+function getAnomalyInsight(anomaly) {
+  const direction = anomaly.direction || 'spike';
+  const severity = anomaly.severity || 'medium';
+  const absZ = Math.abs(Number(anomaly.zScore || 0));
+
+  const definition = `Z-score ${Number(anomaly.zScore || 0).toFixed(2)}: the value is ${absZ.toFixed(1)} standard deviations from the historical mean.`;
+
+  let inference = '';
+  if (direction === 'drop') {
+    inference = severity === 'high'
+      ? 'Sharp decline — investigate possible data gaps, outages, or a sudden loss of activity.'
+      : 'Moderate dip — worth tracking; may recover naturally or signal an emerging issue.';
+  } else {
+    inference = severity === 'high'
+      ? 'Unusual spike — likely driven by a campaign, event, bulk upload, or data influx.'
+      : 'Mild uptick — could be organic growth or a minor event; watch subsequent periods.';
+  }
+
+  return { definition, inference };
+}
+
 // ─── Palettes ────────────────────────────────────────────────────────────────
 const PLATFORM_COLORS = ['#ef4444','#dc2626','#b91c1c','#991b1b','#7f1d1d','#737373','#525252','#3a3a3a'];
 
@@ -466,10 +488,13 @@ export default function UserJourneyModule({ authUser }) {
       else value = r.views || 0;
       return { period: r.period, value };
     });
-    return detectAnomalies(points);
+    return detectAnomalies(points, { threshold: 1.2 });
   }, [timeseries, activeChart]);
 
+  const anomalyLookup = useMemo(() => new Map(anomalies.map(a => [String(a.period).slice(0, 10), a])), [anomalies]);
   const anomalyDates = useMemo(() => new Map(anomalies.map(a => [String(a.period).slice(0, 10), a.direction])), [anomalies]);
+  const anomalyLookupRef = useRef(anomalyLookup);
+  useEffect(() => { anomalyLookupRef.current = anomalyLookup; }, [anomalyLookup]);
 
   // ── Chart tabs ──────────────────────────────────────────────────────────────
   const TABS = [
@@ -596,9 +621,44 @@ export default function UserJourneyModule({ authUser }) {
     animation: { duration: 700 },
   }), [platformBD]);
 
+  const anomalyTooltip = {
+    ...TOOLTIP,
+    callbacks: {
+      afterBody(tooltipItems) {
+        const label = tooltipItems[0]?.label;
+        if (!label) return [];
+        const date = String(label).slice(0, 10);
+        const anomaly = anomalyLookupRef.current.get(date);
+        if (!anomaly) return [];
+        const z = Number(anomaly.zScore || 0).toFixed(2);
+        const absZ = Math.abs(Number(anomaly.zScore || 0));
+        const direction = anomaly.direction || 'spike';
+        const severity = anomaly.severity || 'medium';
+        const defLine = `Z-Score ${z}: value is ${absZ.toFixed(1)}σ from the mean`;
+        let insight = '';
+        if (direction === 'drop') {
+          insight = severity === 'high'
+            ? 'Sharp decline — possible data gap, outage, or lost activity.'
+            : 'Moderate dip — worth monitoring for a continued downtrend.';
+        } else {
+          insight = severity === 'high'
+            ? 'Unusual spike — likely an event, campaign, or data burst.'
+            : 'Mild uptick — may be organic growth or a small event effect.';
+        }
+        return ['', `⚠ ANOMALY DETECTED`, defLine, `→ ${insight}`];
+      },
+    },
+    backgroundColor: 'rgba(15,15,15,0.97)',
+    titleColor: '#e5e7eb',
+    bodyColor: '#9ca3af',
+    borderColor: 'rgba(239,68,68,0.4)',
+    borderWidth: 1,
+    padding: 12,
+    boxPadding: 4,
+  };
   const baseOpts = {
     responsive: true, maintainAspectRatio: false, animation: { duration: 600 },
-    plugins: { legend: { labels: { color: '#525252', font: { size: 11 }, boxWidth: 12, padding: 16 } }, tooltip: TOOLTIP },
+    plugins: { legend: { labels: { color: '#d1d5db', font: { size: 11 }, boxWidth: 12, padding: 16 } }, tooltip: anomalyTooltip },
     scales: { x: SCALE_X, y: SCALE_Y },
   };
   const rateOpts  = { ...baseOpts, scales: { x: SCALE_X, y: { ...SCALE_Y, ticks: { ...SCALE_Y.ticks, callback: v => `${v}%` } } } };
@@ -1080,7 +1140,9 @@ export default function UserJourneyModule({ authUser }) {
                       <div className="text-sm font-semibold text-neutral-300 mb-1">System Normal</div>
                       <div className="text-xs text-neutral-500">No anomalies detected.</div>
                     </div>
-                  ) : anomalies.map((a) => (
+                  ) : anomalies.map((a) => {
+                    const { definition, inference } = getAnomalyInsight(a);
+                    return (
                     <div key={`${a.period}-${a.direction}`}
                       className="group relative overflow-hidden rounded-xl border border-neutral-800 bg-[#0d0d0d] p-4 transition-all hover:border-neutral-600">
                       <div className={`absolute top-0 left-0 w-1 h-full ${a.direction === 'drop' ? 'bg-amber-500' : 'bg-emerald-500'}`} />
@@ -1094,8 +1156,16 @@ export default function UserJourneyModule({ authUser }) {
                           <div className="text-[10px] uppercase font-bold text-neutral-500">Z {Number(a.zScore).toFixed(1)}</div>
                         </div>
                       </div>
+                      {/* Insight — revealed on hover */}
+                      <div className="mt-0 max-h-0 overflow-hidden group-hover:max-h-40 group-hover:mt-3 transition-all duration-300 ease-in-out">
+                        <div className="border-t border-neutral-800/70 pt-3 space-y-1.5">
+                          <p className="text-[11px] text-neutral-500 leading-relaxed">{definition}</p>
+                          <p className="text-[11px] text-neutral-300 leading-relaxed">→ {inference}</p>
+                        </div>
+                      </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
