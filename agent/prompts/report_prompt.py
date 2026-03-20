@@ -44,7 +44,12 @@ Your job in this phase is to PLAN the report by decomposing the user's query int
 {question}
 
 ## Output Format
-You MUST call the `create_report_plan` tool with your plan.
+Return ONLY a JSON array (no markdown fences, no commentary, no explanation):
+[
+  {{"id": "q1", "type": "trend", "question": "How has X changed monthly?", "sql": "SELECT ..."}},
+  {{"id": "q2", "type": "breakdown", "question": "What is the split of X by category?", "sql": "SELECT ..."}},
+  ...
+]
 """
 
 REPORT_SYNTHESIS_PROMPT = """\

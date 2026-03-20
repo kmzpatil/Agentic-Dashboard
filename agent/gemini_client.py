@@ -33,8 +33,7 @@ def get_gemini_llm():
         logger.warning("GOOGLE_API_KEY / GEMINI_KEYS not set — Gemini unavailable")
         return None
 
-    # Always use gemini-2.5-flash
-    model = "gemini-2.5-flash"
+    model = os.getenv("GEMINI_REPORT_MODEL", "gemini-2.5-flash").strip().strip('"')
 
     try:
         from langchain_google_genai import ChatGoogleGenerativeAI
