@@ -92,7 +92,7 @@ def resolve_postgres_engine() -> Engine:
         )
 
     creds = f"{user}:{password}@" if password else f"{user}@"
-    url = f"postgresql+psycopg://{creds}{host}:{port}/{database}?sslmode={sslmode}"
+    url = f"postgresql+psycopg2://{creds}{host}:{port}/{database}?sslmode={sslmode}"
     return create_engine(url)
 
 

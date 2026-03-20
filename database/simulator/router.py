@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 from .engine import SimulatorEngine
 
@@ -24,6 +25,9 @@ def _get_engine() -> SimulatorEngine:
     except Exception as exc:
         engine_error = str(exc)
         raise HTTPException(status_code=503, detail=f"Simulator unavailable: {exc}") from exc
+
+
+# ── Existing endpoints ────────────────────────────────────────────
 
 
 @router.get("/status")
@@ -102,3 +106,65 @@ def get_quality():
 @router.get("/metrics/timeseries")
 def get_timeseries():
     return _get_engine().get_timeseries_metrics()
+
+
+# ── New DQA endpoints ─────────────────────────────────────────────
+
+
+@router.get("/quality/stages")
+def get_quality_stages():
+    """Per-stage quality scores (upload, processing, publishing)."""
+    return _get_engine().get_stage_quality_scores()
+
+
+@router.get("/quality/funnel")
+def get_quality_funnel():
+    """Pipeline counts and drop-off rates."""
+    return _get_engine().get_pipeline_funnel()
+
+
+@router.get("/quality/errors")
+def get_quality_errors():
+    """Error distribution by category, stage, and code."""
+    return _get_engine().get_error_distribution()
+
+
+@router.get("/quality/timeseries")
+def get_quality_timeseries():
+    """Quality scores over time."""
+    return _get_engine().get_stage_timeseries()
+
+
+@router.get("/quality/critical")
+def get_quality_critical(limit: int = Query(10, ge=1, le=50)):
+    """Most recent high-severity quality issues."""
+    return _get_engine().get_recent_critical_issues(limit=limit)
+
+
+@router.get("/quality/latency")
+def get_quality_latency():
+    """Processing latency distribution histogram."""
+    return _get_engine().get_processing_latency_distribution()
+
+
+@router.get("/schemas")
+def get_schemas():
+    """Full schema with column descriptions."""
+    return _get_engine().get_schema_descriptions()
+
+
+@router.get("/errors/config")
+def get_error_config():
+    """Current error injection rates."""
+    return _get_engine().get_error_config()
+
+
+class ErrorConfigBody(BaseModel):
+    rates: dict[str, float]
+
+
+@router.post("/errors/config")
+def set_error_config(body: ErrorConfigBody):
+    """Update error injection rates."""
+    _get_engine().set_error_config(body.rates)
+    return {"message": "Error rates updated", "rates": _get_engine().get_error_config()}
