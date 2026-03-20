@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ChevronDown, ChevronRight, Database, Activity } from 'lucide-react';
+import { isReportHtml, cleanReportHtml } from '../../lib/reportXmlParser';
+import ReportRenderer from '../reports/ReportRenderer';
 
 const markdownComponents = {
   p:  ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
@@ -75,6 +77,22 @@ export default function ChatMessage({ msg, showActivity = false }) {
         </div>
       </div>
     );
+  }
+
+  // Check if this is a report message
+  const reportRaw = msg.reportHtml || msg.content || '';
+  const isReport = msg.intent === 'report' || isReportHtml(reportRaw);
+
+  if (isReport) {
+    const html = msg.reportHtml || cleanReportHtml(reportRaw);
+    if (html) {
+      return (
+        <div>
+          <ReportRenderer reportHtml={html} />
+          {showActivity && <ActivityBlock actions={msg.actions} />}
+        </div>
+      );
+    }
   }
 
   return (
