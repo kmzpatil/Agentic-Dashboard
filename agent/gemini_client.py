@@ -23,13 +23,17 @@ def get_gemini_llm():
     Create a fresh Gemini LLM instance every time.
     No caching — avoids stale model name issues.
     """
+    # Support both GOOGLE_API_KEY and GEMINI_KEYS (comma-separated, use first)
     api_key = os.getenv("GOOGLE_API_KEY", "").strip().strip('"')
     if not api_key:
-        logger.warning("GOOGLE_API_KEY not set — Gemini unavailable")
+        gemini_keys = os.getenv("GEMINI_KEYS", "").strip()
+        if gemini_keys:
+            api_key = gemini_keys.split(",")[0].strip()
+    if not api_key:
+        logger.warning("GOOGLE_API_KEY / GEMINI_KEYS not set — Gemini unavailable")
         return None
 
-    # Always use gemini-2.5-flash
-    model = "gemini-2.5-flash"
+    model = os.getenv("GEMINI_REPORT_MODEL", "gemini-2.5-flash").strip().strip('"')
 
     try:
         from langchain_google_genai import ChatGoogleGenerativeAI

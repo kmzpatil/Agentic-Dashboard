@@ -1,15 +1,26 @@
 """
 agent.py
 -------------
-Frammer Analytics Agent — Plan-Execute-Synthesize Architecture.
+Frammer Analytics Agent — Unified ReAct Loop Architecture.
 
 Architecture:
-  1. Planner:     Single LLM call produces a structured execution plan (SQL queries, charts).
-  2. Executor:    Runs plan steps in parallel (no LLM calls needed).
-  3. Synthesizer: Single LLM call summarizes results into a concise response.
-  4. Repair:      Optional — fixes failed SQL steps (max 2 retries).
+  The agent uses a tool-calling ReAct loop with six tools:
+    1. execute_queries — Run SQL queries in parallel, results summarized and fed back.
+    2. answer — Provide the final response (with optional chart specs).
+    3. clarify — Ask the user a clarifying question mid-loop (pauses and resumes).
+    4. get_column_values — Look up distinct values for a table column.
+    5. get_kpi_info — Get KPI definition, formula, and SQL pattern.
+    6. explore — Run lightweight exploration queries (max 5 rows each).
 
-Token budget: ~20-30k total (down from 150-200k with the old ReAct loop).
+  Two modes:
+    - normal: Standard analytics Q&A. Returns text + charts.
+    - report: Data gathering + Gemini-powered report formatting → HTML report.
+
+  The loop iterates until the agent calls answer/clarify, with a safety cap
+  of MAX_ITERATIONS. SQL errors are implicitly repaired via the feedback loop.
+
+  All database access routes through the MCP DatabaseClient (via execute_sql_query)
+  which provides query validation, auth-scoped CTE injection, and connection management.
 """
 
 import asyncio
@@ -18,11 +29,10 @@ import logging
 import re
 import sys
 import time
-import uuid as _uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, AsyncGenerator, Dict, List, Optional, TypedDict
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from dotenv import load_dotenv
 
@@ -46,12 +56,14 @@ try:
         build_report_synthesis_prompt,
     )
     from gemini_client import get_gemini_llm
+    from report_formatter import render_report_html
 except ImportError:
     from agent.prompts.report_prompt import (
         build_report_planning_prompt,
         build_report_synthesis_prompt,
     )
     from agent.gemini_client import get_gemini_llm
+    from agent.report_formatter import render_report_html
 
 # -- Core MCP and Tools --
 try:
@@ -100,7 +112,6 @@ class ChartResult:
     chart_type: str = ""
     size_column: str = ""
     group_column: str = ""
-    valid_types: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -115,17 +126,17 @@ class AgentResult:
     # Legacy compat
     chart_xml: str = ""
     chart_data: Dict = field(default_factory=dict)
+    # Report mode
+    mode: str = "normal"
+    report: Optional[Dict] = None
+    # Clarification
+    clarification: Optional[str] = None
+    agent_state: Optional[Dict] = None
 
 
-# ── Plan Step Types ──────────────────────────────────────────────────────────
+# ── Constants ────────────────────────────────────────────────────────────────
 
-class PlanStep(TypedDict, total=False):
-    id: str           # "s1", "s2", ...
-    action: str       # "run_sql" | "build_chart" | "get_column_values" | "get_time" | "explore"
-    params: Dict      # action-specific parameters
-    depends_on: List[str]  # step IDs this depends on
-    description: str  # human-readable description
-
+MAX_ITERATIONS = 10  # Safety cap — agent finishes naturally via answer/clarify
 
 # ── Schema cache ─────────────────────────────────────────────────────────────
 _schema_cache: Optional[str] = None
@@ -133,24 +144,213 @@ _schema_cache: Optional[str] = None
 # ── LLM client ───────────────────────────────────────────────────────────────
 _llm_client = LLMClient()
 
-# ── System Prompts (split for token efficiency) ──────────────────────────────
 
-PLANNER_PROMPT = """\
-You are Frammer AI, an analytics planner for a media production platform.
-Your job is to analyze the user's question and produce an EXECUTION PLAN — a list of steps (SQL queries, charts) that will answer the question.
+# ── Report Planning ──────────────────────────────────────────────────────────
 
-## How to Plan
+async def _plan_report_sub_questions(
+    question: str,
+    schema: str,
+    metrics: str,
+    auth: Any = None,
+) -> List[Dict]:
+    """
+    Decompose a report query into typed sub-questions using a fast LLM call.
+    Uses the structured report planning prompt from prompts/report_prompt.py.
+    """
+    auth_block = _build_auth_block(auth) if auth else ""
 
-1. First, understand what the user is asking:
-   - If it's conversational (greeting, thanks, small talk) → respond with `"conversational": true` and a brief reply. No plan needed.
-   - If it's a data question → create a plan with SQL queries and optional charts.
+    prompt = build_report_planning_prompt(
+        question=question,
+        schema_context=schema or "",
+        metrics_context=metrics or "",
+        auth_block=auth_block,
+    )
 
-2. For data questions, plan ALL needed queries upfront:
-   - Each query should be independent where possible (so they can run in parallel)
-   - Use the schema and metrics below to write correct SQL
-   - Plan charts for results that benefit from visualization
+    fast_client = LLMClient.fast()
+    resp = await asyncio.to_thread(fast_client.invoke, prompt)
 
-3. Mark dependencies: if a chart needs data from a specific query, set `depends_on` to that query's step ID.
+    # Parse JSON from response — LLM may wrap it in markdown or narrative
+    raw = resp.content.strip()
+    raw = re.sub(r'^```(?:json)?\s*\n?', '', raw, flags=re.IGNORECASE)
+    raw = re.sub(r'\n?```\s*$', '', raw).strip()
+
+    # Try direct parse first
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, list):
+            return parsed
+        if isinstance(parsed, dict) and "sub_questions" in parsed:
+            return parsed["sub_questions"]
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # Extract JSON array from within narrative text
+    match = re.search(r'\[\s*\{.*\}\s*\]', raw, re.DOTALL)
+    if match:
+        try:
+            parsed = json.loads(match.group(0))
+            if isinstance(parsed, list):
+                return parsed
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    logger.warning("Failed to parse report sub-questions: %s", raw[:200])
+
+    # Fallback: generic sub-questions
+    return [
+        {"id": "q1", "type": "trend", "question": f"What are the time trends for: {question}"},
+        {"id": "q2", "type": "breakdown", "question": f"What is the breakdown by category for: {question}"},
+        {"id": "q3", "type": "comparison", "question": f"How do different segments compare for: {question}"},
+    ]
+
+
+# ── Tool definitions (for LangChain bind_tools) ─────────────────────────────
+
+from langchain_core.tools import tool
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+
+@tool
+def execute_queries(
+    queries: Optional[List[Dict[str, str]]] = None,
+    reasoning: str = "",
+) -> str:
+    """Execute SQL queries to gather data for answering the user's question.
+    Args:
+        queries: List of {"sql": "SELECT ...", "description": "what this computes"}.
+                 All queries run in parallel. Use valid PostgreSQL SELECT statements.
+        reasoning: Brief explanation of why you need this data.
+    """
+    return json.dumps({"status": "ok", "queries": queries or []})
+
+
+@tool
+def answer(
+    response: str = "",
+    needs_chart: bool = False,
+    chart_intent: str = "",
+    charts: Optional[List[Dict]] = None,
+) -> str:
+    """Provide the final answer to the user's question.
+    Args:
+        response: Markdown response (2-3 sentences, business language, bold key numbers).
+                  Never expose SQL, table names, column names, or internal IDs.
+        needs_chart: Whether the answer benefits from a chart visualization.
+        chart_intent: If needs_chart, the broad intent: "comparison", "trend", "distribution", "proportion", "correlation".
+        charts: If needs_chart, list of chart specs. Each: {
+            "chart_type": "bar"|"line"|"pie"|"doughnut"|"scatter"|"horizontal-bar"|"stacked-bar"|"area"|"heatmap"|"treemap"|"box"|"violin"|"radar"|"bubble"|"polar-area",
+            "source_query_index": 0,
+            "x_column": "column_name",
+            "y_columns": "col1,col2",
+            "title": "Chart Title",
+            "size_column": "",
+            "group_column": ""
+        }
+    """
+    return json.dumps({"status": "ok"})
+
+
+@tool
+def clarify(question: str = "") -> str:
+    """Ask the user a clarifying question when the request is ambiguous.
+    Args:
+        question: The specific clarification question to ask the user.
+                  Use this when the query is genuinely ambiguous between two+
+                  interpretations, or when a filter value or time range is unclear.
+    """
+    return json.dumps({"status": "clarification_requested", "question": question})
+
+
+@tool
+def get_column_values_tool(
+    table_name: str = "",
+    column_name: str = "",
+) -> str:
+    """Look up distinct values for a column in the database schema profile.
+    Args:
+        table_name: The database table name (e.g. "raw_videos", "created_assets").
+        column_name: The column to get distinct values for (e.g. "Language", "Input_Type").
+    Use this BEFORE writing SQL when you need to know valid filter values.
+    """
+    return json.dumps({"status": "ok", "table_name": table_name, "column_name": column_name})
+
+
+@tool
+def get_kpi_info_tool(
+    kpi_id: str = "",
+) -> str:
+    """Get the definition, formula, and SQL pattern for a specific business KPI.
+    Args:
+        kpi_id: The KPI identifier. Available: uploaded_count, processed_count,
+                created_count, published_count, publish_conversion,
+                month_by_month_use_rate, processing_efficiency, creation_rate,
+                waste_index, upload_failure_rate, roi, cdas, interaction_lift,
+                cross_dimension_entropy, publish_dependency_index, point_biserial,
+                multidimensional_waste, ctas, rei.
+    """
+    return json.dumps({"status": "ok", "kpi_id": kpi_id})
+
+
+@tool
+def explore_tool(
+    queries: Optional[List[str]] = None,
+    reasoning: str = "",
+) -> str:
+    """Run lightweight exploration queries (e.g. DISTINCT values, MIN/MAX, sample rows).
+    Args:
+        queries: List of simple SQL strings for exploration. Each returns max 5 rows.
+        reasoning: Why you need this exploration.
+    Use this for quick schema/data discovery before writing full analytical queries.
+    """
+    return json.dumps({"status": "ok", "queries": queries or []})
+
+
+# ── Unified System Prompt ────────────────────────────────────────────────────
+
+AGENT_PROMPT = """\
+You are Frammer AI, an analytics agent for a media production platform.
+You answer questions by querying a PostgreSQL database and synthesizing results.
+
+## How to Work
+
+You have six tools:
+1. `execute_queries` — Run SQL queries to gather data. All queries execute in parallel.
+2. `answer` — Provide your final response when you have enough information.
+3. `clarify` — Ask the user a clarifying question when the request is genuinely ambiguous.
+4. `get_column_values_tool` — Look up distinct values for a column. Use before writing SQL when unsure about filter values.
+5. `get_kpi_info_tool` — Get the definition, formula, and SQL pattern for a business KPI.
+6. `explore_tool` — Run lightweight exploration queries (DISTINCT values, MIN/MAX, sample rows). Max 5 rows each.
+
+**Process:**
+- First, decide if this is conversational (greeting, thanks, small talk) → call `answer` directly with a brief reply.
+- For data questions: call `execute_queries` with the SQL you need. Pack as many queries as you can into each call — they run in parallel.
+- You'll receive a summary of results (columns, row counts, sample rows, numeric stats).
+- If the data is sufficient to answer the question, call `answer`.
+- If you need more data (e.g. a follow-up query based on initial results, or a query failed and needs fixing), call `execute_queries` again.
+- You may iterate up to {max_iterations} times. Make each iteration count.
+
+**Efficiency rules:**
+- Check "Previous Query Results" before every iteration. If data is already there, use it — do NOT re-fetch.
+- Never repeat a query whose results already appear in Previous Query Results.
+- For broad questions, gather all the data you need in one or two batches, then call `answer`.
+
+**When to use `get_column_values_tool`:**
+- You need to filter by a specific value but aren't sure what values exist.
+- Example: before filtering by language, check what languages are in the data.
+
+**When to use `get_kpi_info_tool`:**
+- The user asks about a specific KPI (e.g. "waste index", "publish conversion").
+- You need the exact formula or SQL pattern for a KPI calculation.
+
+**When to use `explore_tool`:**
+- Quick data discovery (e.g. "SELECT DISTINCT ..." or "SELECT MIN/MAX ...").
+- Checking if a join path works before writing a complex query.
+
+**When to use `clarify`:**
+- The question could refer to multiple different metrics, entities, or time periods.
+- A filter value is ambiguous (e.g. "recent" without a clear timeframe).
+- The user's intent is genuinely unclear between two+ interpretations.
+- Do NOT use clarify for simple questions. Most queries (99%+) should proceed without clarification.
 
 ## Database Schema
 {schema_block}
@@ -176,92 +376,43 @@ The dataset tracks a media content pipeline:
 - Join chain: raw_videos (rv) -> created_assets (ca) -> published_posts (pp) -> post_distribution (pd)
 - For conversion rates: group by channel/user through rv/rvc, NOT through post_distribution
 - Count published volume with COUNT(DISTINCT pp."Asset_ID"), not Post_ID
-- NEVER guess filter values. The schema above has sample values — check them. If uncertain, add a `get_column_values` step.
+- NEVER guess filter values. If uncertain, use `get_column_values_tool` or `explore_tool` first.
 - If >100 rows expected, use GROUP BY / aggregations in SQL
-{auth_block}
-{memory_block}
 
 ## Custom KPIs
-The following specialized business KPIs are available for analytics. If you need the exact formula or business significance of any KPI, add a `get_kpi_info` step to your plan.
+The following specialized business KPIs are available. Use `get_kpi_info_tool` to get the exact formula and SQL pattern.
 Available IDs: uploaded_count, processed_count, created_count, published_count, publish_conversion, month_by_month_use_rate, processing_efficiency, creation_rate, waste_index, upload_failure_rate, roi, cdas, interaction_lift, cross_dimension_entropy, publish_dependency_index, point_biserial, multidimensional_waste, ctas, rei
 
-## System Environment
-Current System Time: {now_str}
-
-## Output Format
-
-You MUST call the `create_plan` tool with your execution plan. The plan is a JSON object with:
-- `conversational`: boolean — true if this is just a greeting/chat (no data needed)
-- `reply`: string — only if conversational, the response text
-- `reasoning`: string — brief explanation of your approach
-- `steps`: array of step objects, each with:
-  - `id`: string like "s1", "s2", ...
-  - `action`: "run_sql" | "build_chart" | "get_column_values" | "get_time" | "explore" | "get_kpi_info"
-  - `params`: object with action-specific params
-  - `depends_on`: array of step IDs this depends on (empty if independent)
-  - `description`: brief human-readable description
-
-### Action params:
-- `run_sql`: {{ "sql": "SELECT ...", "description": "what this query computes" }}
-- `build_chart`: see Chart Type Selection Guide below
-- `get_column_values`: {{ "table_name": "table", "column_name": "column" }}
-- `get_time`: {{}}  (returns current datetime)
-- `explore`: {{ "queries": ["SELECT DISTINCT ...", "SELECT MIN(...) ..."] }}  (lightweight exploration)
-- `get_kpi_info`: {{ "kpi_id": "uploaded_count" }} (returns definition/formula for a specific KPI)
-
-### Chart Type Selection Guide
+## Chart Type Selection Guide
 
 Pick the chart type that best matches the DATA SHAPE and ANALYTICAL INTENT:
 
-#### Comparison Charts
-- `bar` — Compare values across categories (e.g. uploads by channel). Best for ≤15 categories, 1-2 metrics.
-- `stacked-bar` — Show composition AND total across categories (e.g. uploads by channel, broken down by language). Use when you have 2+ metrics that sum to a meaningful total.
-- `horizontal-bar` — Rank items or compare categories with long labels (e.g. "Top 10 users by upload count").
+**Comparison**: `bar` (≤15 categories), `stacked-bar` (composition + total), `horizontal-bar` (ranking/long labels)
+**Trend**: `line` (change over time, x-axis must be date), `area` (stacked composition over time)
+**Proportion**: `pie`/`doughnut` (≤6 categories, 1 metric), `polar-area` (4-8 categories)
+**Distribution**: `box`/`violin` (SQL must return category, min_val, q1, median, q3, max_val)
+**Correlation**: `scatter` (two numeric vars, use group_column for color), `bubble` (add size_column)
+**Multi-dimensional**: `radar` (4-8 metrics, ≤5 entities), `heatmap` (x_dim, y_dim, value columns)
+**Hierarchical**: `treemap` (label, value, optional group)
 
-#### Trend Charts
-- `line` — Show change over time for 1-2 metrics (e.g. monthly upload trend). X-axis MUST be a date/time column.
-- `area` — Show composition over time with stacked filled regions (e.g. monthly uploads by language stacked). Use when 2+ metrics should show both individual trends AND their cumulative total.
+When specifying charts in `answer`, reference queries by their 0-based index in the order they were executed across ALL iterations.
+{auth_block}
+{memory_block}
 
-#### Proportion Charts
-- `pie` — Show parts of a whole (e.g. share of uploads by language). ONLY when ≤6 categories and 1 metric.
-- `doughnut` — Same as pie but cleaner. Prefer over pie for a modern look.
-- `polar-area` — Compare magnitudes across categories on a radial layout. Good for 4-8 categories.
+## Previous Query Results
+{results_context}
 
-#### Distribution Charts
-- `box` — Show statistical distribution (min, Q1, median, Q3, max). SQL MUST return columns: category, min_val, q1, median, q3, max_val.
-  SQL pattern: `SELECT category, MIN(val) AS min_val, PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY val) AS q1, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY val) AS median, PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY val) AS q3, MAX(val) AS max_val FROM ... GROUP BY category`
-- `violin` — Same as box but shows distribution shape. Same SQL pattern.
+## Rules for Answering
+- **Extreme brevity**: 2-3 sentences max for simple questions. For broad questions, up to a short paragraph with key findings.
+- **Data integrity**: ONLY use numbers from the results. Never estimate or hallucinate.
+- **Business language**: uploads (not raw_videos), generated content/assets (not created_assets), published content (not published_posts), content format (not Input_Type), asset type (not Output_Type).
+- **Never expose**: SQL, table names, column names, internal IDs, or schema details.
+- **Bold** key numbers and terms. Use markdown.
+- If results show trends or comparisons, highlight the most important finding.
+- **NEVER generate HTML**. Your response must be plain text with markdown formatting only. No `<div>`, `<style>`, `<html>`, or any HTML tags.
+- If the user asks for a "report", still answer in concise markdown. Full formatted reports are generated separately via report mode.
 
-#### Correlation Charts
-- `scatter` — Show relationship between two numeric variables. X and Y must both be numeric. Use `group_column` to color-code by category.
-- `bubble` — Like scatter but adds a third dimension via bubble size. Use `size_column` param.
-
-#### Multi-dimensional
-- `radar` — Compare entities across multiple metrics on a spider web (e.g. compare 3 channels across uploads, assets, publish rate). Best for 4-8 metrics, ≤5 entities. SQL should return one row per entity with metrics as columns.
-- `heatmap` — Show intensity across two categorical dimensions (e.g. output_type × channel). SQL must return x_dim, y_dim, value columns. For correlation heatmaps, use PostgreSQL CORR(x, y) to compute Pearson correlation values between numeric columns.
-
-#### Hierarchical
-- `treemap` — Show hierarchical proportions (e.g. uploads by client > channel). SQL should return label, value, and optionally group columns.
-
-### build_chart params:
-{{
-  "chart_type": "bar"|"stacked-bar"|"horizontal-bar"|"line"|"area"|"pie"|"doughnut"|"polar-area"|"scatter"|"bubble"|"radar"|"heatmap"|"box"|"violin"|"treemap",
-  "valid_types": ["type1", "type2"],   // List of alternative chart types valid for this data
-  "x_column": "column for X axis or category axis",
-  "y_columns": "col1,col2",
-  "size_column": "col3",              // ONLY for bubble charts
-  "group_column": "col4",             // for scatter color groups or radar entities
-  "title": "Short descriptive title",
-  "source_step": "s1"
-}}
-
-### Chart Compatibility Guiding Rules:
-- **Time Series (X is date)**: `line`, `area`, `bar` (if few points). NEVER `pie`/`doughnut`.
-- **Categorical (X is labels)**: `bar`, `horizontal-bar`, `pie` (if metrics are summable and ≤6 categories).
-- **Parts of a Whole**: `pie`, `doughnut`, `treemap`. Valid if values represent a complete set.
-- **Correlations**: `scatter`, `bubble`. Valid if X and Y are both continuous numeric metrics.
-- **Multiple Metrics**: `radar`, `stacked-bar` (if units match).
-- **Distributions**: `box`, `violin`. Valid only if SQL returns the statistical columns (min, q1, etc).
+Current System Time: {now_str}
 """
 
 SYNTHESIZER_PROMPT = """\
@@ -271,11 +422,9 @@ You are Frammer AI. Summarize the analysis results below into a clear, concise r
 - **Extreme Brevity**: 2-3 sentences max. No fluff.
 - **Data Integrity**: ONLY use numbers from the results. Never estimate or hallucinate.
 - **Formatting**: **Bold** key numbers and terms. Use markdown.
-- **Privacy**: Never expose SQL, internal IDs, database table names (e.g. raw_videos, created_assets, published_posts, post_distribution, raw_video_channel), column names (e.g. Video_ID, Asset_ID, Input_Type, Output_Type, User_ID), or any technical schema details.
-- **Business Language**: Always translate technical terms to business language — uploads (not raw_videos), generated content/assets (not created_assets), published content (not published_posts), content format (not Input_Type), asset type (not Output_Type), channel (not Channel_Name), user (not User_ID).
+- **Privacy**: Never expose SQL, internal IDs, database table names, column names, or any technical schema details.
+- **Business Language**: Always translate technical terms to business language — uploads (not raw_videos), generated content/assets (not created_assets), published content (not published_posts), content format (not Input_Type), asset type (not Output_Type).
 - **No Images**: Do NOT generate markdown image tags.
-- If results show trends or comparisons, highlight the most important finding.
-- If multiple datasets were queried, synthesize the overall story.
 
 ## User Question
 {question}
@@ -284,77 +433,30 @@ You are Frammer AI. Summarize the analysis results below into a clear, concise r
 {results_block}
 """
 
-REPAIR_PROMPT = """\
-The following SQL query failed. Fix the SQL and return ONLY the corrected query.
 
-## Error
-{error}
+# ── Auth block builder ───────────────────────────────────────────────────────
 
-## Failed SQL
-```sql
-{sql}
-```
+def _build_auth_block(auth: Any = None) -> str:
+    if not auth:
+        return ""
+    role = getattr(auth, "role", "user")
+    username = getattr(auth, "username", "Unknown")
+    client_name = getattr(auth, "client_name", None)
+    user_id = getattr(auth, "user_id", None)
 
-## Schema Context
-{schema_block}
-
-## Rules
-- Double-quote mixed-case columns: "Upload_Date", "Video_ID"
-- Check table/column names against the schema
-- Return ONLY the corrected SQL, nothing else.
-"""
-
-
-# ── Tool: create_plan (for structured LLM output) ───────────────────────────
-
-from langchain_core.tools import tool
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+    block = f"\n## USER PROFILE\n- User: **{username}** | Role: **{role}**"
+    if role != "website_admin":
+        if client_name:
+            block += f"\n- RESTRICTION: Only client **{client_name}** data. Use: `COALESCE(ch.\"Client_Name\", u.\"Client_Name\") = '{client_name}'`"
+        elif role == "user" and user_id:
+            block += f"\n- RESTRICTION: Only data for user ID **{user_id}**. Use: `rv.\"User_ID\" = {user_id}`"
+    return block
 
 
-@tool
-def create_plan(
-    conversational: bool = False,
-    reply: str = "",
-    reasoning: str = "",
-    steps: Optional[List[Dict]] = None,
-) -> str:
-    """Create an execution plan for answering the user's data question.
-    Args:
-        conversational: True if this is just a greeting/chat (no data queries needed).
-        reply: If conversational, the response text.
-        reasoning: Brief explanation of your analytical approach.
-        steps: List of execution steps. Each step has: id, action, params, depends_on, description.
-    """
-    return json.dumps({
-        "conversational": conversational,
-        "reply": reply,
-        "reasoning": reasoning,
-        "steps": steps or [],
-    })
-
-
-@tool
-def create_report_plan(
-    sub_questions: Optional[List[Dict]] = None,
-) -> str:
-    """Create an analytical plan for a detailed report.
-    Args:
-        sub_questions: List of sub-questions. Each has: id (q1, q2, ...), type (trend|breakdown|comparison|anomaly|forecast), question, sql.
-    """
-    return json.dumps({"sub_questions": sub_questions or []})
-
-
-# ── LLM with plan tool ──────────────────────────────────────────────────────
-_planner_llm = _llm_client.llm.bind_tools([create_plan])
-_report_planner_llm = _llm_client.llm.bind_tools([create_report_plan])
-_synthesizer_llm = _llm_client.llm
-_repair_llm = _llm_client.llm
-
-
-# ── Step Executors ───────────────────────────────────────────────────────────
+# ── SQL Step Executor ────────────────────────────────────────────────────────
 
 async def _execute_sql_step(params: Dict, auth: Any = None) -> Dict:
-    """Execute a SQL query step."""
+    """Execute a SQL query step via MCP DatabaseClient."""
     sql = params.get("sql", "")
     raw = await asyncio.to_thread(execute_sql_query, sql, limit=200, auth=auth)
     parsed = json.loads(raw)
@@ -363,12 +465,10 @@ async def _execute_sql_step(params: Dict, auth: Any = None) -> Dict:
         return {"status": "error", "error": parsed["error"], "sql": sql}
 
     records = parsed.get("data", [])
-    result_id = str(_uuid.uuid4())[:8]
     cols = list(records[0].keys()) if records else []
 
     return {
         "status": "success",
-        "result_id": result_id,
         "row_count": len(records),
         "columns": cols,
         "data": records,
@@ -377,493 +477,339 @@ async def _execute_sql_step(params: Dict, auth: Any = None) -> Dict:
     }
 
 
-async def _execute_chart_step(params: Dict, results: Dict) -> Dict:
-    """Execute a chart-building step."""
-    source_step = params.get("source_step", "")
-    source_data = results.get(source_step, {})
-    records = source_data.get("data", [])
+# ── Result Summarizer ────────────────────────────────────────────────────────
 
-    if not records:
-        return {"status": "error", "error": f"No data from step {source_step}"}
+def _summarize_query_results(query_results: List[Dict]) -> str:
+    """Build a compact summary of query results for the LLM context."""
+    if not query_results:
+        return "No queries executed yet."
 
-    attrs = {
-        "type": params.get("chart_type", "bar"),
-        "x_axis": params.get("x_column", ""),
-        "y_axis": params.get("y_columns", ""),
-        "title": params.get("title", "Chart"),
-    }
-    if params.get("size_column"):
-        attrs["size_field"] = params["size_column"]
-    if params.get("group_column"):
-        attrs["group_field"] = params["group_column"]
+    parts = []
+    for i, qr in enumerate(query_results):
+        desc = qr.get("description", f"Query {i}")
+        if qr.get("status") == "success":
+            cols = qr.get("columns", [])
+            row_count = qr.get("row_count", 0)
+            sample = qr.get("data", [])[:5]  # First 5 rows only
 
-    xml = await asyncio.to_thread(generate_plotly_chart, data_records=records, chart_attributes=attrs)
+            # Compute basic numeric stats for richer context
+            stats = {}
+            for col in cols:
+                values = [r.get(col) for r in qr.get("data", []) if isinstance(r.get(col), (int, float))]
+                if values:
+                    stats[col] = {"min": min(values), "max": max(values), "sum": round(sum(values), 2)}
 
-    if xml and xml.startswith("<?xml"):
-        return {
-            "status": "success",
-            "chart_xml": xml,
-            "chart_type": params.get("chart_type", "bar"),
-            "valid_types": params.get("valid_types", []),
-            "data_records": records,
-            "sql": source_data.get("sql", ""),
-            "title": params.get("title", "Chart"),
-            "size_column": params.get("size_column", ""),
-            "group_column": params.get("group_column", ""),
-        }
+            part = (
+                f"### Query {i} — {desc}\n"
+                f"Status: SUCCESS | Rows: {row_count} | Columns: {cols}\n"
+                f"Sample (first 5 rows):\n```json\n{json.dumps(sample, default=str, indent=1)}\n```"
+            )
+            if stats:
+                part += f"\nNumeric summaries: {json.dumps(stats, default=str)}"
+            parts.append(part)
+        else:
+            error = qr.get("error", "Unknown error")
+            sql = qr.get("sql", "")
+            parts.append(
+                f"### Query {i} — {desc}\n"
+                f"Status: ERROR\n"
+                f"Error: {error}\n"
+                f"SQL attempted: {sql}"
+            )
 
-    return {"status": "error", "error": f"Chart generation failed: {xml}"}
+    return "\n\n".join(parts)
 
 
-async def _execute_column_values_step(params: Dict) -> Dict:
-    """Execute a column values lookup step."""
-    table = params.get("table_name", "")
-    column = params.get("column_name", "")
+# ── Force Synthesize (fallback when max iterations reached) ──────────────────
+
+async def _force_synthesize(question: str, query_results: List[Dict]) -> str:
+    """Emergency synthesis when the agent hits max iterations without answering."""
+    results_block = _summarize_query_results(query_results)
+    prompt = SYNTHESIZER_PROMPT.format(question=question, results_block=results_block)
+    resp = await asyncio.to_thread(_llm_client.llm.invoke, prompt)
+    return _extract_response(resp.content)
+
+
+# ── Chart Generation Helper ─────────────────────────────────────────────────
+
+async def _generate_charts_from_specs(
+    chart_specs: List[Dict],
+    all_full_data: List[Dict],
+) -> List[ChartResult]:
+    """Generate ChartResult objects from answer tool chart specs."""
+    charts = []
+    for spec in chart_specs:
+        source_idx = spec.get("source_query_index", 0)
+        if source_idx < len(all_full_data) and all_full_data[source_idx].get("status") == "success":
+            source_data = all_full_data[source_idx]
+            records = source_data.get("data", [])
+            attrs = {
+                "type": spec.get("chart_type", "bar"),
+                "x_axis": spec.get("x_column", ""),
+                "y_axis": spec.get("y_columns", ""),
+                "title": spec.get("title", "Chart"),
+            }
+            if spec.get("size_column"):
+                attrs["size_field"] = spec["size_column"]
+            if spec.get("group_column"):
+                attrs["group_field"] = spec["group_column"]
+
+            xml = await asyncio.to_thread(
+                generate_plotly_chart, data_records=records, chart_attributes=attrs
+            )
+            if xml and xml.startswith("<?xml"):
+                charts.append(ChartResult(
+                    chart_xml=xml,
+                    data_records=records,
+                    sql=source_data.get("sql", ""),
+                    title=spec.get("title", "Chart"),
+                    chart_type=spec.get("chart_type", "bar"),
+                    size_column=spec.get("size_column", ""),
+                    group_column=spec.get("group_column", ""),
+                ))
+    return charts
+
+
+# ── Core ReAct Loop Logic ────────────────────────────────────────────────────
+
+ALL_TOOLS = [execute_queries, answer, clarify, get_column_values_tool, get_kpi_info_tool, explore_tool]
+
+
+def _build_system_prompt(
+    schema: str,
+    metrics: str,
+    auth: Any,
+    working_memory: str,
+    query_results: List[Dict],
+) -> str:
+    """Build the full system prompt with current state."""
+    return AGENT_PROMPT.format(
+        schema_block=schema or "",
+        metrics_block=metrics or "",
+        auth_block=_build_auth_block(auth),
+        memory_block=f"\n## Conversation Memory\n{working_memory}" if working_memory else "",
+        results_context=_summarize_query_results(query_results),
+        now_str=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        max_iterations=MAX_ITERATIONS,
+    )
+
+
+def _build_messages(
+    system: str,
+    question: str,
+    history: Optional[List[Dict]] = None,
+) -> List:
+    """Build the message list for the LLM call."""
+    messages = [SystemMessage(content=system)]
+    for msg in (history or [])[-4:]:
+        role = msg.get("role", "")
+        content = msg.get("content", "") or ""
+        if role == "user":
+            messages.append(HumanMessage(content=content))
+        elif role == "assistant":
+            messages.append(AIMessage(content=content))
+    messages.append(HumanMessage(content=question))
+    return messages
+
+
+def _load_schema_and_metrics() -> tuple:
+    """Load and cache schema + metrics."""
+    global _schema_cache
+    if not _schema_cache:
+        _schema_cache = get_frammer_schema()
+    all_metrics = "\n".join(f"- **{k}**: {v}" for k, v in METRIC_DICTIONARY.items())
+    all_metrics += "\n\n" + retrieve_metric_definitions("XYZ_FAIL")
+    return _schema_cache, all_metrics
+
+
+async def _execute_query_batch(
+    queries: List[Dict[str, str]],
+    auth: Any = None,
+) -> List[Dict]:
+    """Execute a batch of SQL queries in parallel via MCP DatabaseClient."""
+    async def _run_one(q: Dict) -> Dict:
+        sql = q.get("sql", "")
+        desc = q.get("description", "")
+        result = await _execute_sql_step({"sql": sql}, auth=auth)
+        result["description"] = desc
+        return result
+
+    raw_results = await asyncio.gather(
+        *[_run_one(q) for q in queries],
+        return_exceptions=True,
+    )
+
+    results = []
+    for i, result in enumerate(raw_results):
+        if isinstance(result, Exception):
+            result = {
+                "status": "error",
+                "error": str(result),
+                "sql": queries[i].get("sql", ""),
+                "description": queries[i].get("description", ""),
+            }
+        results.append(result)
+    return results
+
+
+# ── Tool Handlers ────────────────────────────────────────────────────────────
+
+async def _handle_get_column_values(args: Dict) -> Dict:
+    """Handle get_column_values_tool call — look up distinct values from schema profile."""
+    table = args.get("table_name", "")
+    column = args.get("column_name", "")
     try:
         db = get_db()
         profile = db.get_schema_profile()
         col_info = profile.get(table, {}).get(column, {})
         values = col_info.get("values")
         if values is None:
-            return {"status": "success", "note": "Column not in profile (high-cardinality or non-text)"}
-        return {"status": "success", "table": table, "column": column, "values": values}
+            return {
+                "status": "success",
+                "description": f"Distinct values for {table}.{column}",
+                "data": [{"note": "Column not in profile (high-cardinality or non-text). Try a SELECT DISTINCT query instead."}],
+                "row_count": 0,
+                "columns": ["note"],
+            }
+        return {
+            "status": "success",
+            "description": f"Distinct values for {table}.{column}",
+            "data": [{"table": table, "column": column, "values": values}],
+            "row_count": len(values) if isinstance(values, list) else 1,
+            "columns": ["table", "column", "values"],
+        }
     except Exception as e:
-        return {"status": "error", "error": str(e)}
+        return {
+            "status": "error",
+            "error": str(e),
+            "description": f"Distinct values for {table}.{column}",
+        }
 
 
-async def _execute_time_step() -> Dict:
-    """Return current time."""
-    return {"status": "success", "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+async def _handle_get_kpi_info(args: Dict) -> Dict:
+    """Handle get_kpi_info_tool call — look up KPI definition and formula."""
+    kpi_id = args.get("kpi_id", "")
+    try:
+        kpi_raw = get_custom_kpi_info(kpi_id)
+        kpi_data = json.loads(kpi_raw)
+        return {
+            "status": "success",
+            "description": f"KPI info: {kpi_id}",
+            "data": [kpi_data] if isinstance(kpi_data, dict) else kpi_data,
+            "row_count": 1,
+            "columns": list(kpi_data.keys()) if isinstance(kpi_data, dict) else ["id", "title"],
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "description": f"KPI info: {kpi_id}",
+        }
 
 
-async def _execute_explore_step(params: Dict, auth: Any = None) -> Dict:
-    """Execute lightweight exploration queries."""
-    queries = params.get("queries", [])
-    results = []
+async def _handle_explore(args: Dict, auth: Any = None) -> Dict:
+    """Handle explore_tool call — run lightweight exploration queries."""
+    queries = args.get("queries", [])
+    reasoning = args.get("reasoning", "")
+    explorations = []
     for q in queries:
         try:
             raw = await asyncio.to_thread(execute_sql_query, q, limit=5, auth=auth)
             parsed = json.loads(raw)
             if "error" in parsed:
-                results.append({"query": q, "error": parsed["error"]})
+                explorations.append({"query": q, "error": parsed["error"]})
             else:
-                results.append({"query": q, "data": parsed.get("data", [])})
+                explorations.append({"query": q, "data": parsed.get("data", [])})
         except Exception as e:
-            results.append({"query": q, "error": str(e)})
-    return {"status": "success", "explorations": results}
+            explorations.append({"query": q, "error": str(e)})
+    return {
+        "status": "success",
+        "description": f"Exploration: {reasoning[:60]}",
+        "data": explorations,
+        "row_count": len(explorations),
+        "columns": ["query", "data"],
+    }
 
 
-async def _execute_step(step: PlanStep, results: Dict, auth: Any = None) -> Dict:
-    """Dispatch a plan step to the appropriate executor."""
-    action = step.get("action", "")
-    params = step.get("params", {})
-    step_id = step.get("id", "?")
+# ── Report Synthesis (Gemini → JSON → deterministic HTML) ────────────────────
 
-    logger.info("--- STEP %s: %s (%s) ---", step_id, action, step.get("description", "")[:60])
-    start = time.time()
 
+def _parse_report_json(content: str) -> Dict:
+    """
+    Parse structured report JSON from LLM response.
+    Handles markdown fences, narrative wrapping, and graceful fallback.
+    """
+    raw = content.strip()
+    # Strip markdown code fences
+    raw = re.sub(r'^```(?:json)?\s*\n?', '', raw, flags=re.IGNORECASE)
+    raw = re.sub(r'\n?```\s*$', '', raw).strip()
+
+    # Try direct parse
     try:
-        if action == "run_sql":
-            result = await _execute_sql_step(params, auth=auth)
-        elif action == "build_chart":
-            result = await _execute_chart_step(params, results)
-        elif action == "get_column_values":
-            result = await _execute_column_values_step(params)
-        elif action == "get_time":
-            result = await _execute_time_step()
-        elif action == "explore":
-            result = await _execute_explore_step(params, auth=auth)
-        elif action == "get_kpi_info":
-            kpi_id = params.get("kpi_id")
-            result_raw = await asyncio.to_thread(get_custom_kpi_info, kpi_id)
-            result = {"status": "success", "data": json.loads(result_raw)}
-        else:
-            result = {"status": "error", "error": f"Unknown action: {action}"}
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            return parsed
+    except (json.JSONDecodeError, TypeError):
+        pass
 
-        duration = time.time() - start
-        status = result.get("status", "unknown")
-        logger.info("--- STEP %s DONE (%.2fs) → %s ---", step_id, duration, status)
-        return result
-
-    except Exception as e:
-        logger.error("--- STEP %s FAILED: %s ---", step_id, e)
-        return {"status": "error", "error": str(e)}
-
-
-# ── Parallel Executor ────────────────────────────────────────────────────────
-
-async def _execute_plan(
-    steps: List[PlanStep],
-    auth: Any = None,
-) -> Dict[str, Any]:
-    """
-    Execute plan steps with topological ordering and parallelism.
-    Steps with no unresolved dependencies run concurrently.
-    """
-    results: Dict[str, Any] = {}
-    remaining = list(steps)
-    actions_log: List[str] = []
-
-    while remaining:
-        # Find steps whose dependencies are all satisfied
-        ready = [s for s in remaining if all(d in results for d in s.get("depends_on", []))]
-        if not ready:
-            # All remaining steps have unresolved deps — break to avoid infinite loop
-            for s in remaining:
-                results[s["id"]] = {"status": "error", "error": "Unresolved dependencies"}
-                actions_log.append(f"Step {s['id']} skipped — unresolved deps")
-            break
-
-        # Execute ready steps in parallel
-        logger.info("=== EXECUTING BATCH: %s ===", [s["id"] for s in ready])
-        tasks = [_execute_step(s, results, auth=auth) for s in ready]
-        step_results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        for step, result in zip(ready, step_results):
-            if isinstance(result, Exception):
-                result = {"status": "error", "error": str(result)}
-
-            results[step["id"]] = result
-            remaining.remove(step)
-
-            # Build action log
-            action = step.get("action", "")
-            desc = step.get("description", action)
-            status = result.get("status", "unknown")
-            if action == "run_sql" and status == "success":
-                actions_log.append(f"SQL OK — {result.get('row_count', 0)} rows ({desc})")
-            elif action == "build_chart" and status == "success":
-                actions_log.append(f"Chart: {result.get('title', 'chart')}")
-            elif status == "error":
-                actions_log.append(f"Failed: {desc} — {result.get('error', '')[:60]}")
-            else:
-                actions_log.append(f"{desc}")
-
-    return {"results": results, "actions": actions_log}
-
-
-# ── SQL Repair ───────────────────────────────────────────────────────────────
-
-async def _repair_sql(failed_steps: List[tuple], schema: str) -> List[tuple]:
-    """
-    Attempt to fix failed SQL steps. Returns list of (step, fixed_sql) tuples.
-    """
-    repaired = []
-    for step, error_result in failed_steps:
-        sql = step.get("params", {}).get("sql", "")
-        error_msg = error_result.get("error", "")
-
-        prompt = REPAIR_PROMPT.format(
-            error=error_msg,
-            sql=sql,
-            schema_block=schema[:3000],  # Condensed schema for repair
-        )
-
-        logger.info("--- REPAIR: Fixing SQL for step %s ---", step["id"])
+    # Extract JSON object from within narrative text
+    match = re.search(r'\{[\s\S]*\}', raw)
+    if match:
         try:
-            resp = await asyncio.to_thread(_repair_llm.invoke, prompt)
-            fixed_sql = _extract_response(resp.content).strip()
-            # Strip markdown fences
-            fixed_sql = re.sub(r"^```(?:sql)?\s*\n?", "", fixed_sql, flags=re.IGNORECASE)
-            fixed_sql = re.sub(r"\n?```\s*$", "", fixed_sql).strip()
+            parsed = json.loads(match.group(0))
+            if isinstance(parsed, dict):
+                return parsed
+        except (json.JSONDecodeError, TypeError):
+            pass
 
-            if fixed_sql and fixed_sql.upper().startswith("SELECT"):
-                repaired.append((step, fixed_sql))
-            else:
-                logger.warning("--- REPAIR: Invalid fix for step %s ---", step["id"])
-        except Exception as e:
-            logger.error("--- REPAIR FAILED for step %s: %s ---", step["id"], e)
-
-    return repaired
-
-
-# ── Planner ──────────────────────────────────────────────────────────────────
-
-async def _run_planner(
-    question: str,
-    schema: str,
-    metrics: str,
-    auth: Any = None,
-    history: Optional[List[Dict]] = None,
-    working_memory: str = "",
-) -> Dict:
-    """Run the planner LLM to produce an execution plan."""
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    auth_block = ""
-    if auth:
-        role = getattr(auth, "role", "user")
-        username = getattr(auth, "username", "Unknown")
-        client_name = getattr(auth, "client_name", None)
-        user_id = getattr(auth, "user_id", None)
-
-        auth_block = f"\n## USER PROFILE\n- User: **{username}** | Role: **{role}**"
-        if role != "website_admin":
-            if client_name:
-                auth_block += f"\n- RESTRICTION: Only client **{client_name}** data. Use: `COALESCE(ch.\"Client_Name\", u.\"Client_Name\") = '{client_name}'`"
-            elif role == "user" and user_id:
-                auth_block += f"\n- RESTRICTION: Only data for user ID **{user_id}**. Use: `rv.\"User_ID\" = {user_id}`"
-
-    memory_block = f"\n## Conversation Memory\n{working_memory}" if working_memory else ""
-
-    system = PLANNER_PROMPT.format(
-        schema_block=schema or "",
-        metrics_block=metrics or "",
-        auth_block=auth_block,
-        memory_block=memory_block,
-        now_str=now_str,
-    )
-
-    # Build message history (limited to last 4 for planner)
-    history_messages = []
-    for msg in (history or [])[-4:]:
-        role = msg.get("role", "")
-        content = msg.get("content", "") or ""
-        if role == "user":
-            history_messages.append(HumanMessage(content=content))
-        elif role == "assistant":
-            history_messages.append(AIMessage(content=content))
-
-    messages = [SystemMessage(content=system)] + history_messages + [HumanMessage(content=question)]
-
-    logger.info("=== PLANNER: Calling LLM (%d messages) ===", len(messages))
-    start = time.time()
-    resp = await asyncio.to_thread(_planner_llm.invoke, messages)
-    duration = time.time() - start
-
-    usage = getattr(resp, "usage_metadata", {})
-    logger.info(
-        "=== PLANNER DONE (%.2fs) — %d input, %d output tokens ===",
-        duration,
-        usage.get("input_tokens", 0),
-        usage.get("output_tokens", 0),
-    )
-
-    # Extract plan from tool call
-    tool_calls = getattr(resp, "tool_calls", [])
-    if tool_calls:
-        tc = tool_calls[0]
-        args = tc.get("args", {})
-        return {
-            "conversational": args.get("conversational", False),
-            "reply": args.get("reply", ""),
-            "reasoning": args.get("reasoning", ""),
-            "steps": args.get("steps", []),
-        }
-
-    # Fallback: try to parse from text content
-    content = _extract_response(resp.content)
-    try:
-        parsed = json.loads(content)
-        return parsed
-    except json.JSONDecodeError:
-        # If the LLM just responded conversationally without using the tool
-        return {
-            "conversational": True,
-            "reply": content,
-            "reasoning": "",
-            "steps": [],
-        }
+    logger.warning("Failed to parse report JSON, creating minimal report from raw content")
+    return {
+        "title": "Analytics Report",
+        "executive_summary": content[:500] if content else "Report generation encountered an issue.",
+        "sections": [{
+            "title": "Analysis",
+            "content": content or "No analysis available.",
+        }],
+        "recommendations": [],
+        "metadata": {
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "caveats": ["Report structure could not be parsed; showing raw analysis."],
+        },
+    }
 
 
-# ── Synthesizer ──────────────────────────────────────────────────────────────
+async def _synthesize_report(question: str, all_query_results: List[Dict]) -> str:
+    """
+    Format accumulated query results into an HTML report.
 
-async def _run_synthesizer(question: str, results: Dict[str, Any], plan_steps: List[PlanStep]) -> str:
-    """Run the synthesizer LLM to produce the final response."""
-    # Build results block — only include data summaries, not full datasets
+    Two phases:
+      1. Gemini generates structured JSON (what to show — narrative, chart specs, table specs).
+      2. render_report_html() produces deterministic HTML with Chart.js (how it looks).
+
+    Charts and tables bind to actual query data via source_query_index,
+    so visualizations show real values — not LLM approximations.
+
+    Falls back to Anthropic if Gemini is unavailable.
+    Returns a complete self-contained HTML document.
+    """
+    # Phase 1: Build results_block (30-row samples for Gemini context)
     results_parts = []
-    for step in plan_steps:
-        step_id = step.get("id", "")
-        desc = step.get("description", step.get("action", ""))
-        result = results.get(step_id, {})
-        action = step.get("action", "")
+    for i, qr in enumerate(all_query_results):
+        desc = qr.get("description", f"Query {i}")
+        sq_type = qr.get("type", "breakdown")
 
-        if action == "run_sql" and result.get("status") == "success":
-            sample = result.get("sample", result.get("data", []))[:20]
-            display_cols = [c.replace('_', ' ').title() for c in result.get('columns', [])]
+        if qr.get("status") == "success":
+            sample = qr.get("sample", qr.get("data", []))[:30]
+            cols = qr.get("columns", [])
             results_parts.append(
-                f"### {desc}\n"
-                f"Rows: {result.get('row_count', 0)} | Columns: {display_cols}\n"
-                f"Sample data:\n```json\n{json.dumps(sample, default=str, indent=1)}\n```"
-            )
-        elif action == "build_chart" and result.get("status") == "success":
-            results_parts.append(f"### Chart: {result.get('title', 'Chart')} — created successfully")
-        elif action == "get_column_values" and result.get("status") == "success":
-            results_parts.append(f"### Available values for {desc}: {result.get('values', [])}")
-        elif action == "explore" and result.get("status") == "success":
-            results_parts.append(f"### Exploration:\n{json.dumps(result.get('explorations', []), default=str, indent=1)}")
-        elif action == "get_kpi_info" and result.get("status") == "success":
-            kpi_data = result.get("data", {})
-            sql_block = f"\nSQL Pattern: {kpi_data.get('sql')}" if kpi_data.get('sql') else ""
-            results_parts.append(f"### KPI Info: {kpi_data.get('title')}\nDefinition: {kpi_data.get('definition')}\nFormula: {kpi_data.get('formula')}{sql_block}")
-        elif result.get("status") == "error":
-            results_parts.append(f"### {desc} — FAILED: {result.get('error', '')[:100]}")
-
-    results_block = "\n\n".join(results_parts) if results_parts else "No data was retrieved."
-
-    prompt = SYNTHESIZER_PROMPT.format(
-        question=question,
-        results_block=results_block,
-    )
-
-    logger.info("=== SYNTHESIZER: Calling LLM ===")
-    start = time.time()
-    resp = await asyncio.to_thread(_synthesizer_llm.invoke, prompt)
-    duration = time.time() - start
-
-    usage = getattr(resp, "usage_metadata", {})
-    logger.info(
-        "=== SYNTHESIZER DONE (%.2fs) — %d input, %d output tokens ===",
-        duration,
-        usage.get("input_tokens", 0),
-        usage.get("output_tokens", 0),
-    )
-
-    return _extract_response(resp.content)
-
-
-# ── Report Mode Functions ────────────────────────────────────────────────────
-
-async def _run_report_planner(
-    question: str,
-    schema: str,
-    metrics: str,
-    auth: Any = None,
-) -> List[Dict]:
-    """Run the report planner LLM to decompose query into sub-questions."""
-    auth_block = ""
-    if auth:
-        role = getattr(auth, "role", "user")
-        username = getattr(auth, "username", "Unknown")
-        client_name = getattr(auth, "client_name", None)
-        user_id = getattr(auth, "user_id", None)
-        auth_block = f"\n## USER PROFILE\n- User: **{username}** | Role: **{role}**"
-        if role != "website_admin":
-            if client_name:
-                auth_block += f"\n- RESTRICTION: Only client **{client_name}** data."
-            elif role == "user" and user_id:
-                auth_block += f"\n- RESTRICTION: Only data for user ID **{user_id}**."
-
-    prompt = build_report_planning_prompt(
-        question=question,
-        schema_context=schema or "",
-        metrics_context=metrics or "",
-        auth_block=auth_block,
-    )
-
-    messages = [SystemMessage(content=prompt), HumanMessage(content=question)]
-
-    logger.info("=== REPORT PLANNER: Calling LLM ===")
-    start = time.time()
-    resp = await asyncio.to_thread(_report_planner_llm.invoke, messages)
-    duration = time.time() - start
-
-    usage = getattr(resp, "usage_metadata", {})
-    logger.info(
-        "=== REPORT PLANNER DONE (%.2fs) — %d input, %d output tokens ===",
-        duration, usage.get("input_tokens", 0), usage.get("output_tokens", 0),
-    )
-
-    tool_calls = getattr(resp, "tool_calls", [])
-    if tool_calls:
-        args = tool_calls[0].get("args", {})
-        return args.get("sub_questions", [])
-
-    # Fallback: try parsing text
-    content = _extract_response(resp.content)
-    try:
-        parsed = json.loads(content)
-        return parsed.get("sub_questions", [])
-    except json.JSONDecodeError:
-        return []
-
-
-async def _gather_report_data(
-    sub_questions: List[Dict],
-    schema: str,
-    auth: Any = None,
-) -> Dict[str, Any]:
-    """Execute SQL for each sub-question and collect results."""
-    gathered = {}
-
-    for sq in sub_questions:
-        sq_id = sq.get("id", "?")
-        sql = sq.get("sql", "")
-        question_text = sq.get("question", "")
-        sq_type = sq.get("type", "breakdown")
-
-        logger.info("--- REPORT GATHER %s: %s ---", sq_id, question_text[:60])
-
-        if not sql:
-            gathered[sq_id] = {
-                "status": "error",
-                "error": "No SQL provided",
-                "question": question_text,
-                "type": sq_type,
-            }
-            continue
-
-        try:
-            result = await _execute_sql_step({"sql": sql}, auth=auth)
-            result["question"] = question_text
-            result["type"] = sq_type
-            gathered[sq_id] = result
-        except Exception as e:
-            logger.error("--- REPORT GATHER %s FAILED: %s ---", sq_id, e)
-            gathered[sq_id] = {
-                "status": "error",
-                "error": str(e),
-                "question": question_text,
-                "type": sq_type,
-            }
-
-    # Attempt one repair round for failed queries
-    failed = [
-        (sq, gathered[sq["id"]])
-        for sq in sub_questions
-        if gathered.get(sq["id"], {}).get("status") == "error"
-        and sq.get("sql")
-    ]
-    if failed:
-        logger.info("=== REPORT REPAIR: %d failed queries ===", len(failed))
-        repair_pairs = [
-            ({"id": sq["id"], "action": "run_sql", "params": {"sql": sq["sql"]}}, res)
-            for sq, res in failed
-        ]
-        repaired = await _repair_sql(repair_pairs, schema)
-        for step, fixed_sql in repaired:
-            step["params"]["sql"] = fixed_sql
-            result = await _execute_sql_step(step["params"], auth=auth)
-            sq_id = step["id"]
-            # Preserve question/type metadata
-            result["question"] = gathered[sq_id].get("question", "")
-            result["type"] = gathered[sq_id].get("type", "")
-            gathered[sq_id] = result
-
-    return gathered
-
-
-async def _synthesize_report(question: str, gathered: Dict[str, Any]) -> str:
-    """Call Gemini to produce the final HTML report from gathered data.
-    Falls back to Anthropic if Gemini is unavailable."""
-    results_parts = []
-    for sq_id in sorted(gathered.keys()):
-        result = gathered[sq_id]
-        q_text = result.get("question", sq_id)
-        sq_type = result.get("type", "breakdown")
-
-        if result.get("status") == "success":
-            sample = result.get("sample", result.get("data", []))[:30]
-            cols = result.get("columns", [])
-            results_parts.append(
-                f"### Sub-question {sq_id} ({sq_type}): {q_text}\n"
-                f"Status: SUCCESS | Rows: {result.get('row_count', 0)} | Columns: {cols}\n"
+                f"### Query {i} ({sq_type}): {desc}\n"
+                f"Status: SUCCESS | Rows: {qr.get('row_count', 0)} | Columns: {cols}\n"
                 f"Data:\n```json\n{json.dumps(sample, default=str, indent=1)}\n```"
             )
         else:
             results_parts.append(
-                f"### Sub-question {sq_id} ({sq_type}): {q_text}\n"
-                f"Status: FAILED — {result.get('error', 'Unknown error')[:200]}"
+                f"### Query {i} ({sq_type}): {desc}\n"
+                f"Status: FAILED — {qr.get('error', 'Unknown error')[:200]}"
             )
 
     results_block = "\n\n".join(results_parts) if results_parts else "No data was retrieved."
@@ -873,12 +819,12 @@ async def _synthesize_report(question: str, gathered: Dict[str, Any]) -> str:
         results_block=results_block,
     )
 
-    # Use Gemini 2.5 Flash for report synthesis, fall back to Anthropic
+    # Phase 2: Call Gemini (or Anthropic fallback) for JSON report structure
     gemini = get_gemini_llm()
     llm_label = "Gemini" if gemini else "Anthropic (fallback)"
-    llm_to_use = gemini or _synthesizer_llm
+    llm_to_use = gemini or _llm_client.llm
 
-    logger.info("=== REPORT SYNTHESIZER: Calling %s ===", llm_label)
+    logger.info("=== REPORT SYNTHESIZER: Calling %s for JSON ===", llm_label)
     start = time.time()
     resp = await asyncio.to_thread(llm_to_use.invoke, prompt)
     duration = time.time() - start
@@ -893,203 +839,17 @@ async def _synthesize_report(question: str, gathered: Dict[str, Any]) -> str:
 
     content = _extract_response(resp.content)
 
-    # Strip markdown code fences if the LLM wrapped the HTML
-    content = re.sub(r"^```(?:html)?\s*\n?", "", content.strip(), flags=re.IGNORECASE)
-    content = re.sub(r"\n?```\s*$", "", content).strip()
+    # Phase 3: Parse JSON report structure
+    report_dict = _parse_report_json(content)
+    logger.info(
+        "Report JSON parsed: %d sections, %d recommendations",
+        len(report_dict.get("sections", [])),
+        len(report_dict.get("recommendations", [])),
+    )
 
-    # Ensure we have the report div
-    if '<div class="report">' not in content:
-        # Try to extract it
-        match = re.search(r'(<div class="report">.*</div>)\s*$', content, re.DOTALL)
-        if match:
-            content = match.group(1)
-
-    return content
-
-
-async def run_agent_report(
-    question: str,
-    auth: Optional[Any] = None,
-    working_memory: str = "",
-    history: Optional[List[Dict]] = None,
-) -> AgentResult:
-    """
-    Report mode entry point. Runs the three-phase report pipeline:
-    Plan → Gather → Synthesize, returning the XML report.
-    """
-    logger.info("=== AGENT REPORT START ===")
-    overall_start = time.time()
-    actions_log: List[str] = []
-
-    try:
-        global _schema_cache
-        if not _schema_cache:
-            _schema_cache = get_frammer_schema()
-
-        all_metrics = "\n".join(f"- **{k}**: {v}" for k, v in METRIC_DICTIONARY.items())
-        all_metrics += "\n\n" + retrieve_metric_definitions("XYZ_FAIL")
-
-        # Phase 1: Plan
-        actions_log.append("Report Mode: Planning analysis...")
-        sub_questions = await _run_report_planner(
-            question=question,
-            schema=_schema_cache,
-            metrics=all_metrics,
-            auth=auth,
-        )
-
-        if not sub_questions:
-            return AgentResult(
-                response="I couldn't decompose your question into sub-analyses. Could you rephrase?",
-                actions=actions_log,
-            )
-
-        actions_log.append(f"Report Plan: {len(sub_questions)} sub-questions")
-        for sq in sub_questions:
-            actions_log.append(f"  {sq.get('id')}: [{sq.get('type')}] {sq.get('question', '')[:80]}")
-
-        # Phase 2: Gather data
-        actions_log.append("Report Mode: Gathering data...")
-        gathered = await _gather_report_data(sub_questions, _schema_cache, auth=auth)
-
-        success_count = sum(1 for r in gathered.values() if r.get("status") == "success")
-        actions_log.append(f"Data gathered: {success_count}/{len(gathered)} queries succeeded")
-
-        # Phase 3: Synthesize report XML
-        actions_log.append("Report Mode: Synthesizing report...")
-        report_html = await _synthesize_report(question, gathered)
-        actions_log.append("Report synthesized")
-
-        total_time = time.time() - overall_start
-        logger.info("=== AGENT REPORT COMPLETE (%.2fs) ===", total_time)
-
-        return AgentResult(
-            intent="report",
-            response=report_html,
-            actions=actions_log,
-            plan=f"Report with {len(sub_questions)} sub-analyses",
-        )
-
-    except Exception as exc:
-        logger.error("!!! Agent Report Error: %s !!!", exc, exc_info=True)
-        return AgentResult(
-            response=f"I'm sorry, an error occurred generating the report: {exc}",
-            error=str(exc),
-            actions=actions_log,
-        )
-
-
-async def run_agent_report_stream(
-    question: str,
-    auth: Optional[Any] = None,
-    working_memory: str = "",
-    history: Optional[List[Dict]] = None,
-) -> AsyncGenerator[Dict, None]:
-    """
-    Streaming version of run_agent_report. Yields SSE events for report progress.
-    """
-    logger.info("=== AGENT REPORT STREAM START ===")
-    overall_start = time.time()
-
-    try:
-        global _schema_cache
-        if not _schema_cache:
-            _schema_cache = get_frammer_schema()
-
-        all_metrics = "\n".join(f"- **{k}**: {v}" for k, v in METRIC_DICTIONARY.items())
-        all_metrics += "\n\n" + retrieve_metric_definitions("XYZ_FAIL")
-
-        # Phase 1: Plan
-        yield {"type": "phase", "phase": "report_planning"}
-
-        sub_questions = await _run_report_planner(
-            question=question,
-            schema=_schema_cache,
-            metrics=all_metrics,
-            auth=auth,
-        )
-
-        if not sub_questions:
-            yield {"type": "complete", "message": {
-                "response": "I couldn't decompose your question into sub-analyses. Could you rephrase?",
-                "intent": "report",
-                "actions": [],
-                "charts": [],
-                "sql": "",
-                "report_html": "",
-            }}
-            return
-
-        yield {
-            "type": "report_plan",
-            "sub_questions": [
-                {"id": sq.get("id"), "type": sq.get("type"), "question": sq.get("question", "")}
-                for sq in sub_questions
-            ],
-        }
-
-        # Phase 2: Gather
-        yield {"type": "phase", "phase": "report_gathering"}
-
-        gathered = {}
-        for sq in sub_questions:
-            sq_id = sq.get("id", "?")
-            sql = sq.get("sql", "")
-            question_text = sq.get("question", "")
-            sq_type = sq.get("type", "breakdown")
-
-            if not sql:
-                gathered[sq_id] = {
-                    "status": "error", "error": "No SQL",
-                    "question": question_text, "type": sq_type,
-                }
-                yield {"type": "report_step", "step_id": sq_id, "status": "error", "question": question_text}
-                continue
-
-            try:
-                result = await _execute_sql_step({"sql": sql}, auth=auth)
-                result["question"] = question_text
-                result["type"] = sq_type
-                gathered[sq_id] = result
-                yield {
-                    "type": "report_step",
-                    "step_id": sq_id,
-                    "status": result.get("status", "unknown"),
-                    "question": question_text,
-                    "row_count": result.get("row_count", 0),
-                }
-            except Exception as e:
-                gathered[sq_id] = {
-                    "status": "error", "error": str(e),
-                    "question": question_text, "type": sq_type,
-                }
-                yield {"type": "report_step", "step_id": sq_id, "status": "error", "question": question_text}
-
-        # Phase 3: Synthesize
-        yield {"type": "phase", "phase": "report_synthesizing"}
-
-        report_html = await _synthesize_report(question, gathered)
-
-        actions_log = [
-            f"Report Plan: {len(sub_questions)} sub-questions",
-            f"Data gathered: {sum(1 for r in gathered.values() if r.get('status') == 'success')}/{len(gathered)} succeeded",
-            "Report synthesized",
-        ]
-
-        yield {"type": "complete", "message": {
-            "response": report_html,
-            "intent": "report",
-            "actions": actions_log,
-            "charts": [],
-            "sql": "",
-            "report_html": report_html,
-        }}
-
-        logger.info("=== AGENT REPORT STREAM COMPLETE (%.2fs) ===", time.time() - overall_start)
-
-    except Exception as exc:
-        logger.error("!!! Agent Report Stream Error: %s !!!", exc, exc_info=True)
-        yield {"type": "error", "error": str(exc)}
+    # Phase 4: Render to deterministic HTML with Chart.js + real query data
+    html = render_report_html(report_dict, all_query_results)
+    return html
 
 
 # ── Main Entry Point ─────────────────────────────────────────────────────────
@@ -1099,150 +859,244 @@ async def run_agent(
     auth: Optional[Any] = None,
     working_memory: str = "",
     history: Optional[List[Dict]] = None,
+    mode: str = "normal",
+    agent_state: Optional[Dict] = None,
     report_mode: bool = False,
 ) -> AgentResult:
     """
-    Main agent entry point. Runs the plan-execute-synthesize pipeline.
-    When report_mode=True, delegates to the three-phase report pipeline.
+    Main agent entry point. Runs the ReAct loop:
+      LLM(decide) → execute_queries | answer | clarify | explore | ... → repeat or exit.
+
+    Modes:
+      - "normal": Standard analytics Q&A → text + charts.
+      - "report": Data gathering → Gemini report formatting → HTML report.
+
+    If agent_state is provided, resumes from a prior clarification pause.
+    report_mode is a legacy param — use mode="report" instead.
     """
     if report_mode:
-        return await run_agent_report(question, auth=auth, working_memory=working_memory, history=history)
+        mode = "report"
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    logger.info("=== AGENT START === @ %s", now_str)
+    logger.info("=== AGENT START (mode=%s) === @ %s", mode, now_str)
     overall_start = time.time()
 
+    # Initialize actions_log before try block for safe access in except
     actions_log: List[str] = []
+
+    # Restore state if resuming from clarification
+    if agent_state:
+        all_query_results = agent_state.get("query_results", [])
+        all_full_data = agent_state.get("full_data", [])
+        actions_log = agent_state.get("actions_log", [])
+        last_sql = agent_state.get("last_sql", "")
+        start_iter = agent_state.get("iteration", 0) + 1
+        logger.info("=== RESUMING from iteration %d with %d prior results ===", start_iter, len(all_query_results))
+    else:
+        all_query_results: List[Dict] = []
+        all_full_data: List[Dict] = []
+        last_sql = ""
+        start_iter = 0
 
     try:
         # 1. Load schema + metrics
-        global _schema_cache
-        if not _schema_cache:
-            _schema_cache = get_frammer_schema()
+        schema, metrics = _load_schema_and_metrics()
 
-        all_metrics = "\n".join(f"- **{k}**: {v}" for k, v in METRIC_DICTIONARY.items())
-        all_metrics += "\n\n" + retrieve_metric_definitions("XYZ_FAIL")
+        # 2. Build LLM with tools
+        agent_llm = _llm_client.llm.bind_tools(ALL_TOOLS)
 
-        # 2. Run Planner
-        actions_log.append("Planning analysis...")
-        plan = await _run_planner(
-            question=question,
-            schema=_schema_cache,
-            metrics=all_metrics,
-            auth=auth,
-            history=history,
-            working_memory=working_memory,
-        )
+        # 2b. Report planning phase
+        report_sub_questions: List[Dict] = []
+        if mode == "report" and not agent_state:
+            try:
+                report_sub_questions = await _plan_report_sub_questions(
+                    question, schema, metrics, auth
+                )
+                actions_log.append(f"Planned {len(report_sub_questions)} sub-questions")
+            except Exception as plan_err:
+                logger.warning("Report planning failed: %s", plan_err)
 
-        # Handle conversational responses (no data needed)
-        if plan.get("conversational"):
-            logger.info("=== AGENT COMPLETE (conversational, %.2fs) ===", time.time() - overall_start)
-            return AgentResult(
-                intent="conversational",
-                response=plan.get("reply", ""),
-                actions=["Conversational response"],
+        # 3. ReAct loop
+        answer_text = ""
+        answer_charts: List[ChartResult] = []
+
+        for iteration in range(start_iter, MAX_ITERATIONS):
+            system = _build_system_prompt(schema, metrics, auth, working_memory, all_query_results)
+            if mode == "report":
+                sq_text = "\n".join(
+                    f"  {sq['id']}. [{sq['type'].upper()}] {sq['question']}"
+                    for sq in report_sub_questions
+                ) if report_sub_questions else ""
+                system += "\n\n## Mode: REPORT"
+                system += "\nYou are gathering data for a comprehensive analytical report. A separate system will format the final report — you do NOT need to format anything."
+                system += "\nGather data by executing queries for the sub-questions below. Query multiple angles, breakdowns, and comparisons to ensure thorough coverage."
+                system += "\nOnce you have data covering the sub-questions, call `answer` with a brief text summary of what you found. Do NOT generate HTML."
+                system += "\nIf a query fails, fix it and retry. If you need a follow-up query based on results, go ahead."
+                system += "\nCheck Previous Query Results — do not re-run queries whose data is already there."
+                if sq_text:
+                    system += f"\n\n## Report Sub-Questions to Investigate\n{sq_text}\nAddress these systematically with your queries."
+            messages = _build_messages(system, question, history)
+
+            logger.info("=== ITERATION %d: Calling LLM (%d messages) ===", iteration + 1, len(messages))
+            actions_log.append(f"Thinking (round {iteration + 1})...")
+            start = time.time()
+            resp = await asyncio.to_thread(agent_llm.invoke, messages)
+            duration = time.time() - start
+
+            usage = getattr(resp, "usage_metadata", {})
+            logger.info(
+                "=== ITERATION %d DONE (%.2fs) — %d input, %d output tokens ===",
+                iteration + 1, duration,
+                usage.get("input_tokens", 0),
+                usage.get("output_tokens", 0),
             )
 
-        steps = plan.get("steps", [])
-        reasoning = plan.get("reasoning", "")
-        actions_log.append(f"Plan: {len(steps)} steps — {reasoning[:80]}")
-        logger.info("=== PLAN: %d steps — %s ===", len(steps), reasoning[:80])
-
-        if not steps:
-            return AgentResult(
-                response="I couldn't determine what data to look up. Could you rephrase your question?",
-                actions=actions_log,
-            )
-
-        # 3. Execute plan (parallel where possible)
-        exec_result = await _execute_plan(steps, auth=auth)
-        results = exec_result["results"]
-        actions_log.extend(exec_result["actions"])
-
-        # 4. Check for SQL failures and attempt repair (max 2 rounds)
-        for repair_round in range(2):
-            failed_sql = [
-                (s, results[s["id"]])
-                for s in steps
-                if s.get("action") == "run_sql" and results.get(s["id"], {}).get("status") == "error"
-            ]
-            if not failed_sql:
-                break
-
-            logger.info("=== REPAIR ROUND %d: %d failed SQL steps ===", repair_round + 1, len(failed_sql))
-            actions_log.append(f"Repairing {len(failed_sql)} failed queries (round {repair_round + 1})")
-
-            repaired = await _repair_sql(failed_sql, _schema_cache)
-            if not repaired:
-                break
-
-            # Re-execute repaired steps
-            for step, fixed_sql in repaired:
-                step["params"]["sql"] = fixed_sql
-                result = await _execute_step(step, results, auth=auth)
-                results[step["id"]] = result
-                if result.get("status") == "success":
-                    actions_log.append(f"Repair OK — {step.get('description', step['id'])}")
-                else:
-                    actions_log.append(f"Repair failed — {step.get('description', step['id'])}")
-
-            # Re-execute chart steps that depend on now-fixed SQL steps
-            repaired_ids = {s["id"] for s, _ in repaired}
-            chart_steps = [
-                s for s in steps
-                if s.get("action") == "build_chart"
-                and any(d in repaired_ids for d in s.get("depends_on", []))
-                and results.get(s["id"], {}).get("status") != "success"
-            ]
-            for step in chart_steps:
-                result = await _execute_step(step, results, auth=auth)
-                results[step["id"]] = result
-
-        # 5. Collect charts
-        charts = []
-        for step in steps:
-            if step.get("action") == "build_chart":
-                result = results.get(step["id"], {})
-                if result.get("status") == "success":
-                    charts.append(ChartResult(
-                        chart_xml=result.get("chart_xml", ""),
-                        data_records=result.get("data_records", []),
-                        sql=result.get("sql", ""),
-                        title=result.get("title", ""),
-                        chart_type=result.get("chart_type", ""),
-                        size_column=result.get("size_column", ""),
-                        group_column=result.get("group_column", ""),
-                        valid_types=result.get("valid_types", []),
-                    ))
-
-        # 6. Synthesize response
-        response = await _run_synthesizer(question, results, steps)
-        actions_log.append("Synthesized response")
-
-        # 7. Collect SQL (use the last successful query for legacy compat)
-        last_sql = ""
-        last_records = []
-        for step in reversed(steps):
-            if step.get("action") == "run_sql":
-                result = results.get(step["id"], {})
-                if result.get("status") == "success":
-                    last_sql = result.get("sql", "")
-                    last_records = result.get("data", [])
+            # Extract tool call
+            tool_calls = getattr(resp, "tool_calls", [])
+            if not tool_calls:
+                if mode == "report":
+                    logger.info("=== REPORT MODE: No tool call, treating as answer ===")
+                    answer_text = _extract_response(resp.content)
+                    actions_log.append("Answering (from context)")
                     break
+                else:
+                    # No tool call = conversational response
+                    logger.info("=== AGENT COMPLETE (conversational, %.2fs) ===", time.time() - overall_start)
+                    return AgentResult(
+                        intent="conversational",
+                        response=_extract_response(resp.content),
+                        actions=actions_log,
+                    )
 
+            tc = tool_calls[0]
+            tool_name = tc.get("name", "")
+            args = tc.get("args", {})
+
+            # ── EXECUTE QUERIES ──
+            if tool_name == "execute_queries":
+                queries = args.get("queries", [])
+                reasoning = args.get("reasoning", "")
+                actions_log.append(f"Executing {len(queries)} queries — {reasoning[:80]}")
+                logger.info("=== EXECUTING %d QUERIES — %s ===", len(queries), reasoning[:80])
+
+                batch_results = await _execute_query_batch(queries, auth=auth)
+
+                for result in batch_results:
+                    all_query_results.append(result)
+                    all_full_data.append(result)
+
+                    if result.get("status") == "success":
+                        last_sql = result.get("sql", "")
+                        actions_log.append(
+                            f"SQL OK — {result.get('row_count', 0)} rows ({result.get('description', '')})"
+                        )
+                    else:
+                        actions_log.append(
+                            f"SQL Error — {result.get('error', '')[:60]}"
+                        )
+
+                continue  # Next iteration
+
+            # ── CLARIFY ──
+            elif tool_name == "clarify":
+                clarify_q = args.get("question", "Could you clarify your question?")
+                actions_log.append(f"Clarification: {clarify_q}")
+                logger.info("=== AGENT PAUSED FOR CLARIFICATION ===")
+
+                return AgentResult(
+                    intent="clarification",
+                    response=clarify_q,
+                    actions=actions_log,
+                    sql=last_sql,
+                    mode=mode,
+                    clarification=clarify_q,
+                    agent_state={
+                        "query_results": all_query_results,
+                        "full_data": all_full_data,
+                        "actions_log": actions_log,
+                        "last_sql": last_sql,
+                        "iteration": iteration,
+                    },
+                )
+
+            # ── ANSWER ──
+            elif tool_name == "answer":
+                answer_text = args.get("response", "")
+                needs_chart = args.get("needs_chart", False)
+                chart_specs = args.get("charts", []) or []
+                actions_log.append("Answering")
+
+                # Generate charts if requested (normal mode only — report mode uses Gemini)
+                if needs_chart and chart_specs and mode == "normal":
+                    answer_charts = await _generate_charts_from_specs(chart_specs, all_full_data)
+                    if answer_charts:
+                        actions_log.append(f"Generated {len(answer_charts)} chart(s)")
+
+                break  # Exit loop — answer or report formatting follows
+
+            # ── GET COLUMN VALUES ──
+            elif tool_name == "get_column_values_tool":
+                table = args.get("table_name", "")
+                column = args.get("column_name", "")
+                actions_log.append(f"Looking up values for {table}.{column}")
+                result = await _handle_get_column_values(args)
+                all_query_results.append(result)
+                all_full_data.append(result)
+                continue
+
+            # ── GET KPI INFO ──
+            elif tool_name == "get_kpi_info_tool":
+                kpi_id = args.get("kpi_id", "")
+                actions_log.append(f"Looking up KPI: {kpi_id}")
+                result = await _handle_get_kpi_info(args)
+                all_query_results.append(result)
+                all_full_data.append(result)
+                continue
+
+            # ── EXPLORE ──
+            elif tool_name == "explore_tool":
+                reasoning = args.get("reasoning", "")
+                queries = args.get("queries", [])
+                actions_log.append(f"Exploring ({len(queries)} queries) — {reasoning[:60]}")
+                result = await _handle_explore(args, auth=auth)
+                all_query_results.append(result)
+                all_full_data.append(result)
+                continue
+
+        else:
+            # Max iterations reached — force synthesis
+            logger.warning("=== MAX ITERATIONS REACHED — forcing synthesis ===")
+            actions_log.append("Max iterations reached — synthesizing from available data")
+            answer_text = await _force_synthesize(question, all_query_results)
+
+        # ── POST-LOOP: mode branching ──
         total_time = time.time() - overall_start
-        logger.info("=== AGENT COMPLETE (%.2fs) ===", total_time)
 
-        return AgentResult(
-            response=response,
-            actions=actions_log,
-            charts=charts,
-            sql=last_sql,
-            plan=reasoning,
-            # Legacy compat
-            chart_xml=charts[0].chart_xml if charts else "",
-            chart_data={"query_result": last_records} if last_records else {},
-        )
+        if mode == "report":
+            # Format as report via Gemini — returns HTML directly
+            actions_log.append("Formatting report with Gemini...")
+            report_html = await _synthesize_report(question, all_query_results)
+            logger.info("=== AGENT COMPLETE (report, %.2fs) ===", total_time)
+
+            return AgentResult(
+                intent="report",
+                mode="report",
+                response=report_html,
+                actions=actions_log,
+                sql=last_sql,
+            )
+        else:
+            # Normal mode — return text + charts
+            logger.info("=== AGENT COMPLETE (%.2fs) ===", total_time)
+
+            return AgentResult(
+                response=answer_text,
+                actions=actions_log,
+                charts=answer_charts,
+                sql=last_sql,
+                chart_xml=answer_charts[0].chart_xml if answer_charts else "",
+                chart_data={"query_result": all_full_data[-1].get("data", [])} if all_full_data else {},
+            )
 
     except Exception as exc:
         logger.error("!!! Agent Runtime Error: %s !!!", exc, exc_info=True)
@@ -1260,174 +1114,308 @@ async def run_agent_stream(
     auth: Optional[Any] = None,
     working_memory: str = "",
     history: Optional[List[Dict]] = None,
+    mode: str = "normal",
+    agent_state: Optional[Dict] = None,
     report_mode: bool = False,
 ) -> AsyncGenerator[Dict, None]:
     """
     Streaming version of run_agent. Yields SSE events as the agent progresses.
-    When report_mode=True, delegates to the report streaming pipeline.
+    Supports mode="report" and agent_state for clarification resumption.
+    report_mode is a legacy param — use mode="report" instead.
     """
     if report_mode:
-        async for event in run_agent_report_stream(question, auth=auth, working_memory=working_memory, history=history):
-            yield event
-        return
+        mode = "report"
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    logger.info("=== AGENT STREAM START === @ %s", now_str)
+    logger.info("=== AGENT STREAM START (mode=%s) === @ %s", mode, now_str)
     overall_start = time.time()
 
     try:
         # 1. Load schema + metrics
-        global _schema_cache
-        if not _schema_cache:
-            _schema_cache = get_frammer_schema()
+        schema, metrics = _load_schema_and_metrics()
 
-        all_metrics = "\n".join(f"- **{k}**: {v}" for k, v in METRIC_DICTIONARY.items())
-        all_metrics += "\n\n" + retrieve_metric_definitions("XYZ_FAIL")
+        # 2. Build LLM with tools
+        agent_llm = _llm_client.llm.bind_tools(ALL_TOOLS)
 
-        # 2. Plan
-        yield {"type": "phase", "phase": "planning"}
+        # 3. State — restore if resuming from clarification
+        if agent_state:
+            all_query_results = agent_state.get("query_results", [])
+            all_full_data = agent_state.get("full_data", [])
+            actions_log = agent_state.get("actions_log", [])
+            last_sql = agent_state.get("last_sql", "")
+            start_iter = agent_state.get("iteration", 0) + 1
+            logger.info("=== RESUMING from iteration %d ===", start_iter)
+        else:
+            all_query_results: List[Dict] = []
+            all_full_data: List[Dict] = []
+            actions_log: List[str] = []
+            last_sql = ""
+            start_iter = 0
 
-        plan = await _run_planner(
-            question=question,
-            schema=_schema_cache,
-            metrics=all_metrics,
-            auth=auth,
-            history=history,
-            working_memory=working_memory,
-        )
+        answer_text = ""
+        answer_charts_data = []
+        report_sub_questions: List[Dict] = []
 
-        if plan.get("conversational"):
-            yield {"type": "complete", "message": {
-                "response": plan.get("reply", ""),
-                "intent": "conversational",
-                "actions": ["Conversational response"],
-                "charts": [],
-                "sql": "",
-            }}
-            return
-
-        steps = plan.get("steps", [])
-        yield {"type": "plan", "steps": [
-            {"id": s.get("id"), "action": s.get("action"), "description": s.get("description", "")}
-            for s in steps
-        ], "reasoning": plan.get("reasoning", "")}
-
-        if not steps:
-            yield {"type": "complete", "message": {
-                "response": "I couldn't determine what data to look up. Could you rephrase your question?",
-                "intent": "analytics",
-                "actions": [],
-                "charts": [],
-                "sql": "",
-            }}
-            return
-
-        # 3. Execute
-        yield {"type": "phase", "phase": "executing"}
-
-        results: Dict[str, Any] = {}
-        remaining = list(steps)
-        actions_log = [f"Plan: {len(steps)} steps"]
-
-        while remaining:
-            ready = [s for s in remaining if all(d in results for d in s.get("depends_on", []))]
-            if not ready:
-                for s in remaining:
-                    results[s["id"]] = {"status": "error", "error": "Unresolved dependencies"}
-                break
-
-            tasks = [_execute_step(s, results, auth=auth) for s in ready]
-            step_results = await asyncio.gather(*tasks, return_exceptions=True)
-
-            for step, result in zip(ready, step_results):
-                if isinstance(result, Exception):
-                    result = {"status": "error", "error": str(result)}
-
-                results[step["id"]] = result
-                remaining.remove(step)
-
-                # Yield step completion event
-                event = {
-                    "type": "step_complete",
-                    "step_id": step.get("id"),
-                    "action": step.get("action"),
-                    "description": step.get("description", ""),
-                    "status": result.get("status", "unknown"),
+        # 3b. Report planning phase — decompose into typed sub-questions
+        if mode == "report" and not agent_state:
+            yield {"type": "phase", "phase": "planning report"}
+            try:
+                report_sub_questions = await _plan_report_sub_questions(
+                    question, schema, metrics, auth
+                )
+                actions_log.append(f"Planned {len(report_sub_questions)} sub-questions")
+                yield {
+                    "type": "report_plan",
+                    "sub_questions": report_sub_questions,
                 }
-                if result.get("status") == "success" and step.get("action") == "run_sql":
-                    event["row_count"] = result.get("row_count", 0)
-                    event["columns"] = result.get("columns", [])
-                if result.get("status") == "success" and step.get("action") == "build_chart":
-                    event["title"] = result.get("title", "")
-                yield event
+            except Exception as plan_err:
+                logger.warning("Report planning failed, continuing without plan: %s", plan_err)
 
-                # Build action log
-                action = step.get("action", "")
-                desc = step.get("description", action)
-                if action == "run_sql" and result.get("status") == "success":
-                    actions_log.append(f"SQL OK — {result.get('row_count', 0)} rows ({desc})")
-                elif action == "build_chart" and result.get("status") == "success":
-                    actions_log.append(f"Chart: {result.get('title', 'chart')}")
-                elif result.get("status") == "error":
-                    actions_log.append(f"Failed: {desc}")
+        # 4. ReAct loop
+        report_step_idx = 0  # Track which sub-question we're on
+        for iteration in range(start_iter, MAX_ITERATIONS):
+            # Yield thinking phase
+            phase_label = "thinking" if iteration == 0 else f"thinking (round {iteration + 1})"
+            if agent_state and iteration == start_iter:
+                phase_label = "thinking (continued)"
+            yield {"type": "phase", "phase": phase_label}
+
+            system = _build_system_prompt(schema, metrics, auth, working_memory, all_query_results)
+            if mode == "report":
+                sq_text = "\n".join(
+                    f"  {sq['id']}. [{sq['type'].upper()}] {sq['question']}"
+                    for sq in report_sub_questions
+                ) if report_sub_questions else ""
+                system += "\n\n## Mode: REPORT"
+                system += "\nYou are gathering data for a comprehensive analytical report. A separate system will format the final report — you do NOT need to format anything."
+                system += "\nGather data by executing queries for the sub-questions below. Query multiple angles, breakdowns, and comparisons to ensure thorough coverage."
+                system += "\nOnce you have data covering the sub-questions, call `answer` with a brief text summary of what you found. Do NOT generate HTML."
+                system += "\nIf a query fails, fix it and retry. If you need a follow-up query based on results, go ahead."
+                system += "\nCheck Previous Query Results — do not re-run queries whose data is already there."
+                if sq_text:
+                    system += f"\n\n## Report Sub-Questions to Investigate\n{sq_text}\nAddress these systematically with your queries."
+            messages = _build_messages(system, question, history)
+
+            logger.info("=== STREAM ITERATION %d: Calling LLM ===", iteration + 1)
+            actions_log.append(f"Thinking (round {iteration + 1})...")
+            resp = await asyncio.to_thread(agent_llm.invoke, messages)
+
+            # Extract tool call
+            tool_calls = getattr(resp, "tool_calls", [])
+            if not tool_calls:
+                if mode == "report":
+                    logger.info("=== REPORT MODE: No tool call, treating as answer ===")
+                    answer_text = _extract_response(resp.content)
+                    actions_log.append("Answering (from context)")
+                    break
                 else:
-                    actions_log.append(desc)
+                    # Conversational response
+                    yield {"type": "complete", "message": {
+                        "response": _extract_response(resp.content),
+                        "intent": "conversational",
+                        "actions": ["Conversational response"],
+                        "charts": [],
+                        "sql": "",
+                    }}
+                    return
 
-        # 4. Repair (simplified for streaming — one round)
-        failed_sql = [
-            (s, results[s["id"]])
-            for s in steps
-            if s.get("action") == "run_sql" and results.get(s["id"], {}).get("status") == "error"
-        ]
-        if failed_sql:
-            yield {"type": "phase", "phase": "repairing"}
-            repaired = await _repair_sql(failed_sql, _schema_cache)
-            for step, fixed_sql in repaired:
-                step["params"]["sql"] = fixed_sql
-                result = await _execute_step(step, results, auth=auth)
-                results[step["id"]] = result
+            tc = tool_calls[0]
+            tool_name = tc.get("name", "")
+            args = tc.get("args", {})
+
+            # ── EXECUTE QUERIES ──
+            if tool_name == "execute_queries":
+                queries = args.get("queries", [])
+                reasoning = args.get("reasoning", "")
+                actions_log.append(f"Executing {len(queries)} queries — {reasoning[:80]}")
+
+                yield {"type": "phase", "phase": "executing"}
+                yield {
+                    "type": "iteration",
+                    "round": iteration + 1,
+                    "action": "execute_queries",
+                    "query_count": len(queries),
+                    "reasoning": reasoning,
+                }
+
+                yield {"type": "plan", "steps": [
+                    {"id": f"q{len(all_query_results) + i}", "action": "run_sql", "description": q.get("description", f"Query {i + 1}")}
+                    for i, q in enumerate(queries)
+                ], "reasoning": reasoning}
+
+                batch_results = await _execute_query_batch(queries, auth=auth)
+
+                for i, result in enumerate(batch_results):
+                    all_query_results.append(result)
+                    all_full_data.append(result)
+
+                    step_id = f"q{len(all_query_results) - 1}"
+                    event = {
+                        "type": "step_complete",
+                        "step_id": step_id,
+                        "action": "run_sql",
+                        "description": result.get("description", f"Query {i + 1}"),
+                        "status": result.get("status", "unknown"),
+                    }
+                    if result.get("status") == "success":
+                        event["row_count"] = result.get("row_count", 0)
+                        event["columns"] = result.get("columns", [])
+                        last_sql = result.get("sql", "")
+                        actions_log.append(
+                            f"SQL OK — {result.get('row_count', 0)} rows ({result.get('description', '')})"
+                        )
+                    else:
+                        actions_log.append(f"SQL Error — {result.get('error', '')[:60]}")
+
+                    yield event
+
+                    # Emit report_step progress for report mode
+                    if mode == "report" and report_sub_questions and report_step_idx < len(report_sub_questions):
+                        sq = report_sub_questions[report_step_idx]
+                        yield {
+                            "type": "report_step",
+                            "step_id": sq["id"],
+                            "step_type": sq.get("type", ""),
+                            "question": sq.get("question", ""),
+                            "status": "complete" if result.get("status") == "success" else "error",
+                            "row_count": result.get("row_count", 0),
+                        }
+                        report_step_idx += 1
+
+                continue  # Next iteration
+
+            # ── CLARIFY ──
+            elif tool_name == "clarify":
+                clarify_q = args.get("question", "Could you clarify your question?")
+                actions_log.append(f"Clarification: {clarify_q}")
+                logger.info("=== AGENT PAUSED FOR CLARIFICATION ===")
+
+                yield {
+                    "type": "clarification_needed",
+                    "question": clarify_q,
+                    "agent_state": {
+                        "query_results": all_query_results,
+                        "full_data": all_full_data,
+                        "actions_log": actions_log,
+                        "last_sql": last_sql,
+                        "iteration": iteration,
+                    },
+                }
+                return  # Stop streaming — wait for user reply
+
+            # ── ANSWER ──
+            elif tool_name == "answer":
+                answer_text = args.get("response", "")
+                needs_chart = args.get("needs_chart", False)
+                chart_specs = args.get("charts", []) or []
+                actions_log.append("Answering")
+
+                # Generate charts (normal mode only — report mode uses Gemini)
+                if needs_chart and chart_specs and mode == "normal":
+                    yield {"type": "phase", "phase": "generating charts"}
+                    chart_results = await _generate_charts_from_specs(chart_specs, all_full_data)
+                    for cr in chart_results:
+                        answer_charts_data.append({
+                            "chart_xml": cr.chart_xml,
+                            "chart_type": cr.chart_type,
+                            "data_records": cr.data_records,
+                            "sql": cr.sql,
+                            "title": cr.title,
+                            "size_column": cr.size_column,
+                            "group_column": cr.group_column,
+                        })
+                    if chart_results:
+                        actions_log.append(f"Generated {len(chart_results)} chart(s)")
+
+                break  # Exit loop — answer or report formatting follows
+
+            # ── GET COLUMN VALUES ──
+            elif tool_name == "get_column_values_tool":
+                table = args.get("table_name", "")
+                column = args.get("column_name", "")
+                actions_log.append(f"Looking up values for {table}.{column}")
+
+                yield {"type": "phase", "phase": f"looking up {table}.{column}"}
+                result = await _handle_get_column_values(args)
+                all_query_results.append(result)
+                all_full_data.append(result)
+
                 yield {
                     "type": "step_complete",
-                    "step_id": step.get("id"),
-                    "action": "run_sql",
-                    "description": f"Repaired: {step.get('description', '')}",
+                    "step_id": f"cv_{table}_{column}",
+                    "action": "get_column_values",
+                    "description": f"Distinct values for {table}.{column}",
                     "status": result.get("status", "unknown"),
                 }
+                continue
 
-        # 5. Synthesize
-        yield {"type": "phase", "phase": "synthesizing"}
+            # ── GET KPI INFO ──
+            elif tool_name == "get_kpi_info_tool":
+                kpi_id = args.get("kpi_id", "")
+                actions_log.append(f"Looking up KPI: {kpi_id}")
 
-        charts = []
-        for step in steps:
-            if step.get("action") == "build_chart":
-                result = results.get(step["id"], {})
-                if result.get("status") == "success":
-                    charts.append({
-                        "chart_xml": result.get("chart_xml", ""),
-                        "chart_type": result.get("chart_type", ""),
-                        "data_records": result.get("data_records", []),
-                        "sql": result.get("sql", ""),
-                        "title": result.get("title", ""),
-                        "size_column": result.get("size_column", ""),
-                        "group_column": result.get("group_column", ""),
-                        "valid_types": result.get("valid_types", []),
-                    })
+                yield {"type": "phase", "phase": f"looking up KPI: {kpi_id}"}
+                result = await _handle_get_kpi_info(args)
+                all_query_results.append(result)
+                all_full_data.append(result)
 
-        response = await _run_synthesizer(question, results, steps)
+                yield {
+                    "type": "step_complete",
+                    "step_id": f"kpi_{kpi_id}",
+                    "action": "get_kpi_info",
+                    "description": f"KPI info: {kpi_id}",
+                    "status": result.get("status", "unknown"),
+                }
+                continue
 
-        last_sql = ""
-        for step in reversed(steps):
-            if step.get("action") == "run_sql" and results.get(step["id"], {}).get("status") == "success":
-                last_sql = results[step["id"]].get("sql", "")
-                break
+            # ── EXPLORE ──
+            elif tool_name == "explore_tool":
+                reasoning = args.get("reasoning", "")
+                queries = args.get("queries", [])
+                actions_log.append(f"Exploring ({len(queries)} queries) — {reasoning[:60]}")
 
-        yield {"type": "complete", "message": {
-            "response": response,
-            "intent": "analytics",
-            "actions": actions_log,
-            "charts": charts,
-            "sql": last_sql,
-        }}
+                yield {"type": "phase", "phase": "exploring"}
+                result = await _handle_explore(args, auth=auth)
+                all_query_results.append(result)
+                all_full_data.append(result)
+
+                yield {
+                    "type": "step_complete",
+                    "step_id": f"explore_{iteration}",
+                    "action": "explore",
+                    "description": f"Exploration: {reasoning[:60]}",
+                    "status": result.get("status", "unknown"),
+                }
+                continue
+
+        else:
+            # Max iterations reached — force synthesis
+            yield {"type": "phase", "phase": "synthesizing"}
+            actions_log.append("Max iterations reached — synthesizing from available data")
+            answer_text = await _force_synthesize(question, all_query_results)
+
+        # ── POST-LOOP: mode branching ──
+        if mode == "report":
+            yield {"type": "phase", "phase": "formatting report"}
+            actions_log.append("Formatting report with Gemini...")
+            report_html = await _synthesize_report(question, all_query_results)
+
+            yield {"type": "complete", "message": {
+                "response": report_html,
+                "intent": "report",
+                "actions": actions_log,
+                "charts": [],
+                "sql": last_sql,
+                "report_html": report_html,
+            }}
+        else:
+            yield {"type": "complete", "message": {
+                "response": answer_text,
+                "intent": "analytics",
+                "actions": actions_log,
+                "charts": answer_charts_data,
+                "sql": last_sql,
+            }}
 
         logger.info("=== AGENT STREAM COMPLETE (%.2fs) ===", time.time() - overall_start)
 
@@ -1442,7 +1430,7 @@ if __name__ == "__main__":
     import asyncio
 
     async def _cli():
-        print("-- Frammer AI (Plan-Execute-Synthesize) --\n")
+        print("-- Frammer AI (ReAct Loop) --\n")
         while True:
             q = input("You: ").strip()
             if q.lower() in ("quit", "exit"):
