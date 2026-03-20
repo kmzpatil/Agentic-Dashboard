@@ -43,6 +43,9 @@ const markdownComponents = {
 
 const PHASE_LABELS = {
   planning: 'Analyzing question...',
+  'planning report': 'Planning report structure...',
+  thinking: 'Analyzing question...',
+  'thinking (continued)': 'Continuing analysis...',
   executing: 'Running queries...',
   repairing: 'Fixing queries...',
   synthesizing: 'Composing response...',
@@ -162,6 +165,93 @@ function ErrorBanner({ error }) {
   );
 }
 
+function ReportViewer({ html }) {
+  const iframeRef = useRef(null);
+  const [downloading, setDownloading] = useState(false);
+  const [downloaded, setDownloaded] = useState(false);
+
+  useEffect(() => {
+    if (iframeRef.current && html) {
+      iframeRef.current.srcdoc = html;
+    }
+  }, [html]);
+
+  // Extract title from the report HTML for the card header
+  const titleMatch = html?.match(/<(?:h1|title)[^>]*>(.*?)<\/(?:h1|title)>/si);
+  const reportTitle = titleMatch
+    ? titleMatch[1].replace(/<[^>]+>/g, '').trim()
+    : 'Analytical Report';
+
+  const handleSavePdf = async () => {
+    setDownloading(true);
+    setDownloaded(false);
+    try {
+      const win = window.open('', '_blank');
+      if (win) {
+        win.document.write(html);
+        win.document.close();
+        win.addEventListener('load', () => win.print());
+      }
+      setDownloaded(true);
+    } catch (err) {
+      console.error('PDF export failed:', err);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <div className="mt-4 max-w-[780px]">
+      <div className="rounded-2xl border border-neutral-800 bg-[#0C0C0C] overflow-hidden">
+        {/* Card header */}
+        <div className="flex items-start gap-3 p-5 pb-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-500/10 shrink-0">
+            <FileText size={18} className="text-red-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-red-400/70 mb-1">Report Generated</div>
+            <div className="text-[15px] font-semibold text-white leading-tight truncate">{reportTitle}</div>
+          </div>
+        </div>
+
+        {/* Iframe preview */}
+        <div className="px-5">
+          <iframe
+            ref={iframeRef}
+            className="w-full rounded-lg border border-neutral-800 bg-white"
+            style={{ height: '500px' }}
+            sandbox="allow-scripts"
+            title="Report"
+          />
+        </div>
+
+        {/* Save as PDF button */}
+        <div className="p-5 pt-3">
+          <button
+            onClick={handleSavePdf}
+            disabled={downloading}
+            className={`w-full flex items-center justify-center gap-2.5 rounded-xl px-5 py-3 text-[14px] font-semibold transition-all ${
+              downloaded
+                ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
+                : downloading
+                  ? 'bg-neutral-800 border border-neutral-700 text-neutral-400 cursor-wait'
+                  : 'bg-white text-black hover:bg-neutral-200 active:scale-[0.98]'
+            }`}
+          >
+            {downloading ? (
+              <><Loader2 size={16} className="animate-spin" /> Preparing PDF...</>
+            ) : downloaded ? (
+              <><CheckCircle2 size={16} /> Done — Click to save again</>
+            ) : (
+              <><Download size={16} /> Save Report as PDF</>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AssistantMessageItem({ message, onOpenCanvas, onNavigate }) {
   // Report mode — download card only, no inline preview
   if (message.intent === 'report' && message.reportHtml) {
@@ -208,10 +298,11 @@ function AssistantMessageItem({ message, onOpenCanvas, onNavigate }) {
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
           {message.markdown || message.content || ''}
         </ReactMarkdown>
+        {message.report_html && <ReportViewer html={message.report_html} />}
         {kpiArtifact && <InlineKpiCards artifact={kpiArtifact} />}
         {tableArtifact && <InlineTablePreview artifact={tableArtifact} datasets={message.datasets} />}
         <ErrorBanner error={message.error} />
-        {hasAnyArtifact && (
+        {hasAnyArtifact && !message.report_html && (
           <button
             onClick={() => onOpenCanvas(message)}
             className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-neutral-800 bg-[#111111] px-4 py-2.5 text-[13px] font-semibold text-neutral-400 transition-colors hover:border-neutral-700 hover:bg-[#171717] hover:text-neutral-200"
@@ -483,6 +574,9 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
   const [conversations, setConversations] = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [canvasMessage, setCanvasMessage] = useState(null);
+  // Mode and clarification state
+  const [currentMode, setCurrentMode] = useState('normal');
+  const [pendingClarification, setPendingClarification] = useState(false);
   // Streaming state
   const [streamPhase, setStreamPhase] = useState('');
   const [planSteps, setPlanSteps] = useState([]);
@@ -570,6 +664,9 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
         },
         body: JSON.stringify({ message: text, filters: {}, conversation_id: conversationId, report_mode: reportMode }),
       });
+
+      // Clear clarification state after sending
+      if (pendingClarification) setPendingClarification(false);
 
       if (!res.ok) {
         const errPayload = await res.json().catch(() => ({}));
@@ -838,6 +935,17 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
                   {voice.listening ? <MicOff size={15} /> : <Mic size={15} />}
                 </button>
               )}
+              <button
+                onClick={() => setCurrentMode(m => m === 'normal' ? 'report' : 'normal')}
+                className={`rounded-xl p-2.5 transition-all ${
+                  currentMode === 'report'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-[#1A1A1A] text-neutral-400 hover:bg-neutral-700'
+                }`}
+                title={currentMode === 'report' ? 'Report mode (click to switch to chat)' : 'Chat mode (click to switch to report)'}
+              >
+                <FileText size={15} />
+              </button>
               <button
                 onClick={() => send()}
                 disabled={loading || !input.trim()}

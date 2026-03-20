@@ -2,11 +2,18 @@
  * reportParser.js
  * ────────────────
  * Utilities for detecting and cleaning report HTML from the agent.
+ * reportXmlParser.js
+ * ──────────────────
+ * Utilities for detecting and cleaning report HTML from the agent.
+ * Handles both formats:
+ *   - Full DOCTYPE documents (pratyay's Chart.js reports)
+ *   - Div-based fragments (class="report")
  */
 
 /**
  * Check if a string looks like report HTML.
  * Lenient detection — handles single/double quotes, extra whitespace, etc.
+ * Lenient detection — handles both full HTML documents and div fragments.
  */
 export function isReportHtml(text) {
   if (!text || typeof text !== 'string' || text.length < 30) return false;

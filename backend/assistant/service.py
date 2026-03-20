@@ -288,16 +288,40 @@ async def chat_stream(
 
     scoped_prompt = f"{_normalise_filter_prompt(filters)}{message}"
     prior_messages = conversation.get("messages", [])
+    agent_state = conversation.get("agent_state")
 
     # Yield conversation_id first so frontend can track it
     yield {"type": "init", "conversation_id": conversation_id}
+
+    # Clear agent_state after resumption
+    if agent_state:
+        conversation_api.update_agent_state(conversation_id, None)
 
     # Stream agent events
     final_message = None
     async for event in agent_api.run_agent_stream(
         scoped_prompt, auth=auth, working_memory=working_memory, history=prior_messages, report_mode=report_mode
     ):
-        if event.get("type") == "complete":
+        if event.get("type") == "clarification_needed":
+            # Store agent state for resumption
+            conversation_api.update_agent_state(conversation_id, event.get("agent_state"))
+
+            # Persist clarification as assistant message
+            clarify_metadata = {"intent": "clarification"}
+            conversation_api.append_message(
+                conversation_id, "assistant",
+                event.get("question", "Could you clarify?"),
+                metadata=clarify_metadata,
+            )
+
+            yield {
+                "type": "clarification_needed",
+                "question": event.get("question", ""),
+                "conversation_id": conversation_id,
+            }
+            return  # Stop streaming
+
+        elif event.get("type") == "complete":
             final_message = event.get("message", {})
             # Build artifacts for the final message
             agent_charts = final_message.get("charts", [])

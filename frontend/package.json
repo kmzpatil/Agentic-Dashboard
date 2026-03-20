@@ -10,7 +10,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "api": "python -m uvicorn --app-dir .. backend.main:app --host 0.0.0.0 --port 4000 --reload --reload-dir ../backend",
+    "api": "python -m uvicorn --app-dir .. backend.main:app --host 0.0.0.0 --port 4000 --reload --reload-dir ../backend --reload-dir ../database",
     "db:start": "python ../database/local_postgres.py start",
     "db:stop": "python ../database/local_postgres.py stop",
     "db:status": "python ../database/local_postgres.py status",
