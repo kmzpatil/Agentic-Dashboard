@@ -357,7 +357,7 @@ async def chat_stream(
 
             # For reports: report_html is the same as response (the HTML content).
             # Pass it in BOTH fields so the frontend can find it regardless.
-            report_html_content = final_message.get("report_html", "") or raw_response if is_report else ""
+            report_html_content = (final_message.get("report_html", "") or raw_response) if is_report else ""
 
             yield {
                 "type": "complete",

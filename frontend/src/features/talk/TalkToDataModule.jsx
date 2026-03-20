@@ -26,7 +26,7 @@ import remarkGfm from 'remark-gfm';
 import { API_BASE } from '../../lib/constants';
 import useVoiceInput from '../../hooks/useVoiceInput';
 import ArtifactCanvas from '../../components/artifacts/ArtifactCanvas';
-import { isReportHtml, cleanReportHtml } from '../../lib/reportXmlParser';
+import { cleanReportHtml } from '../../lib/reportXmlParser';
 import ReportRenderer from '../../components/reports/ReportRenderer';
 
 const markdownComponents = {

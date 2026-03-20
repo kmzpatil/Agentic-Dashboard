@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { CheckCircle2, Download, FileText, Loader2 } from 'lucide-react';
+import DOMPurify from 'dompurify';
 
 /**
  * PDF styles — continuous-flow layout.
@@ -201,6 +202,11 @@ const PDF_CSS = `
 const PAGE_HEADER_HTML = '<div class="report-page-header"><span class="logo">FRAMMER AI</span><span class="divider"></span><span class="label">Analytics Report</span></div>';
 
 function buildPdfDocument(reportHtml) {
+  const sanitized = DOMPurify.sanitize(reportHtml, {
+    USE_PROFILES: { html: true },
+    FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input'],
+    FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur', 'onchange', 'onsubmit', 'style'],
+  });
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -210,7 +216,7 @@ function buildPdfDocument(reportHtml) {
 </head>
 <body>
 ${PAGE_HEADER_HTML}
-${reportHtml}
+${sanitized}
 </body>
 </html>`;
 }

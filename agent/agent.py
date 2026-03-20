@@ -818,27 +818,42 @@ async def _gather_report_data(
             }
 
     # Attempt one repair round for failed queries
-    failed = [
-        (sq, gathered[sq["id"]])
-        for sq in sub_questions
-        if gathered.get(sq["id"], {}).get("status") == "error"
-        and sq.get("sql")
-    ]
+    failed = []
+    for sq in sub_questions:
+        sq_id = sq.get("id")
+        if not sq_id:
+            # Malformed sub-question without an id; skip from repair logic.
+            continue
+        if gathered.get(sq_id, {}).get("status") == "error" and sq.get("sql"):
+            failed.append((sq, gathered.get(sq_id, {})))
+
     if failed:
         logger.info("=== REPORT REPAIR: %d failed queries ===", len(failed))
         repair_pairs = [
-            ({"id": sq["id"], "action": "run_sql", "params": {"sql": sq["sql"]}}, res)
+            ({"id": sq.get("id"), "action": "run_sql", "params": {"sql": sq.get("sql", "")}}, res)
             for sq, res in failed
         ]
         repaired = await _repair_sql(repair_pairs, schema)
         for step, fixed_sql in repaired:
+            sq_id = step.get("id")
+            if not sq_id:
+                continue
             step["params"]["sql"] = fixed_sql
-            result = await _execute_sql_step(step["params"], auth=auth)
-            sq_id = step["id"]
-            # Preserve question/type metadata
-            result["question"] = gathered[sq_id].get("question", "")
-            result["type"] = gathered[sq_id].get("type", "")
-            gathered[sq_id] = result
+            try:
+                result = await _execute_sql_step(step["params"], auth=auth)
+                # Preserve question/type metadata
+                result["question"] = gathered[sq_id].get("question", "")
+                result["type"] = gathered[sq_id].get("type", "")
+                gathered[sq_id] = result
+            except Exception as e:
+                logger.error("--- REPORT REPAIR %s FAILED: %s ---", sq_id, e)
+                prev = gathered.get(sq_id, {})
+                gathered[sq_id] = {
+                    "status": "error",
+                    "error": f"Repair failed: {e}",
+                    "question": prev.get("question", ""),
+                    "type": prev.get("type", ""),
+                }
 
     return gathered
 

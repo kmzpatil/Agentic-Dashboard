@@ -1,5 +1,5 @@
 /**
- * reportParser.js
+ * reportXmlParser.js
  * ────────────────
  * Utilities for detecting and cleaning report HTML from the agent.
  */
@@ -11,11 +11,9 @@
 export function isReportHtml(text) {
   if (!text || typeof text !== 'string' || text.length < 30) return false;
   const t = text.trim().toLowerCase();
-  // Check for any variation of <div class="report"> or class='report'
-  return (
-    (t.includes('class="report"') || t.includes("class='report'") || t.includes('class=report')) &&
-    t.includes('</div>')
-  );
+  // Check for any variation of <div class="report"> or class='report', with proper value boundary
+  const classReportRegex = /class\s*=\s*["']?report["']?([\s/>]|$)/i;
+  return classReportRegex.test(t) && t.includes('</div>');
 }
 
 /**

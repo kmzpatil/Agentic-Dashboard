@@ -11,9 +11,9 @@ from dotenv import load_dotenv
 from pathlib import Path
 
 _AGENT_DIR = Path(__file__).resolve().parent
-load_dotenv(_AGENT_DIR / ".env", override=True)
-load_dotenv(_AGENT_DIR.parent / ".env", override=True)
-load_dotenv(override=True)
+load_dotenv(_AGENT_DIR / ".env")
+load_dotenv(_AGENT_DIR.parent / ".env")
+load_dotenv()
 
 logger = logging.getLogger("frammer.gemini_client")
 
