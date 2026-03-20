@@ -147,15 +147,25 @@ export default function ContentAnalysisTab({ authUser, data, breakdown = 'channe
   const baseOptionsData = filterOptions || {};
 
   const predictorClients = useMemo(() => sortUnique(baseOptionsData?.clients || []), [baseOptionsData?.clients]);
-  const predictorChannels = useMemo(() => sortUnique(baseOptionsData?.channels || []), [baseOptionsData?.channels]);
-  const predictorInputTypes = useMemo(() => sortUnique(baseOptionsData?.input_types || []), [baseOptionsData?.input_types]);
-  const predictorLanguages = useMemo(() => sortUnique(baseOptionsData?.languages || []), [baseOptionsData?.languages]);
+  const predictorChannels = useMemo(() => {
+    const src = predictorClient ? scopedOptionsData : baseOptionsData;
+    return sortUnique(src?.channels || []);
+  }, [predictorClient, scopedOptionsData, baseOptionsData]);
+  const predictorInputTypes = useMemo(() => {
+    const src = predictorChannel ? scopedOptionsData : baseOptionsData;
+    return sortUnique(src?.input_types || []);
+  }, [predictorChannel, scopedOptionsData, baseOptionsData]);
+  const predictorLanguages = useMemo(() => {
+    const src = predictorInputType ? scopedOptionsData : baseOptionsData;
+    return sortUnique(src?.languages || []);
+  }, [predictorInputType, scopedOptionsData, baseOptionsData]);
   const predictorOutputTypes = useMemo(() => {
-    const backendTypes = baseOptionsData?.output_types || [];
+    const src = predictorLanguage ? scopedOptionsData : baseOptionsData;
+    const backendTypes = src?.output_types || [];
     if (backendTypes.length > 0) return sortUnique(backendTypes);
     const fallbackTypes = (data?.outputTypeSurvival || []).map((row) => row.output_type);
     return sortUnique(fallbackTypes);
-  }, [baseOptionsData?.output_types, data?.outputTypeSurvival]);
+  }, [predictorLanguage, scopedOptionsData, baseOptionsData, data?.outputTypeSurvival]);
 
   const canChooseChannel = Boolean(predictorClient);
   const canChooseInputType = Boolean(predictorChannel);
@@ -412,16 +422,34 @@ export default function ContentAnalysisTab({ authUser, data, breakdown = 'channe
               </PredictorField>
             </div>
 
-            <div className="rounded-lg border border-neutral-800 bg-[#0c0c0c] px-3 py-2 text-[12px]">
+            <div className="rounded-lg border border-neutral-800 bg-[#0c0c0c] px-4 py-3 text-[12px]">
               {!canPredict && <span className="text-neutral-500">Select client → channel → input type → language → output type to run prediction.</span>}
               {predictLoading && <span className="text-neutral-400">Predicting…</span>}
               {!predictLoading && predictError && <span className="text-red-400">{predictError}</span>}
               {!predictLoading && !predictError && predictResult && (
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                  <span className="text-neutral-200 font-semibold">{predictResult.prediction}</span>
-                  <span className="text-neutral-400">Probability: {predictResult.probability_pct}%</span>
-                  <span className="text-neutral-500">Confidence: {predictResult.confidence_pct}%</span>
-                  <span className="text-neutral-500">Bucket: {predictResult.publish_timeframe_bucket}</span>
+                <div className="space-y-2.5">
+                  <div className="flex items-center gap-3">
+                    <span className="text-[15px] font-bold text-white">{predictResult.prediction}</span>
+                    <span className="rounded-md bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-[11px] font-semibold text-emerald-400">
+                      {predictResult.confidence_pct}% confidence
+                    </span>
+                  </div>
+                  {predictResult.confidence_by_n && (
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { key: '0', label: 'Never' },
+                        { key: '1', label: '≤1 day' },
+                        { key: '2', label: '≤2 days' },
+                        { key: '3', label: '≤3 days' },
+                        { key: '4+', label: '>3 days' },
+                      ].map(({ key, label }) => (
+                        <div key={key} className="flex items-center gap-1.5 rounded-md border border-neutral-800 bg-[#111] px-2 py-1">
+                          <span className="text-[10px] text-neutral-500">{label}</span>
+                          <span className="text-[11px] font-semibold text-neutral-300">{predictResult.confidence_by_n[key]}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

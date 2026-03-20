@@ -47,8 +47,6 @@ class PredictorTrainingError(Exception):
 class _PredictorArtifacts:
     rf_model: Any
     feature_columns: list[str]
-    max_up_dur: float
-    max_cr_dur: float
     training_rows: int
     train_rows: int
 
@@ -124,25 +122,17 @@ def _train_predictor_once() -> _PredictorArtifacts:
 
         df["Is_Published"] = df["Published_URL"].notna()
         df["Days_to_Publish"] = (df["Publish_Date"] - df["Create_Date"]).dt.total_seconds() / (24 * 3600)
+        df["Upload_to_Create_Days"] = (df["Create_Date"] - df["Upload_Date"]).dt.total_seconds() / (24 * 3600)
+        df["Upload_to_Create_Days"] = df["Upload_to_Create_Days"].clip(lower=0).fillna(0)
         df["Publish_Timeframe"] = df.apply(
             lambda row: _categorize_publish_time(bool(row["Is_Published"]), row.get("Days_to_Publish")),
             axis=1,
         )
 
-        max_up_dur = float(df["Uploaded_Duration"].max())
-        max_cr_dur = float(df["Created_Duration"].max())
-
-        df["up_dur_norm"] = df["Uploaded_Duration"] / max_up_dur
-        df["cr_dur_norm"] = df["Created_Duration"] / max_cr_dur
-        for power in [2, 3, 7, 9, 11]:
-            df[f"Up_Duration_P{power}"] = df["up_dur_norm"] ** power
-            df[f"Cr_Duration_P{power}"] = df["cr_dur_norm"] ** power
-
         drop_cols = [
             "Publish_Timeframe", "Is_Published", "Publish_Date",
             "Days_to_Publish", "Create_Date", "Upload_Date",
-            "Published_Platform", "up_dur_norm", "cr_dur_norm", "Post_ID",
-            "Upload_to_Create_Days",
+            "Published_Platform", "Post_ID", "Published_URL",
         ]
         feature_df = df.drop(columns=[column for column in drop_cols if column in df.columns])
         X = pd.get_dummies(feature_df, drop_first=True)
@@ -151,17 +141,9 @@ def _train_predictor_once() -> _PredictorArtifacts:
         if X.empty or y.nunique() < 2:
             raise PredictorTrainingError("Not enough class diversity to train predictor")
 
-        try:
-            X_train, _, y_train, _ = train_test_split(
-                X,
-                y,
-                test_size=0.2,
-                random_state=42,
-                stratify=y,
-            )
-        except ValueError:
-            X_train = X
-            y_train = y
+        X_train, _, y_train, _ = train_test_split(
+            X, y, test_size=0.2, random_state=42,
+        )
 
         rf_model = RandomForestClassifier(
             n_estimators=100,
@@ -169,15 +151,12 @@ def _train_predictor_once() -> _PredictorArtifacts:
             min_samples_split=2,
             class_weight="balanced",
             random_state=42,
-            n_jobs=-1,
         )
         rf_model.fit(X_train, y_train)
 
         _PREDICTOR_ARTIFACTS = _PredictorArtifacts(
             rf_model=rf_model,
             feature_columns=list(X_train.columns),
-            max_up_dur=max_up_dur,
-            max_cr_dur=max_cr_dur,
             training_rows=int(len(df)),
             train_rows=int(len(X_train)),
         )
@@ -640,15 +619,9 @@ def predict_publish_likelihood(payload: PredictorRequest, _auth: AuthContext = D
                 "Uploaded_Duration": [payload.uploaded_duration],
                 "Output_Type": [payload.output_type],
                 "Created_Duration": [payload.created_duration],
+                "Upload_to_Create_Days": [payload.upload_to_create_days],
             }
         )
-
-        sample_df["up_dur_norm"] = sample_df["Uploaded_Duration"] / artifacts.max_up_dur
-        sample_df["cr_dur_norm"] = sample_df["Created_Duration"] / artifacts.max_cr_dur
-        for power in [2, 3, 7, 9, 11]:
-            sample_df[f"Up_Duration_P{power}"] = sample_df["up_dur_norm"] ** power
-            sample_df[f"Cr_Duration_P{power}"] = sample_df["cr_dur_norm"] ** power
-        sample_df = sample_df.drop(columns=["up_dur_norm", "cr_dur_norm"])
 
         sample_X = pd.get_dummies(sample_df).reindex(columns=artifacts.feature_columns, fill_value=0)
 
@@ -717,7 +690,6 @@ def predict_publish_likelihood(payload: PredictorRequest, _auth: AuthContext = D
                 "max_depth": "None",
                 "min_samples_split": 2,
                 "class_weight": "balanced",
-                "feature_powers": [2, 3, 7, 9, 11],
             },
             "support": {
                 "training_rows": artifacts.training_rows,
