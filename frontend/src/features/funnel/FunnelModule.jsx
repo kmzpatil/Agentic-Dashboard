@@ -6,6 +6,7 @@ import OverviewFlowTab from './components/OverviewFlowTab';
 import ChannelEfficiencyTab from './components/ChannelEfficiencyTab';
 import ContentAnalysisTab from './components/ContentAnalysisTab';
 import DataExplorerTab from './components/DataExplorerTab';
+import PublishPredictorGame from './PublishPredictorGame';
 import { FunnelSkeleton } from '../../components/common/Skeleton';
 import {
   buildBreakdownOutcomeLinks,
@@ -18,10 +19,11 @@ import {
 } from './utils/funnelFlow';
 
 const ANALYSIS_TABS = [
-  { id: 'overview', label: 'Pipeline & Flow' },
-  { id: 'channel',  label: 'Channel Efficiency' },
-  { id: 'content',  label: 'Content Analysis' },
-  { id: 'explorer', label: 'Data Explorer' },
+  { id: 'overview',   label: 'Pipeline & Flow' },
+  { id: 'channel',    label: 'Channel Efficiency' },
+  { id: 'content',    label: 'Content Analysis' },
+  { id: 'explorer',   label: 'Data Explorer' },
+  { id: 'predictor',  label: 'Publish Predictor' },
 ];
 const BREAKDOWN_SOURCES_LIMITS = {
   channel: 12,
@@ -419,9 +421,10 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
                 />
               )}
 
-              {analysisTab === 'channel'  && <ChannelEfficiencyTab  authUser={authUser} data={data} breakdown={breakdown} filters={effectiveFilters} />}
-              {analysisTab === 'content'  && <ContentAnalysisTab   authUser={authUser} data={data} breakdown={breakdown} filters={effectiveFilters} />}
-              {analysisTab === 'explorer' && <DataExplorerTab       authUser={authUser} data={data} breakdown={breakdown} filters={effectiveFilters} />}
+              {analysisTab === 'channel'   && <ChannelEfficiencyTab  authUser={authUser} data={data} breakdown={breakdown} filters={effectiveFilters} />}
+              {analysisTab === 'content'   && <ContentAnalysisTab   authUser={authUser} data={data} breakdown={breakdown} filters={effectiveFilters} />}
+              {analysisTab === 'explorer'  && <DataExplorerTab       authUser={authUser} data={data} breakdown={breakdown} filters={effectiveFilters} />}
+              {analysisTab === 'predictor' && <PublishPredictorGame  authUser={authUser} />}
             </div>
           </>
         )}
