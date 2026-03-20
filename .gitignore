@@ -11,7 +11,7 @@ docs/
 # Files
 auth_schema.sql
 add_user_eng.sql
-
+*.sql
 
 # ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/

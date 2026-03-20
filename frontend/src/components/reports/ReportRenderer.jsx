@@ -1,266 +1,261 @@
-import React, { useState, useRef } from 'react';
-import {
-  AlertTriangle,
-  BarChart3,
-  BookOpen,
-  CheckCircle2,
-  ChevronDown,
-  ChevronRight,
-  Download,
-  FileText,
-  Info,
-  Lightbulb,
-  TrendingUp,
-} from 'lucide-react';
+import React, { useState } from 'react';
+import { CheckCircle2, Download, FileText, Loader2 } from 'lucide-react';
 
-const SEVERITY_STYLES = {
-  critical: { bg: 'bg-red-950/30', border: 'border-red-800/40', text: 'text-red-300', icon: AlertTriangle, iconColor: 'text-red-400' },
-  high:     { bg: 'bg-orange-950/20', border: 'border-orange-800/30', text: 'text-orange-300', icon: AlertTriangle, iconColor: 'text-orange-400' },
-  medium:   { bg: 'bg-amber-950/20', border: 'border-amber-800/30', text: 'text-amber-300', icon: Info, iconColor: 'text-amber-400' },
-  low:      { bg: 'bg-blue-950/20', border: 'border-blue-800/30', text: 'text-blue-300', icon: Info, iconColor: 'text-blue-400' },
-  info:     { bg: 'bg-neutral-900/40', border: 'border-neutral-700/40', text: 'text-neutral-300', icon: Info, iconColor: 'text-neutral-400' },
-};
-
-const SECTION_ICONS = {
-  trend: TrendingUp,
-  breakdown: BarChart3,
-  comparison: BarChart3,
-  anomaly: AlertTriangle,
-  forecast: TrendingUp,
-};
-
-function formatCellValue(value, format) {
-  if (value === '' || value == null) return '—';
-  switch (format) {
-    case 'currency':
-      return `$${Number(value).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-    case 'percent':
-      return `${Number(value).toFixed(1)}%`;
-    case 'number':
-      return Number(value).toLocaleString();
-    default:
-      return String(value);
+/**
+ * PDF styles — continuous-flow layout.
+ * No page divs. The browser's print engine fills pages naturally.
+ * page-break-inside:avoid on sections prevents content splitting.
+ * position:fixed header repeats on every printed page.
+ */
+const PDF_CSS = `
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    color: #1a1a1a; background: #fff;
+    font-size: 11px; line-height: 1.5;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    margin: 0; padding: 0;
   }
+  @page { size: A4; margin: 14mm 16mm 12mm 16mm; }
+
+  /* ── Fixed header repeats on every printed page ── */
+  .report-page-header {
+    position: fixed; top: 0; left: 0; right: 0;
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 0 6px 0;
+    border-bottom: 2px solid #ef4444;
+    margin-bottom: 8px;
+    background: #fff;
+  }
+  .report-page-header .logo { font-size: 13px; font-weight: 800; color: #ef4444; letter-spacing: -0.02em; }
+  .report-page-header .divider { width: 1px; height: 12px; background: #d1d5db; }
+  .report-page-header .label { font-size: 8px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: #9ca3af; }
+
+  /* Push content below fixed header */
+  .report { padding-top: 28px; }
+
+  /* ── Cover ── */
+  .cover-header { padding: 6px 0 8px 0; margin-bottom: 10px; }
+  .report-badge {
+    display: inline-block; font-size: 8px; font-weight: 700;
+    letter-spacing: 0.18em; text-transform: uppercase;
+    color: #dc2626; background: #fef2f2;
+    padding: 2px 8px; border-radius: 8px; margin-bottom: 6px;
+  }
+  .report-title { font-size: 20px; font-weight: 800; color: #111; margin: 0 0 3px 0; line-height: 1.2; }
+  .report-subtitle { font-size: 12px; color: #6b7280; margin: 0 0 6px 0; }
+  .report-meta { display: flex; gap: 14px; font-size: 9px; color: #9ca3af; }
+
+  /* ── Executive Summary ── */
+  .executive-summary {
+    background: #f0f7ff; border: 1px solid #dbeafe;
+    border-radius: 6px; padding: 10px 12px; margin-bottom: 12px;
+    page-break-inside: avoid;
+  }
+  .executive-summary h2 {
+    font-size: 9px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.14em; color: #2563eb; margin: 0 0 5px 0;
+  }
+  .executive-summary p { font-size: 10.5px; color: #374151; margin: 0; line-height: 1.55; }
+
+  /* ── Sections ── */
+  .section {
+    margin-bottom: 10px; padding-bottom: 10px;
+    border-bottom: 1px solid #f3f4f6;
+    page-break-inside: avoid;
+  }
+  .section:last-of-type { border-bottom: none; }
+  .section-header {
+    display: flex; align-items: center; gap: 7px;
+    margin-bottom: 4px; padding-bottom: 3px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  .section-type {
+    font-size: 7px; font-weight: 700; letter-spacing: 0.14em;
+    text-transform: uppercase; color: #6b7280; background: #f3f4f6;
+    padding: 2px 6px; border-radius: 3px;
+  }
+  .section-header h3 { font-size: 12px; font-weight: 700; color: #111827; margin: 0; }
+  .narrative { font-size: 10.5px; color: #374151; margin: 0 0 5px 0; line-height: 1.55; }
+
+  /* ── Table ── */
+  .data-table {
+    width: 100%; border-collapse: collapse; font-size: 9px;
+    margin: 5px 0; page-break-inside: avoid;
+  }
+  .data-table thead { background: #f9fafb; }
+  .data-table th {
+    text-align: left; padding: 3px 6px; font-size: 7px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.1em;
+    color: #6b7280; border-bottom: 1px solid #d1d5db;
+  }
+  .data-table td {
+    padding: 3px 6px; color: #374151;
+    border-bottom: 1px solid #f3f4f6;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── Charts ── */
+  .chart-container { margin: 5px 0; page-break-inside: avoid; }
+  .chart-title { font-size: 9px; font-weight: 700; color: #374151; margin-bottom: 4px; }
+  .bar-chart-row { display: flex; align-items: center; gap: 4px; margin-bottom: 2px; }
+  .bar-chart-label {
+    width: 85px; font-size: 8px; color: #6b7280; text-align: right;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .bar-chart-bar { height: 11px; border-radius: 2px; min-width: 2px; }
+  .bar-chart-value { font-size: 8px; color: #374151; font-weight: 600; min-width: 30px; }
+
+  /* ── Findings ── */
+  .findings { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
+  .finding {
+    display: flex; align-items: flex-start; gap: 6px;
+    padding: 4px 8px; border-radius: 4px; font-size: 9px;
+    page-break-inside: avoid;
+  }
+  .finding-badge {
+    font-size: 7px; font-weight: 700; letter-spacing: 0.08em;
+    padding: 1px 5px; border-radius: 2px; white-space: nowrap;
+    flex-shrink: 0; margin-top: 1px;
+  }
+  .finding-critical { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+  .finding-critical .finding-badge { background: #fee2e2; color: #dc2626; }
+  .finding-high { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; }
+  .finding-high .finding-badge { background: #ffedd5; color: #ea580c; }
+  .finding-medium { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+  .finding-medium .finding-badge { background: #fef3c7; color: #d97706; }
+  .finding-low { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; }
+  .finding-low .finding-badge { background: #dbeafe; color: #2563eb; }
+  .finding-info { background: #f9fafb; border: 1px solid #e5e7eb; color: #374151; }
+  .finding-info .finding-badge { background: #f3f4f6; color: #6b7280; }
+
+  /* ── Conclusions ── */
+  .conclusions, .recommendations { margin-bottom: 10px; page-break-inside: avoid; }
+  .conclusions h2, .recommendations h2 {
+    font-size: 9px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.14em; color: #374151; margin: 0 0 5px 0;
+    padding-bottom: 3px; border-bottom: 1px solid #e5e7eb;
+  }
+  .conclusions ol { margin: 0; padding-left: 14px; }
+  .conclusions li { font-size: 10px; color: #374151; margin-bottom: 3px; line-height: 1.5; }
+  .recommendation {
+    display: flex; align-items: flex-start; gap: 8px;
+    padding: 5px 10px; background: #f9fafb; border: 1px solid #e5e7eb;
+    border-radius: 6px; margin-bottom: 4px; page-break-inside: avoid;
+  }
+  .priority-badge {
+    display: flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; border-radius: 4px;
+    background: #fef3c7; color: #b45309;
+    font-size: 8px; font-weight: 700; flex-shrink: 0;
+  }
+  .recommendation p { font-size: 10px; color: #374151; margin: 0; line-height: 1.5; }
+`;
+
+const PAGE_HEADER_HTML = '<div class="report-page-header"><span class="logo">FRAMMER AI</span><span class="divider"></span><span class="label">Analytics Report</span></div>';
+
+function buildPdfDocument(reportHtml) {
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Frammer Report</title>
+<style>${PDF_CSS}</style>
+</head>
+<body>
+${PAGE_HEADER_HTML}
+${reportHtml}
+</body>
+</html>`;
 }
 
-function FindingBadge({ finding }) {
-  const style = SEVERITY_STYLES[finding.severity] || SEVERITY_STYLES.info;
-  const Icon = style.icon;
-  return (
-    <div className={`flex items-start gap-2 rounded-lg ${style.bg} ${style.border} border px-3 py-2`}>
-      <Icon size={13} className={`${style.iconColor} shrink-0 mt-0.5`} />
-      <span className={`text-[13px] leading-relaxed ${style.text}`}>{finding.text}</span>
-    </div>
-  );
-}
+export default function ReportRenderer({ reportHtml }) {
+  const [downloading, setDownloading] = useState(false);
+  const [downloaded, setDownloaded] = useState(false);
 
-function DataTableView({ dataTable }) {
-  if (!dataTable || !dataTable.columns?.length) return null;
-  return (
-    <div className="mt-4 rounded-xl border border-neutral-800 overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-xs">
-          <thead className="bg-[#0F0F0F]">
-            <tr>
-              {dataTable.columns.map(col => (
-                <th key={col.field} className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-500">
-                  {col.name}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {dataTable.rows.map((row, i) => (
-              <tr key={i} className="border-t border-neutral-900 hover:bg-[#111111] transition-colors">
-                {dataTable.columns.map(col => (
-                  <td key={col.field} className="px-3 py-2 text-neutral-300 whitespace-nowrap font-mono text-[12px]">
-                    {formatCellValue(row[col.field], col.format)}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
+  if (!reportHtml) return null;
 
-function ChartPlaceholder({ chart }) {
-  if (!chart) return null;
-  return (
-    <div className="mt-4 rounded-xl border border-neutral-800 bg-[#0D0D0D] p-5 flex flex-col items-center justify-center gap-2">
-      <BarChart3 size={20} className="text-neutral-600" />
-      <span className="text-[12px] text-neutral-500 font-semibold">{chart.title || 'Chart'}</span>
-      <span className="text-[11px] text-neutral-600">
-        {chart.chartType} — {chart.xColumn} vs {chart.yColumns}
-      </span>
-    </div>
-  );
-}
+  const titleMatch = reportHtml.match(/<(?:h1)[^>]*>(.*?)<\/(?:h1)>/si);
+  const reportTitle = titleMatch
+    ? titleMatch[1].replace(/<[^>]+>/g, '').trim()
+    : 'Analytical Report';
 
-function ReportSection({ section, index }) {
-  const [expanded, setExpanded] = useState(true);
-  const SectionIcon = SECTION_ICONS[section.type] || BarChart3;
-  const typeLabel = section.type.charAt(0).toUpperCase() + section.type.slice(1);
+  const handleDownloadPdf = async () => {
+    setDownloading(true);
+    setDownloaded(false);
+    try {
+      const fullDoc = buildPdfDocument(reportHtml);
 
-  return (
-    <div className="rounded-2xl border border-neutral-800 bg-[#0C0C0C] overflow-hidden">
-      <button
-        onClick={() => setExpanded(e => !e)}
-        className="flex w-full items-center gap-3 px-5 py-4 text-left hover:bg-[#111111] transition-colors"
-      >
-        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-neutral-800/60">
-          <SectionIcon size={14} className="text-neutral-400" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-[14px] font-semibold text-white truncate">{section.heading}</div>
-          <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-neutral-600">{typeLabel} Analysis</span>
-        </div>
-        {expanded ? <ChevronDown size={14} className="text-neutral-600" /> : <ChevronRight size={14} className="text-neutral-600" />}
-      </button>
+      const iframe = document.createElement('iframe');
+      iframe.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;border:none;visibility:hidden;';
+      document.body.appendChild(iframe);
 
-      {expanded && (
-        <div className="border-t border-neutral-800/60 px-5 py-4 space-y-4">
-          <p className="text-[14px] leading-[1.8] text-neutral-300">{section.narrative}</p>
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+      iframeDoc.open();
+      iframeDoc.write(fullDoc);
+      iframeDoc.close();
 
-          <ChartPlaceholder chart={section.chart} />
-          <DataTableView dataTable={section.dataTable} />
+      await new Promise((resolve) => {
+        if (iframe.contentWindow.document.readyState === 'complete') resolve();
+        else iframe.contentWindow.addEventListener('load', resolve);
+      });
+      await new Promise((r) => setTimeout(r, 300));
 
-          {section.keyFindings?.length > 0 && (
-            <div className="space-y-2 pt-2">
-              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-600 mb-2">Key Findings</div>
-              {section.keyFindings.map((f, i) => (
-                <FindingBadge key={i} finding={f} />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
 
-export default function ReportRenderer({ report }) {
-  const reportRef = useRef(null);
-
-  if (!report) return null;
-
-  const handleDownload = () => {
-    // Simple text export as fallback — PDF requires external lib
-    const text = [
-      report.metadata.title,
-      report.metadata.subtitle,
-      `Date Range: ${report.metadata.dateRange}`,
-      '',
-      'EXECUTIVE SUMMARY',
-      report.executiveSummary,
-      '',
-      ...report.sections.flatMap(s => [
-        `--- ${s.heading} (${s.type}) ---`,
-        s.narrative,
-        ...(s.keyFindings || []).map(f => `  [${f.severity}] ${f.text}`),
-        '',
-      ]),
-      'CONCLUSIONS',
-      ...report.conclusions.map((c, i) => `${i + 1}. ${c}`),
-      '',
-      'RECOMMENDATIONS',
-      ...report.recommendations.map(r => `${r.priority}. ${r.text}`),
-    ].join('\n');
-
-    const blob = new Blob([text], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${report.metadata.title.replace(/[^a-zA-Z0-9]/g, '_')}_report.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+      setTimeout(() => { try { document.body.removeChild(iframe); } catch (_) {} }, 2000);
+      setDownloaded(true);
+    } catch (err) {
+      console.error('PDF generation failed:', err);
+      try {
+        const fullDoc = buildPdfDocument(reportHtml);
+        const blob = new Blob([fullDoc], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        const win = window.open(url, '_blank');
+        if (win) win.addEventListener('load', () => { win.print(); URL.revokeObjectURL(url); });
+      } catch (_) {}
+    } finally {
+      setDownloading(false);
+    }
   };
 
   return (
-    <div ref={reportRef} className="max-w-[820px] space-y-6">
-      {/* Header */}
-      <div className="rounded-2xl border border-neutral-800 bg-gradient-to-br from-[#111111] to-[#0A0A0A] p-6">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex-1">
-            <div className="flex items-center gap-2.5 mb-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-red-500/10">
-                <FileText size={16} className="text-red-400" />
-              </div>
-              <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-red-400/80">Analytical Report</span>
-            </div>
-            <h1 className="text-xl font-bold text-white leading-tight">{report.metadata.title}</h1>
-            {report.metadata.subtitle && (
-              <p className="mt-1 text-[14px] text-neutral-400">{report.metadata.subtitle}</p>
-            )}
-            {report.metadata.dateRange && (
-              <p className="mt-2 text-[12px] text-neutral-600">{report.metadata.dateRange}</p>
-            )}
+    <div className="max-w-[780px]">
+      <div className="rounded-2xl border border-neutral-800 bg-[#0C0C0C] p-5">
+        <div className="flex items-start gap-3 mb-4">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-500/10 shrink-0">
+            <FileText size={18} className="text-red-400" />
           </div>
-          <button
-            onClick={handleDownload}
-            className="flex items-center gap-1.5 rounded-xl border border-neutral-800 bg-[#0E0E0E] px-3 py-2 text-[12px] font-semibold text-neutral-400 transition-colors hover:border-neutral-700 hover:text-neutral-200"
-          >
-            <Download size={13} />
-            Export
-          </button>
+          <div className="flex-1 min-w-0">
+            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-red-400/70 mb-1">Report Generated</div>
+            <div className="text-[15px] font-semibold text-white leading-tight truncate">{reportTitle}</div>
+            <p className="mt-1.5 text-[12px] text-neutral-500 leading-relaxed">
+              Click below to save as PDF. Select "Save as PDF" in the print dialog.
+            </p>
+          </div>
         </div>
+        <button
+          onClick={handleDownloadPdf}
+          disabled={downloading}
+          className={`w-full flex items-center justify-center gap-2.5 rounded-xl px-5 py-3 text-[14px] font-semibold transition-all ${
+            downloaded
+              ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
+              : downloading
+                ? 'bg-neutral-800 border border-neutral-700 text-neutral-400 cursor-wait'
+                : 'bg-white text-black hover:bg-neutral-200 active:scale-[0.98]'
+          }`}
+        >
+          {downloading ? (
+            <><Loader2 size={16} className="animate-spin" /> Preparing PDF...</>
+          ) : downloaded ? (
+            <><CheckCircle2 size={16} /> Done — Click to save again</>
+          ) : (
+            <><Download size={16} /> Save Report as PDF</>
+          )}
+        </button>
       </div>
-
-      {/* Executive Summary */}
-      {report.executiveSummary && (
-        <div className="rounded-2xl border border-neutral-800 bg-[#0C0C0C] p-5">
-          <div className="flex items-center gap-2 mb-3">
-            <BookOpen size={14} className="text-blue-400" />
-            <span className="text-[12px] font-bold uppercase tracking-[0.15em] text-neutral-500">Executive Summary</span>
-          </div>
-          <p className="text-[14px] leading-[1.85] text-neutral-200">{report.executiveSummary}</p>
-        </div>
-      )}
-
-      {/* Sections */}
-      {report.sections.map((section, i) => (
-        <ReportSection key={i} section={section} index={i} />
-      ))}
-
-      {/* Conclusions */}
-      {report.conclusions?.length > 0 && (
-        <div className="rounded-2xl border border-neutral-800 bg-[#0C0C0C] p-5">
-          <div className="flex items-center gap-2 mb-3">
-            <CheckCircle2 size={14} className="text-emerald-400" />
-            <span className="text-[12px] font-bold uppercase tracking-[0.15em] text-neutral-500">Conclusions</span>
-          </div>
-          <div className="space-y-2">
-            {report.conclusions.map((c, i) => (
-              <div key={i} className="flex items-start gap-2.5">
-                <span className="text-[12px] font-bold text-neutral-600 mt-0.5 shrink-0 w-5 text-right">{i + 1}.</span>
-                <p className="text-[14px] leading-[1.7] text-neutral-300">{c}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Recommendations */}
-      {report.recommendations?.length > 0 && (
-        <div className="rounded-2xl border border-neutral-800 bg-[#0C0C0C] p-5">
-          <div className="flex items-center gap-2 mb-3">
-            <Lightbulb size={14} className="text-amber-400" />
-            <span className="text-[12px] font-bold uppercase tracking-[0.15em] text-neutral-500">Recommendations</span>
-          </div>
-          <div className="space-y-3">
-            {report.recommendations.map((r, i) => (
-              <div key={i} className="flex items-start gap-3 rounded-xl border border-neutral-800/60 bg-[#0D0D0D] p-3">
-                <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-amber-500/10 shrink-0">
-                  <span className="text-[11px] font-bold text-amber-400">P{r.priority}</span>
-                </div>
-                <p className="text-[13px] leading-[1.7] text-neutral-300">{r.text}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

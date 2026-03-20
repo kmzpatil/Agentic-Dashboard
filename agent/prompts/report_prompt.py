@@ -1,108 +1,12 @@
 """
 report_prompt.py
 ────────────────
-System prompt, few-shot examples, and XML schema reference for
-the Detailed Report Mode.
-
-The report mode uses a three-phase workflow:
-  1. Planning  — decompose the query into 3-6 analytical sub-questions
-  2. Gathering — execute SQL for each sub-question, collect results
-  3. Synthesis — combine all findings into a single XML <report> document
+Report mode prompts. Output is continuous-flow HTML (no page divs).
+The browser's print engine handles page breaks automatically.
+CSS page-break-inside:avoid on sections prevents content splitting.
 """
 
-# ── XML Schema Reference ────────────────────────────────────────────────────
-
-REPORT_XML_SCHEMA_REFERENCE = """\
-<?xml version="1.0" encoding="UTF-8"?>
-<report>
-  <metadata>
-    <title>Report Title</title>
-    <subtitle>Optional subtitle</subtitle>
-    <date_range>e.g. 2024-01-01 to 2024-12-31</date_range>
-    <original_query>The user's original question</original_query>
-    <generated_at>ISO timestamp</generated_at>
-  </metadata>
-
-  <executive_summary>
-    2-4 sentences summarizing the key takeaway. Every claim references specific numbers.
-  </executive_summary>
-
-  <sections>
-    <!-- 3-6 sections, each with: -->
-    <section type="trend|breakdown|comparison|anomaly|forecast">
-      <heading>Section Title</heading>
-      <narrative>2-4 sentence analysis paragraph. Data-driven, precise.</narrative>
-
-      <!-- Optional chart using existing chart_config format -->
-      <chart_config>
-        <chart_type>line|bar|pie|stacked-bar|horizontal-bar|area|doughnut</chart_type>
-        <title>Chart Title</title>
-        <x_column>field_name</x_column>
-        <y_columns>field1,field2</y_columns>
-      </chart_config>
-
-      <!-- Optional data table -->
-      <data_table>
-        <columns>
-          <col name="Display Name" field="field_name" format="currency|percent|number|text"/>
-        </columns>
-        <rows>
-          <row field_name="value" other_field="value"/>
-        </rows>
-      </data_table>
-
-      <key_findings>
-        <finding severity="critical|high|medium|low|info">Finding text</finding>
-      </key_findings>
-    </section>
-  </sections>
-
-  <conclusions>
-    <conclusion>Actionable conclusion 1</conclusion>
-    <conclusion>Actionable conclusion 2</conclusion>
-  </conclusions>
-
-  <recommendations>
-    <recommendation priority="1">Highest priority recommendation</recommendation>
-    <recommendation priority="2">Second priority recommendation</recommendation>
-  </recommendations>
-</report>
-"""
-
-# ── Few-Shot Examples ────────────────────────────────────────────────────────
-
-REPORT_FEW_SHOT_EXAMPLES = [
-    {
-        "query": "How is our content pipeline performing?",
-        "plan": [
-            {"id": "q1", "type": "trend", "question": "What is the monthly upload volume trend over the past 12 months?"},
-            {"id": "q2", "type": "breakdown", "question": "How are uploads distributed across content formats (Input_Type)?"},
-            {"id": "q3", "type": "comparison", "question": "How does the upload-to-publish conversion rate compare across channels?"},
-            {"id": "q4", "type": "anomaly", "question": "Are there any months with unusual spikes or drops in upload volume?"},
-        ],
-    },
-    {
-        "query": "Give me a full analysis of our publishing performance",
-        "plan": [
-            {"id": "q1", "type": "trend", "question": "What is the monthly trend of published posts over the last year?"},
-            {"id": "q2", "type": "breakdown", "question": "Which platforms receive the most published content?"},
-            {"id": "q3", "type": "comparison", "question": "How does publishing volume compare across the top 5 channels?"},
-            {"id": "q4", "type": "breakdown", "question": "What asset types (Output_Type) are most commonly published?"},
-            {"id": "q5", "type": "forecast", "question": "Based on the 6-month trend, what is the projected publishing volume for the next quarter?"},
-        ],
-    },
-    {
-        "query": "Analyze channel efficiency across our platform",
-        "plan": [
-            {"id": "q1", "type": "breakdown", "question": "What is each channel's total upload volume and asset generation count?"},
-            {"id": "q2", "type": "comparison", "question": "Which channels have the highest and lowest upload-to-asset conversion rates?"},
-            {"id": "q3", "type": "trend", "question": "How has channel activity (uploads) changed month over month for the top 5 channels?"},
-            {"id": "q4", "type": "anomaly", "question": "Are any channels showing a significant decline or growth in the last 3 months vs prior 3 months?"},
-        ],
-    },
-]
-
-# ── Phase Prompts ────────────────────────────────────────────────────────────
+REPORT_FEW_SHOT_EXAMPLES = []
 
 REPORT_PLANNING_PROMPT = """\
 You are Frammer AI in **Report Mode**. The user wants a comprehensive analytical report.
@@ -143,27 +47,89 @@ You MUST call the `create_report_plan` tool with your plan.
 """
 
 REPORT_SYNTHESIS_PROMPT = """\
-You are Frammer AI in **Report Mode — Synthesis Phase**.
+You are Frammer AI generating a report as HTML for PDF export.
 
-You have gathered data from multiple SQL queries. Now produce a single XML report document.
+## LAYOUT — CRITICAL
 
-## Rules
-- Output ONLY valid XML matching the schema below. No markdown, no explanation outside the XML.
-- Every claim must reference specific numbers from the data.
-- Use business language: "uploads" not "raw_videos", "published content" not "published_posts",
-  "content format" not "Input_Type", "asset type" not "Output_Type".
-- Never expose SQL, table names, column names, or internal IDs.
-- Include 3-6 sections. Each section needs: heading, narrative (2-4 sentences), and key_findings.
-- Include chart_config for sections that benefit from visualization.
-- Include data_table for sections with tabular results.
-- Severity levels: critical, high, medium, low, info.
-- For chart_config: use chart_type (line, bar, pie, stacked-bar, horizontal-bar, area, doughnut),
-  title, x_column, y_columns. The data will be attached separately.
-- For data_table: use col elements with name (display), field (data key), format (currency|percent|number|text).
-  Include row elements with field="value" attributes.
+Output a SINGLE continuous-flow HTML document. Do NOT use any page containers or page divs.
+Just output sections one after another. The browser handles page breaks automatically.
 
-## XML Schema
-{xml_schema}
+Structure:
+1. Report header (badge + title + subtitle + meta)
+2. Executive summary
+3. Analysis sections (3-6), each immediately after the previous
+4. Conclusions
+5. Recommendations
+
+Everything flows continuously — no wrappers, no page divs, no artificial breaks.
+
+## CONTENT RULES
+- Every claim must reference specific numbers
+- Business language: "uploads" not "raw_videos", "published content" not "published_posts",
+  "content format" not "Input_Type", "asset type" not "Output_Type"
+- Never expose SQL, table names, column names, or IDs
+- 3-6 analysis sections with heading, narrative (2-4 sentences), key findings
+- Include data tables (keep ≤8 rows for compactness)
+- Severity levels: critical, high, medium, low, info
+
+## INLINE CHARTS
+
+Include horizontal bar charts using this HTML pattern:
+<div class="chart-container">
+  <div class="chart-title">Title</div>
+  <div class="bar-chart-row">
+    <span class="bar-chart-label">Category</span>
+    <div class="bar-chart-bar" style="width: 80%; background: #3b82f6;"></div>
+    <span class="bar-chart-value">1,234</span>
+  </div>
+</div>
+
+- Bar width = percentage of largest value (largest = 100%)
+- Colors: #3b82f6 (blue), #10b981 (green), #f59e0b (amber), #8b5cf6 (purple), #ef4444 (red), #06b6d4 (cyan)
+- Max 8 bars per chart. Include charts for trend/breakdown/comparison sections.
+
+## HTML STRUCTURE
+
+Start with <div class="report"> and end with </div>. Use these classes:
+
+<div class="report">
+  <div class="cover-header">
+    <div class="report-badge">ANALYTICAL REPORT</div>
+    <h1 class="report-title">Title</h1>
+    <p class="report-subtitle">Subtitle</p>
+    <div class="report-meta"><span>Date range</span><span>Generated: date</span></div>
+  </div>
+  <div class="executive-summary">
+    <h2>Executive Summary</h2>
+    <p>Summary text with numbers.</p>
+  </div>
+  <div class="section">
+    <div class="section-header">
+      <span class="section-type">TREND</span>
+      <h3>Section Title</h3>
+    </div>
+    <p class="narrative">Analysis paragraph.</p>
+    <!-- chart-container or data-table here -->
+    <div class="findings">
+      <div class="finding finding-high">
+        <span class="finding-badge">HIGH</span>
+        <span>Finding text.</span>
+      </div>
+    </div>
+  </div>
+  <!-- more sections... -->
+  <div class="conclusions">
+    <h2>Conclusions</h2>
+    <ol><li>Conclusion 1</li></ol>
+  </div>
+  <div class="recommendations">
+    <h2>Recommendations</h2>
+    <div class="recommendation">
+      <span class="priority-badge">P1</span>
+      <p>Recommendation text.</p>
+    </div>
+  </div>
+</div>
 
 ## User Query
 {question}
@@ -172,7 +138,7 @@ You have gathered data from multiple SQL queries. Now produce a single XML repor
 {results_block}
 
 ## Output
-Produce the complete XML report now. Start with <?xml version="1.0" encoding="UTF-8"?>
+Start with <div class="report"> end with </div>. NO markdown fences. ONLY raw HTML.
 """
 
 
@@ -182,7 +148,6 @@ def build_report_planning_prompt(
     metrics_context: str,
     auth_block: str = "",
 ) -> str:
-    """Assemble the full planning prompt for report mode."""
     return REPORT_PLANNING_PROMPT.format(
         schema_block=schema_context,
         metrics_block=metrics_context,
@@ -195,9 +160,7 @@ def build_report_synthesis_prompt(
     question: str,
     results_block: str,
 ) -> str:
-    """Assemble the full synthesis prompt for report mode."""
     return REPORT_SYNTHESIS_PROMPT.format(
-        xml_schema=REPORT_XML_SCHEMA_REFERENCE,
         question=question,
         results_block=results_block,
     )

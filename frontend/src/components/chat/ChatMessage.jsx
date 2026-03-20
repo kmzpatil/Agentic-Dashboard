@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ChevronDown, ChevronRight, Database, Activity } from 'lucide-react';
-import { parseReportXml, isReportXml } from '../../lib/reportXmlParser';
+import { isReportHtml, cleanReportHtml } from '../../lib/reportXmlParser';
 import ReportRenderer from '../reports/ReportRenderer';
 
 const markdownComponents = {
@@ -80,15 +80,15 @@ export default function ChatMessage({ msg, showActivity = false }) {
   }
 
   // Check if this is a report message
-  const reportContent = msg.reportXml || msg.content || '';
-  const isReport = msg.intent === 'report' || msg.parsedReport || isReportXml(reportContent);
+  const reportRaw = msg.reportHtml || msg.content || '';
+  const isReport = msg.intent === 'report' || isReportHtml(reportRaw);
 
   if (isReport) {
-    const parsed = msg.parsedReport || parseReportXml(reportContent);
-    if (parsed) {
+    const html = msg.reportHtml || cleanReportHtml(reportRaw);
+    if (html) {
       return (
         <div>
-          <ReportRenderer report={parsed} />
+          <ReportRenderer reportHtml={html} />
           {showActivity && <ActivityBlock actions={msg.actions} />}
         </div>
       );

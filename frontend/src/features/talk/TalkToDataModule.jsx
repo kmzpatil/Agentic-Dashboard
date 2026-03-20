@@ -26,7 +26,7 @@ import remarkGfm from 'remark-gfm';
 import { API_BASE } from '../../lib/constants';
 import useVoiceInput from '../../hooks/useVoiceInput';
 import ArtifactCanvas from '../../components/artifacts/ArtifactCanvas';
-import { parseReportXml, isReportXml } from '../../lib/reportXmlParser';
+import { isReportHtml, cleanReportHtml } from '../../lib/reportXmlParser';
 import ReportRenderer from '../../components/reports/ReportRenderer';
 
 const markdownComponents = {
@@ -49,6 +49,12 @@ const PHASE_LABELS = {
   report_planning: 'Decomposing into sub-analyses...',
   report_gathering: 'Gathering data for report...',
   report_synthesizing: 'Synthesizing analytical report...',
+};
+
+const REPORT_STREAMING_WORDS = {
+  report_planning: ['Breaking down', 'your query', 'into analytical', 'sub-questions...'],
+  report_gathering: ['Querying', 'database', 'collecting', 'metrics...'],
+  report_synthesizing: ['Building report', 'layout...', 'writing analysis...', 'adding charts...', 'formatting pages...'],
 };
 
 const SUGGESTIONS = [
@@ -157,20 +163,19 @@ function ErrorBanner({ error }) {
 }
 
 function AssistantMessageItem({ message, onOpenCanvas, onNavigate }) {
-  // Report mode rendering
-  if (message.intent === 'report' && message.parsedReport) {
+  // Report mode — download card only, no inline preview
+  if (message.intent === 'report' && message.reportHtml) {
     return (
-      <div className="max-w-[820px]">
+      <div className="max-w-[780px]">
         <div className="mb-2.5 flex items-center gap-2.5">
           <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-red-500/10">
-            <FileText size={13} className="text-red-400" />
+            <Bot size={13} className="text-red-400" />
           </div>
           <span className="text-[12px] font-semibold text-neutral-600">Frammer Copilot</span>
-          <span className="ml-2 rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-red-400">Report</span>
         </div>
         <div className="pl-[34px]">
           <ThinkingTrace actions={message.actions} />
-          <ReportRenderer report={message.parsedReport} />
+          <ReportRenderer reportHtml={message.reportHtml} />
         </div>
       </div>
     );
@@ -241,6 +246,33 @@ function UserMessage({ message }) {
   );
 }
 
+function StreamingWords({ phase }) {
+  const [wordIndex, setWordIndex] = useState(0);
+  const words = REPORT_STREAMING_WORDS[phase] || [];
+
+  useEffect(() => {
+    if (!words.length) return;
+    setWordIndex(0);
+    const interval = setInterval(() => {
+      setWordIndex(prev => (prev + 1) % words.length);
+    }, 1800);
+    return () => clearInterval(interval);
+  }, [phase, words.length]);
+
+  if (!words.length) return null;
+
+  return (
+    <div className="mt-2 h-5 overflow-hidden">
+      <span
+        key={`${phase}-${wordIndex}`}
+        className="inline-block text-[12px] font-mono text-neutral-600 animate-[fadeSlideIn_0.4s_ease-out]"
+      >
+        {words[wordIndex]}
+      </span>
+    </div>
+  );
+}
+
 function StreamingIndicator({ phase, planSteps, completedSteps, reportSubQuestions, reportStepStatus }) {
   const phaseLabel = PHASE_LABELS[phase] || 'Working...';
   const isReportMode = phase?.startsWith('report_');
@@ -261,6 +293,9 @@ function StreamingIndicator({ phase, planSteps, completedSteps, reportSubQuestio
           <span className="dot-flow" />
           <span className="transition-all duration-300">{phaseLabel}</span>
         </div>
+
+        {/* Streaming words animation for report mode */}
+        {isReportMode && <StreamingWords phase={phase} />}
 
         {/* Report sub-questions progress */}
         {reportSubQuestions.length > 0 && (
@@ -596,12 +631,14 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
 
               case 'complete': {
                 const msg = event.message || {};
-                const responseText = msg.markdown || msg.response || event.response || '';
                 const intent = msg.intent || 'analytics';
+                const rawResponse = msg.response || event.response || '';
+                const responseText = msg.markdown || rawResponse;
 
-                // Check if this is a report response
-                const isReport = intent === 'report' || isReportXml(msg.report_xml || responseText);
-                const reportXml = msg.report_xml || (isReport ? responseText : '');
+                // For reports: try report_html first, then response, then markdown
+                const isReport = intent === 'report';
+                const reportSource = msg.report_html || rawResponse || responseText;
+                const reportHtml = isReport ? cleanReportHtml(reportSource) : '';
 
                 const assistantMessage = {
                   role: 'assistant',
@@ -614,8 +651,7 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
                   intent: isReport ? 'report' : intent,
                   sql: msg.sql || '',
                   error: msg.error || '',
-                  reportXml: reportXml,
-                  parsedReport: isReport ? parseReportXml(reportXml) : null,
+                  reportHtml: reportHtml,
                 };
                 setMessages(curr => [...curr, assistantMessage]);
                 if (!isReport && shouldAutoOpenCanvas(assistantMessage.artifacts)) {
@@ -675,8 +711,9 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
 
         const fbResponse = payload.response || '';
         const fbIntent = payload.message?.intent || 'analytics';
-        const fbIsReport = fbIntent === 'report' || isReportXml(payload.report_xml || fbResponse);
-        const fbReportXml = payload.report_xml || (fbIsReport ? fbResponse : '');
+        const fbIsReport = fbIntent === 'report';
+        const fbReportSource = payload.report_html || payload.message?.report_html || fbResponse;
+        const fbReportHtml = fbIsReport ? cleanReportHtml(fbReportSource) : '';
 
         const assistantMessage = {
           role: 'assistant',
@@ -689,8 +726,7 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
           intent: fbIsReport ? 'report' : fbIntent,
           sql: payload.message?.sql || '',
           error: payload.message?.error || payload.error || '',
-          reportXml: fbReportXml,
-          parsedReport: fbIsReport ? parseReportXml(fbReportXml) : null,
+          reportHtml: fbReportHtml,
         };
         setMessages(curr => [...curr, assistantMessage]);
         if (!fbIsReport && shouldAutoOpenCanvas(assistantMessage.artifacts)) {

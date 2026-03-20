@@ -44,14 +44,14 @@ try:
     from prompts.report_prompt import (
         build_report_planning_prompt,
         build_report_synthesis_prompt,
-        REPORT_XML_SCHEMA_REFERENCE,
     )
+    from gemini_client import get_gemini_llm
 except ImportError:
     from agent.prompts.report_prompt import (
         build_report_planning_prompt,
         build_report_synthesis_prompt,
-        REPORT_XML_SCHEMA_REFERENCE,
     )
+    from agent.gemini_client import get_gemini_llm
 
 # -- Core MCP and Tools --
 try:
@@ -820,7 +820,8 @@ async def _gather_report_data(
 
 
 async def _synthesize_report(question: str, gathered: Dict[str, Any]) -> str:
-    """Call the LLM to produce the final XML report from gathered data."""
+    """Call Gemini to produce the final HTML report from gathered data.
+    Falls back to Anthropic if Gemini is unavailable."""
     results_parts = []
     for sq_id in sorted(gathered.keys()):
         result = gathered[sq_id]
@@ -848,27 +849,36 @@ async def _synthesize_report(question: str, gathered: Dict[str, Any]) -> str:
         results_block=results_block,
     )
 
-    logger.info("=== REPORT SYNTHESIZER: Calling LLM ===")
+    # Use Gemini 2.5 Flash for report synthesis, fall back to Anthropic
+    gemini = get_gemini_llm()
+    llm_label = "Gemini" if gemini else "Anthropic (fallback)"
+    llm_to_use = gemini or _synthesizer_llm
+
+    logger.info("=== REPORT SYNTHESIZER: Calling %s ===", llm_label)
     start = time.time()
-    resp = await asyncio.to_thread(_synthesizer_llm.invoke, prompt)
+    resp = await asyncio.to_thread(llm_to_use.invoke, prompt)
     duration = time.time() - start
 
     usage = getattr(resp, "usage_metadata", {})
     logger.info(
-        "=== REPORT SYNTHESIZER DONE (%.2fs) — %d input, %d output tokens ===",
-        duration, usage.get("input_tokens", 0), usage.get("output_tokens", 0),
+        "=== REPORT SYNTHESIZER DONE (%s, %.2fs) — %d input, %d output tokens ===",
+        llm_label, duration,
+        usage.get("input_tokens", 0),
+        usage.get("output_tokens", 0),
     )
 
     content = _extract_response(resp.content)
 
-    # Extract XML from potential markdown code fences
-    xml_match = re.search(r"(<\?xml.*?</report>)", content, re.DOTALL)
-    if xml_match:
-        return xml_match.group(1)
+    # Strip markdown code fences if the LLM wrapped the HTML
+    content = re.sub(r"^```(?:html)?\s*\n?", "", content.strip(), flags=re.IGNORECASE)
+    content = re.sub(r"\n?```\s*$", "", content).strip()
 
-    # If it starts with <?xml, return as-is
-    if content.strip().startswith("<?xml") or content.strip().startswith("<report"):
-        return content.strip()
+    # Ensure we have the report div
+    if '<div class="report">' not in content:
+        # Try to extract it
+        match = re.search(r'(<div class="report">.*</div>)\s*$', content, re.DOTALL)
+        if match:
+            content = match.group(1)
 
     return content
 
@@ -923,7 +933,7 @@ async def run_agent_report(
 
         # Phase 3: Synthesize report XML
         actions_log.append("Report Mode: Synthesizing report...")
-        report_xml = await _synthesize_report(question, gathered)
+        report_html = await _synthesize_report(question, gathered)
         actions_log.append("Report synthesized")
 
         total_time = time.time() - overall_start
@@ -931,7 +941,7 @@ async def run_agent_report(
 
         return AgentResult(
             intent="report",
-            response=report_xml,
+            response=report_html,
             actions=actions_log,
             plan=f"Report with {len(sub_questions)} sub-analyses",
         )
@@ -982,7 +992,7 @@ async def run_agent_report_stream(
                 "actions": [],
                 "charts": [],
                 "sql": "",
-                "report_xml": "",
+                "report_html": "",
             }}
             return
 
@@ -1034,7 +1044,7 @@ async def run_agent_report_stream(
         # Phase 3: Synthesize
         yield {"type": "phase", "phase": "report_synthesizing"}
 
-        report_xml = await _synthesize_report(question, gathered)
+        report_html = await _synthesize_report(question, gathered)
 
         actions_log = [
             f"Report Plan: {len(sub_questions)} sub-questions",
@@ -1043,12 +1053,12 @@ async def run_agent_report_stream(
         ]
 
         yield {"type": "complete", "message": {
-            "response": report_xml,
+            "response": report_html,
             "intent": "report",
             "actions": actions_log,
             "charts": [],
             "sql": "",
-            "report_xml": report_xml,
+            "report_html": report_html,
         }}
 
         logger.info("=== AGENT REPORT STREAM COMPLETE (%.2fs) ===", time.time() - overall_start)

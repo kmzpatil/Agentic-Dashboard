@@ -95,7 +95,7 @@ class ChatResponse(BaseModel):
     chart_data: dict = {}
     conversation_id: str = ""
     error: str = ""
-    report_xml: str = ""
+    report_html: str = ""
     intent: str = "analytics"
 
 
@@ -185,7 +185,7 @@ async def chat(req: ChatRequest):
                 pass
 
         # For report mode, the response IS the XML
-        report_xml = result.response if result.intent == "report" else ""
+        report_html = result.response if result.intent == "report" else ""
 
         return ChatResponse(
             response=result.response,
@@ -194,7 +194,7 @@ async def chat(req: ChatRequest):
             chart_data=jsonable_encoder(result.chart_data),
             conversation_id=conv_id,
             error=result.error,
-            report_xml=report_xml,
+            report_html=report_html,
             intent=result.intent,
         )
 
