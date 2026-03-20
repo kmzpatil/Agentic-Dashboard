@@ -19,6 +19,7 @@ class ChatRequest(BaseModel):
     message: str
     filters: dict[str, Any] | None = None
     conversation_id: str | None = None
+    mode: str = "normal"  # "normal" | "report"
 
 
 @router.post("", response_model=ChatEnvelope)
@@ -31,6 +32,7 @@ async def chat(payload: ChatRequest, auth: AuthContext = Depends(require_auth)):
         auth=auth,
         filters=payload.filters or {},
         conversation_id=payload.conversation_id,
+        mode=payload.mode,
     )
 
 
@@ -47,6 +49,7 @@ async def chat_stream(payload: ChatRequest, auth: AuthContext = Depends(require_
             auth=auth,
             filters=payload.filters or {},
             conversation_id=payload.conversation_id,
+            mode=payload.mode,
         ):
             yield f"data: {json.dumps(event, default=str)}\n\n"
         yield "data: [DONE]\n\n"

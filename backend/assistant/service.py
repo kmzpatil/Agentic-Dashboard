@@ -127,6 +127,7 @@ async def chat(
     auth: AuthContext,
     filters: dict[str, Any] | None = None,
     conversation_id: str | None = None,
+    mode: str = "normal",
 ) -> ChatEnvelope:
     modules = _legacy_modules()
     conversation_api = modules["conversations"]
@@ -147,7 +148,15 @@ async def chat(
 
     scoped_prompt = f"{_normalise_filter_prompt(filters)}{message}"
     prior_messages = conversation.get("messages", [])
-    result = await agent_api.run_agent(scoped_prompt, auth=auth, working_memory=working_memory, history=prior_messages)
+    agent_state = conversation.get("agent_state")
+    result = await agent_api.run_agent(
+        scoped_prompt, auth=auth, working_memory=working_memory,
+        history=prior_messages, mode=mode, agent_state=agent_state,
+    )
+
+    # Clear agent_state after successful resumption
+    if agent_state:
+        conversation_api.update_agent_state(conversation_id, None)
 
     # Build artifacts from multiple charts (new architecture) or fall back to legacy single chart
     all_datasets = []
@@ -260,6 +269,7 @@ async def chat_stream(
     auth: AuthContext,
     filters: dict[str, Any] | None = None,
     conversation_id: str | None = None,
+    mode: str = "normal",
 ) -> Any:
     """
     Streaming version of chat(). Yields SSE event dicts as the agent progresses.
@@ -286,16 +296,41 @@ async def chat_stream(
 
     scoped_prompt = f"{_normalise_filter_prompt(filters)}{message}"
     prior_messages = conversation.get("messages", [])
+    agent_state = conversation.get("agent_state")
 
     # Yield conversation_id first so frontend can track it
     yield {"type": "init", "conversation_id": conversation_id}
 
+    # Clear agent_state after resumption
+    if agent_state:
+        conversation_api.update_agent_state(conversation_id, None)
+
     # Stream agent events
     final_message = None
     async for event in agent_api.run_agent_stream(
-        scoped_prompt, auth=auth, working_memory=working_memory, history=prior_messages
+        scoped_prompt, auth=auth, working_memory=working_memory,
+        history=prior_messages, mode=mode, agent_state=agent_state,
     ):
-        if event.get("type") == "complete":
+        if event.get("type") == "clarification_needed":
+            # Store agent state for resumption
+            conversation_api.update_agent_state(conversation_id, event.get("agent_state"))
+
+            # Persist clarification as assistant message
+            clarify_metadata = {"intent": "clarification"}
+            conversation_api.append_message(
+                conversation_id, "assistant",
+                event.get("question", "Could you clarify?"),
+                metadata=clarify_metadata,
+            )
+
+            yield {
+                "type": "clarification_needed",
+                "question": event.get("question", ""),
+                "conversation_id": conversation_id,
+            }
+            return  # Stop streaming
+
+        elif event.get("type") == "complete":
             final_message = event.get("message", {})
             # Build artifacts for the final message
             agent_charts = final_message.get("charts", [])
@@ -348,20 +383,37 @@ async def chat_stream(
                 except Exception:
                     pass
 
-            # Yield final complete event with full message structure
+            # Build complete event
+            complete_msg = {
+                "markdown": final_message.get("response", ""),
+                "artifacts": [a.model_dump() for a in all_artifacts],
+                "datasets": [d.model_dump(by_alias=True) for d in all_datasets],
+                "suggested_actions": [a.model_dump() for a in _suggested_actions(message, filters, [a.model_dump() for a in all_artifacts])],
+                "actions": final_message.get("actions", []),
+                "intent": final_message.get("intent", "analytics"),
+                "sql": final_message.get("sql", ""),
+                "error": "",
+            }
+
+            # Report mode: render HTML
+            if final_message.get("mode") == "report" and final_message.get("report"):
+                try:
+                    from report_formatter import render_report_html
+                except ImportError:
+                    from agent.report_formatter import render_report_html
+
+                report_json = final_message["report"]
+                query_results = report_json.pop("_query_results", [])
+                report_html = render_report_html(report_json, query_results)
+
+                complete_msg["intent"] = "report"
+                complete_msg["report"] = report_json
+                complete_msg["report_html"] = report_html
+
             yield {
                 "type": "complete",
                 "conversation_id": conversation_id,
-                "message": {
-                    "markdown": final_message.get("response", ""),
-                    "artifacts": [a.model_dump() for a in all_artifacts],
-                    "datasets": [d.model_dump(by_alias=True) for d in all_datasets],
-                    "suggested_actions": [a.model_dump() for a in _suggested_actions(message, filters, [a.model_dump() for a in all_artifacts])],
-                    "actions": final_message.get("actions", []),
-                    "intent": final_message.get("intent", "analytics"),
-                    "sql": final_message.get("sql", ""),
-                    "error": "",
-                },
+                "message": complete_msg,
                 "response": final_message.get("response", ""),
                 "actions": final_message.get("actions", []),
             }
