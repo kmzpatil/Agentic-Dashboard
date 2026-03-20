@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --brand-blue-light: 224 100% 65% / 0.08;
+    --brand-red: 359 100% 64%;
+    --brand-primary: 224 100% 65%;
+
+    --bg-main: 225 10% 6%;
+    --bg-main-glass: 225 10% 6% / 0.8;
+    --bg-main-transparent: 225 10% 6% / 0.48;
+    --bg-card: 220 5% 12% / 0.8;
+
+    --text-pure: 0 0% 100%;
+    --text-primary: 0 0% 100% / 0.96;
+    --text-secondary: 0 0% 100% / 0.8;
+    --text-muted: 0 0% 100% / 0.48;
+    --text-faint: 0 0% 100% / 0.24;
+    --text-faintest: 0 0% 100% / 0.16;
+
+    --border-subtle: 0 0% 100% / 0.06;
+
+    --background: 225 10% 6%;
+    --foreground: 0 0% 100% / 0.96;
+
+    --card: 220 5% 12% / 0.8;
+    --card-foreground: 0 0% 100% / 0.96;
+
+    --popover: 220 5% 12%;
+    --popover-foreground: 0 0% 100% / 0.96;
+
+    --primary: 224 100% 65%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 5% 16%;
+    --secondary-foreground: 0 0% 100% / 0.8;
+
+    --muted: 220 5% 16%;
+    --muted-foreground: 0 0% 100% / 0.48;
+
+    --accent: 220 5% 16%;
+    --accent-foreground: 0 0% 100% / 0.8;
+
+    --destructive: 359 100% 64%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 100% / 0.06;
+    --input: 0 0% 100% / 0.06;
+    --ring: 224 100% 65%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 225 10% 8%;
+    --sidebar-foreground: 0 0% 100% / 0.8;
+    --sidebar-primary: 224 100% 65%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 5% 14%;
+    --sidebar-accent-foreground: 0 0% 100% / 0.8;
+    --sidebar-border: 0 0% 100% / 0.06;
+    --sidebar-ring: 224 100% 65%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+}
+
+@layer utilities {
+  .glass-card {
+    @apply bg-card backdrop-blur-xl border border-border rounded-3xl;
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+}

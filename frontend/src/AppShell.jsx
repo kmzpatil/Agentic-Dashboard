@@ -6,7 +6,12 @@ import {
   LayoutDashboard,
   Microscope,
   FlaskConical,
+<<<<<<< Updated upstream
   Braces,
+=======
+  ShieldCheck,
+  Sparkles,
+>>>>>>> Stashed changes
 } from 'lucide-react';
 import './lib/chartSetup';
 import { API_BASE, customStyles } from './lib/constants';
@@ -17,6 +22,11 @@ import FunnelModule from './features/funnel/FunnelModule';
 import ExplorerModule from './features/explorer/ExplorerModule';
 import TalkToDataModule from './features/talk/TalkToDataModule';
 import LabsModule from './features/labs/LabsModule';
+<<<<<<< Updated upstream
+=======
+import DataQualityModule from './features/quality/DataQualityModule';
+import HighlightsModule from './features/highlights/HighlightsModule';
+>>>>>>> Stashed changes
 
 function readRouteState() {
   const params = new URLSearchParams(window.location.search);
@@ -112,6 +122,11 @@ export default function AppShell() {
     { id: 'explorer', label: 'Explorer', icon: <Microscope size={16} /> },
     { id: 'copilot', label: 'Copilot', icon: <Bot size={16} /> },
     { id: 'labs', label: 'Labs', icon: <FlaskConical size={16} /> },
+<<<<<<< Updated upstream
+=======
+    { id: 'quality', label: 'Data Quality', icon: <ShieldCheck size={16} /> },
+    { id: 'highlights', label: 'Highlights', icon: <Sparkles size={16} /> },
+>>>>>>> Stashed changes
   ]), []);
 
   const handleLogin = async (event) => {
@@ -281,6 +296,11 @@ export default function AppShell() {
         {activeView === 'explorer' && <ExplorerModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'copilot' && <TalkToDataModule authToken={authToken} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'labs' && <LabsModule />}
+<<<<<<< Updated upstream
+=======
+        {activeView === 'quality' && <DataQualityModule />}
+        {activeView === 'highlights' && <HighlightsModule routeState={routeState} onNavigate={navigate} />}
+>>>>>>> Stashed changes
       </main>
     </div>
   );

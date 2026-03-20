@@ -2,6 +2,52 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── userJourney design tokens ───────────────────────────────────────────── */
+:root {
+  --brand-primary: 224 100% 65%;
+  --brand-red: 359 100% 64%;
+  --brand-blue-light: 224 100% 65% / 0.08;
+
+  --background: 225 10% 6%;
+  --foreground: 0 0% 100% / 0.96;
+
+  --card: 220 5% 12% / 0.8;
+  --card-foreground: 0 0% 100% / 0.96;
+
+  --popover: 220 5% 12%;
+  --popover-foreground: 0 0% 100% / 0.96;
+
+  --primary: 224 100% 65%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 220 5% 16%;
+  --secondary-foreground: 0 0% 100% / 0.8;
+
+  --muted: 220 5% 16%;
+  --muted-foreground: 0 0% 100% / 0.48;
+
+  --accent: 220 5% 16%;
+  --accent-foreground: 0 0% 100% / 0.8;
+
+  --destructive: 359 100% 64%;
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 0 0% 100% / 0.06;
+  --input: 0 0% 100% / 0.06;
+  --ring: 224 100% 65%;
+  --radius: 0.75rem;
+}
+
+/* glass-card utility used by userJourney GlassCard component */
+.glass-card {
+  background: hsl(220 5% 12% / 0.8);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid hsl(0 0% 100% / 0.06);
+  border-radius: 1.5rem;
+}
+/* ─────────────────────────────────────────────────────────────────────────── */
+
 html,
 body,
 #root {
