@@ -127,6 +127,7 @@ async def chat(
     auth: AuthContext,
     filters: dict[str, Any] | None = None,
     conversation_id: str | None = None,
+    report_mode: bool = False,
 ) -> ChatEnvelope:
     modules = _legacy_modules()
     conversation_api = modules["conversations"]
@@ -147,7 +148,7 @@ async def chat(
 
     scoped_prompt = f"{_normalise_filter_prompt(filters)}{message}"
     prior_messages = conversation.get("messages", [])
-    result = await agent_api.run_agent(scoped_prompt, auth=auth, working_memory=working_memory, history=prior_messages)
+    result = await agent_api.run_agent(scoped_prompt, auth=auth, working_memory=working_memory, history=prior_messages, report_mode=report_mode)
 
     # Build artifacts from multiple charts (new architecture) or fall back to legacy single chart
     all_datasets = []
@@ -260,6 +261,7 @@ async def chat_stream(
     auth: AuthContext,
     filters: dict[str, Any] | None = None,
     conversation_id: str | None = None,
+    report_mode: bool = False,
 ) -> Any:
     """
     Streaming version of chat(). Yields SSE event dicts as the agent progresses.
@@ -293,7 +295,7 @@ async def chat_stream(
     # Stream agent events
     final_message = None
     async for event in agent_api.run_agent_stream(
-        scoped_prompt, auth=auth, working_memory=working_memory, history=prior_messages
+        scoped_prompt, auth=auth, working_memory=working_memory, history=prior_messages, report_mode=report_mode
     ):
         if event.get("type") == "complete":
             final_message = event.get("message", {})
@@ -349,20 +351,30 @@ async def chat_stream(
                     pass
 
             # Yield final complete event with full message structure
+            intent = final_message.get("intent", "analytics")
+            is_report = intent == "report"
+            raw_response = final_message.get("response", "")
+
+            # For reports: report_html is the same as response (the HTML content).
+            # Pass it in BOTH fields so the frontend can find it regardless.
+            report_html_content = final_message.get("report_html", "") or raw_response if is_report else ""
+
             yield {
                 "type": "complete",
                 "conversation_id": conversation_id,
                 "message": {
-                    "markdown": final_message.get("response", ""),
+                    "markdown": "" if is_report else raw_response,
+                    "response": raw_response,
                     "artifacts": [a.model_dump() for a in all_artifacts],
                     "datasets": [d.model_dump(by_alias=True) for d in all_datasets],
                     "suggested_actions": [a.model_dump() for a in _suggested_actions(message, filters, [a.model_dump() for a in all_artifacts])],
                     "actions": final_message.get("actions", []),
-                    "intent": final_message.get("intent", "analytics"),
+                    "intent": intent,
                     "sql": final_message.get("sql", ""),
                     "error": "",
+                    "report_html": report_html_content,
                 },
-                "response": final_message.get("response", ""),
+                "response": raw_response,
                 "actions": final_message.get("actions", []),
             }
         elif event.get("type") == "error":
