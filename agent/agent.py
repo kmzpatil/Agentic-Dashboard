@@ -848,13 +848,22 @@ async def run_agent(
         answer_charts: List[ChartResult] = []
 
         for iteration in range(start_iter, MAX_ITERATIONS):
+            # Report mode auto-break: if we've gathered enough data, skip to synthesis
+            if mode == "report" and iteration > start_iter:
+                successful_queries = sum(1 for qr in all_query_results if qr.get("status") == "success")
+                min_needed = max(len(report_sub_questions), 3)
+                if successful_queries >= min_needed:
+                    logger.info("=== REPORT MODE: %d successful queries >= %d needed, breaking to synthesis ===", successful_queries, min_needed)
+                    actions_log.append(f"Data gathering complete ({successful_queries} successful queries)")
+                    break
+
             system = _build_system_prompt(schema, metrics, auth, working_memory, all_query_results)
             if mode == "report":
                 sq_text = "\n".join(
                     f"  {sq['id']}. [{sq['type'].upper()}] {sq['question']}"
                     for sq in report_sub_questions
                 ) if report_sub_questions else ""
-                system += "\n\n## Mode: REPORT\nYou are gathering data for a comprehensive analytical report. This is NOT a conversational response.\nYou MUST call `execute_queries` to gather fresh data even if you have prior context. Be thorough — query multiple angles, breakdowns, and comparisons. Do NOT call `answer` until you have gathered at least 3-4 queries worth of data."
+                system += "\n\n## Mode: REPORT\nYou are gathering data for a comprehensive analytical report. Execute queries for each sub-question below, then call `answer` when done."
                 if sq_text:
                     system += f"\n\n## Report Sub-Questions to Investigate\n{sq_text}\nAddress these sub-questions systematically with your queries."
             messages = _build_messages(system, question, history)
@@ -1096,6 +1105,15 @@ async def run_agent_stream(
         # 4. ReAct loop
         report_step_idx = 0  # Track which sub-question we're on
         for iteration in range(start_iter, MAX_ITERATIONS):
+            # Report mode auto-break: if we've gathered enough data, skip to synthesis
+            if mode == "report" and iteration > start_iter:
+                successful_queries = sum(1 for qr in all_query_results if qr.get("status") == "success")
+                min_needed = max(len(report_sub_questions), 3)
+                if successful_queries >= min_needed:
+                    logger.info("=== REPORT MODE: %d successful queries >= %d needed, breaking to synthesis ===", successful_queries, min_needed)
+                    actions_log.append(f"Data gathering complete ({successful_queries} successful queries)")
+                    break
+
             # Yield thinking phase
             phase_label = "thinking" if iteration == 0 else f"thinking (round {iteration + 1})"
             if agent_state and iteration == start_iter:
@@ -1108,7 +1126,7 @@ async def run_agent_stream(
                     f"  {sq['id']}. [{sq['type'].upper()}] {sq['question']}"
                     for sq in report_sub_questions
                 ) if report_sub_questions else ""
-                system += f"\n\n## Mode: REPORT\nYou are gathering data for a comprehensive report. Be thorough — query multiple angles, breakdowns, and comparisons."
+                system += f"\n\n## Mode: REPORT\nYou are gathering data for a comprehensive report. Execute queries for each sub-question below, then call `answer` when done."
                 if sq_text:
                     system += f"\n\n## Report Sub-Questions to Investigate\n{sq_text}\nAddress these sub-questions systematically with your queries."
             messages = _build_messages(system, question, history)
