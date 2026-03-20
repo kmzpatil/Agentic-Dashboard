@@ -167,20 +167,32 @@ async def _plan_report_sub_questions(
     fast_client = LLMClient.fast()
     resp = await asyncio.to_thread(fast_client.invoke, prompt)
 
-    # Parse JSON from response
+    # Parse JSON from response — LLM may wrap it in markdown or narrative
     raw = resp.content.strip()
     raw = re.sub(r'^```(?:json)?\s*\n?', '', raw, flags=re.IGNORECASE)
     raw = re.sub(r'\n?```\s*$', '', raw).strip()
 
+    # Try direct parse first
     try:
         parsed = json.loads(raw)
-        # Handle both formats: list of sub-questions or dict with sub_questions key
         if isinstance(parsed, list):
             return parsed
         if isinstance(parsed, dict) and "sub_questions" in parsed:
             return parsed["sub_questions"]
     except (json.JSONDecodeError, TypeError):
-        logger.warning("Failed to parse report sub-questions: %s", raw[:200])
+        pass
+
+    # Extract JSON array from within narrative text
+    match = re.search(r'\[\s*\{.*\}\s*\]', raw, re.DOTALL)
+    if match:
+        try:
+            parsed = json.loads(match.group(0))
+            if isinstance(parsed, list):
+                return parsed
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    logger.warning("Failed to parse report sub-questions: %s", raw[:200])
 
     # Fallback: generic sub-questions
     return [

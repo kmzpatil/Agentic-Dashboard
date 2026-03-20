@@ -9,10 +9,10 @@ CSS page-break-inside:avoid on sections prevents content splitting.
 REPORT_FEW_SHOT_EXAMPLES = []
 
 REPORT_PLANNING_PROMPT = """\
-You are Frammer AI in **Report Mode**. The user wants a comprehensive analytical report.
+You are a JSON-only planner. You MUST respond with a raw JSON array and NOTHING else.
+No markdown, no headers, no explanations, no commentary. Just the JSON array.
 
-Your job in this phase is to PLAN the report by decomposing the user's query into
-3-6 analytical sub-questions. Each sub-question explores a different angle.
+Your job: decompose the user's query into 3-6 analytical sub-questions for a report.
 
 ## Sub-question Types
 - **trend** — time-series analysis (monthly/weekly patterns)
