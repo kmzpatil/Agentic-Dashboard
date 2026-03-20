@@ -127,7 +127,7 @@ async def chat(
     auth: AuthContext,
     filters: dict[str, Any] | None = None,
     conversation_id: str | None = None,
-    report_mode: bool = False,
+    mode: str = "normal",
 ) -> ChatEnvelope:
     modules = _legacy_modules()
     conversation_api = modules["conversations"]
@@ -146,9 +146,34 @@ async def chat(
     is_first_message = len(conversation.get("messages", [])) == 0
     conversation_api.append_message(conversation_id, "user", message)
 
+    # Check for stored agent state (clarification resumption)
+    agent_state = conversation.get("agent_state")
+
     scoped_prompt = f"{_normalise_filter_prompt(filters)}{message}"
     prior_messages = conversation.get("messages", [])
-    result = await agent_api.run_agent(scoped_prompt, auth=auth, working_memory=working_memory, history=prior_messages, report_mode=report_mode)
+    result = await agent_api.run_agent(
+        scoped_prompt, auth=auth, working_memory=working_memory,
+        history=prior_messages, mode=mode, agent_state=agent_state,
+    )
+
+    # Handle clarification — store state and return the clarification as the response
+    if getattr(result, "clarification", None):
+        conversation_api.update_agent_state(conversation_id, getattr(result, "agent_state", None))
+        conversation_api.append_message(conversation_id, "assistant", result.clarification)
+        assistant_message = AssistantMessage(
+            markdown=result.clarification,
+            intent="clarification",
+        )
+        return ChatEnvelope(
+            conversation_id=conversation_id,
+            message=assistant_message,
+            response=result.clarification,
+            actions=getattr(result, "actions", []),
+        )
+
+    # Clear agent state if we were resuming
+    if agent_state:
+        conversation_api.update_agent_state(conversation_id, None)
 
     # Build artifacts from multiple charts (new architecture) or fall back to legacy single chart
     all_datasets = []
@@ -261,7 +286,7 @@ async def chat_stream(
     auth: AuthContext,
     filters: dict[str, Any] | None = None,
     conversation_id: str | None = None,
-    report_mode: bool = False,
+    mode: str = "normal",
 ) -> Any:
     """
     Streaming version of chat(). Yields SSE event dicts as the agent progresses.
@@ -286,6 +311,9 @@ async def chat_stream(
     is_first_message = len(conversation.get("messages", [])) == 0
     conversation_api.append_message(conversation_id, "user", message)
 
+    # Check for stored agent state (clarification resumption)
+    agent_state = conversation.get("agent_state")
+
     scoped_prompt = f"{_normalise_filter_prompt(filters)}{message}"
     prior_messages = conversation.get("messages", [])
 
@@ -295,10 +323,14 @@ async def chat_stream(
     # Stream agent events
     final_message = None
     async for event in agent_api.run_agent_stream(
-        scoped_prompt, auth=auth, working_memory=working_memory, history=prior_messages, report_mode=report_mode
+        scoped_prompt, auth=auth, working_memory=working_memory,
+        history=prior_messages, mode=mode, agent_state=agent_state,
     ):
         if event.get("type") == "complete":
             final_message = event.get("message", {})
+            # Clear agent state if we were resuming from clarification
+            if agent_state:
+                conversation_api.update_agent_state(conversation_id, None)
             # Build artifacts for the final message
             agent_charts = final_message.get("charts", [])
             all_datasets = []
@@ -377,10 +409,22 @@ async def chat_stream(
                 "response": raw_response,
                 "actions": final_message.get("actions", []),
             }
+        elif event.get("type") == "clarification_needed":
+            # Store agent state for resumption and emit clarification event
+            clarify_q = event.get("question", "Could you clarify?")
+            clarify_state = event.get("agent_state")
+            conversation_api.update_agent_state(conversation_id, clarify_state)
+            conversation_api.append_message(conversation_id, "assistant", clarify_q)
+            yield {
+                "type": "clarification_needed",
+                "conversation_id": conversation_id,
+                "question": clarify_q,
+            }
+            return  # Stop streaming — wait for user reply
         elif event.get("type") == "error":
             yield event
         else:
-            # Pass through phase, plan, step_complete events
+            # Pass through phase, plan, step_complete, iteration, report_plan, report_step events
             yield event
 
 

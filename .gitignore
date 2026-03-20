@@ -29,6 +29,9 @@ __pycache__/
 actual_db.sqlite
 database/.local_postgres/
 
+# ── Agent test files (local only) ─────────────────────────────────────────────
+agent/test_*.py
+
 # ── Agent outputs (logs, charts, reports) ─────────────────────────────────────
 agent/outputs/
 .run_logs/
