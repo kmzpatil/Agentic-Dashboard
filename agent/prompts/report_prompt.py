@@ -64,8 +64,9 @@ Return ONLY a valid JSON object (no markdown fences, no extra text) with this st
   "executive_summary": "3-4 sentence overview of key findings. Bold key numbers with **double asterisks**.",
   "sections": [
     {{
+      "type": "trend",
       "title": "Section heading",
-      "content": "Markdown narrative (2-4 paragraphs). **Bold** key numbers. Business language only. Tell a story, don't just list numbers.",
+      "content": "Markdown narrative (2-4 paragraphs). **Bold** key numbers. Business language only.",
       "chart": {{
         "source_query_index": 0,
         "chart_type": "bar",
@@ -77,8 +78,16 @@ Return ONLY a valid JSON object (no markdown fences, no extra text) with this st
         "source_query_index": 0,
         "max_rows": 10,
         "title": "Table title"
-      }}
+      }},
+      "findings": [
+        {{"severity": "high", "text": "Key finding with specific numbers."}},
+        {{"severity": "medium", "text": "Another finding."}}
+      ]
     }}
+  ],
+  "conclusions": [
+    "Key conclusion derived from the analysis",
+    "Another conclusion"
   ],
   "recommendations": [
     "Specific, actionable recommendation 1",
@@ -95,13 +104,16 @@ Return ONLY a valid JSON object (no markdown fences, no extra text) with this st
 - Translate technical terms: uploads (not raw_videos), generated content/assets (not created_assets),
   published content (not published_posts), content format (not Input_Type), asset type (not Output_Type).
 - Each section should tell a coherent story — don't just dump numbers.
+- Section "type" must be one of: trend, breakdown, comparison, anomaly, forecast.
 - Include a "chart" object when the data supports a visualization. Charts are rendered via Chart.js
   with the actual query data, so you only need to specify which query to use and what columns to plot.
 - The "chart.source_query_index" is the 0-based index of the query in the results list below.
 - Available chart_type values: bar, horizontal-bar, stacked-bar, line, area, pie, doughnut, polar-area, scatter, radar.
 - For x_column: pick the label/category column. For y_columns: comma-separated numeric column names to plot.
 - Include a "table" object for detailed breakdowns (top-N lists, comparisons).
+- Finding severity must be one of: critical, high, medium, low, info. Include 1-3 findings per section.
 - Keep executive summary to 3-4 sentences max.
+- Include 2-4 conclusions summarizing the overall analysis.
 - Recommendations should be actionable, specific, and derived from the data.
 - Include 3-5 sections for a comprehensive report.
 - If a section doesn't need a chart or table, omit those fields entirely.

@@ -114,6 +114,10 @@ def render_report_html(
     sections = report.get("sections", [])
     recommendations = report.get("recommendations", [])
     metadata = report.get("metadata", {})
+    conclusions = report.get("conclusions", [])
+
+    generated_at = metadata.get("generated_at", datetime.now().strftime("%Y-%m-%d %H:%M"))
+    caveats = metadata.get("caveats", [])
 
     # Build sections HTML and collect chart init data
     sections_html = ""
@@ -122,7 +126,11 @@ def render_report_html(
 
     for i, section in enumerate(sections):
         s_title = section.get("title", f"Section {i + 1}")
+        s_type = section.get("type", "").upper()
         s_content = md_to_html(section.get("content", ""))
+
+        # Section type badge
+        type_badge = f'<span class="section-type">{s_type}</span>' if s_type else ''
 
         # Table rendering
         table_html = ""
@@ -141,13 +149,10 @@ def render_report_html(
                         for row in data
                     )
                     table_html = f"""
-                    <div class="report-table avoid-break">
-                        {f'<div class="table-title">{t_title}</div>' if t_title else ''}
-                        <table>
-                            <thead><tr>{header}</tr></thead>
-                            <tbody>{rows}</tbody>
-                        </table>
-                    </div>"""
+        <table class="data-table">
+          <thead><tr>{header}</tr></thead>
+          <tbody>{rows}</tbody>
+        </table>"""
 
         # Real chart rendering via Chart.js
         chart_html = ""
@@ -222,42 +227,78 @@ def render_report_html(
                     })
 
                     chart_html = f"""
-                    <div class="report-chart avoid-break">
-                        <div class="chart-title">{c_title}</div>
-                        <div class="chart-canvas-wrapper">
-                            <canvas id="{canvas_id}"></canvas>
-                        </div>
-                    </div>"""
-            else:
-                c_title = chart_spec.get("title", "Chart")
-                chart_html = f"""
-                <div class="report-chart-placeholder avoid-break">
-                    <div class="chart-label">{c_title}</div>
-                    <div class="chart-type">Data unavailable</div>
-                </div>"""
+        <div class="chart-container">
+          <div class="chart-title">{c_title}</div>
+          <div class="chart-canvas-wrapper">
+            <canvas id="{canvas_id}"></canvas>
+          </div>
+        </div>"""
+
+        # Findings
+        findings_html = ""
+        findings = section.get("findings", [])
+        if findings:
+            items = []
+            for f in findings:
+                sev = f.get("severity", "info").lower()
+                text = f.get("text", str(f) if isinstance(f, str) else "")
+                if isinstance(f, str):
+                    text = f
+                    sev = "info"
+                items.append(
+                    f'<div class="finding finding-{sev}">'
+                    f'<span class="finding-badge">{sev.upper()}</span>'
+                    f'<span>{text}</span></div>'
+                )
+            findings_html = f'<div class="findings">{"".join(items)}</div>'
 
         sections_html += f"""
-        <div class="report-section avoid-break">
-            <h3>{s_title}</h3>
-            <div class="section-content">{s_content}</div>
-            {chart_html}
-            {table_html}
-        </div>"""
+      <div class="section">
+        <div class="section-header">
+          {type_badge}
+          <h3>{s_title}</h3>
+        </div>
+        <p class="narrative">{s_content}</p>
+        {chart_html}
+        {table_html}
+        {findings_html}
+      </div>"""
+
+    # Conclusions HTML
+    conclusions_html = ""
+    if conclusions:
+        items = ''.join(f'<li>{c}</li>' for c in conclusions)
+        conclusions_html = f"""
+      <div class="conclusions">
+        <h2>Conclusions</h2>
+        <ol>{items}</ol>
+      </div>"""
 
     # Recommendations HTML
     recs_html = ""
     if recommendations:
-        items = ''.join(f'<li>{r}</li>' for r in recommendations)
+        items = []
+        for idx, r in enumerate(recommendations):
+            items.append(
+                f'<div class="recommendation">'
+                f'<span class="priority-badge">P{idx + 1}</span>'
+                f'<p>{r}</p></div>'
+            )
         recs_html = f"""
-        <div class="report-section avoid-break">
-            <h3>Recommendations</h3>
-            <ol class="recommendations">{items}</ol>
-        </div>"""
+      <div class="recommendations">
+        <h2>Recommendations</h2>
+        {"".join(items)}
+      </div>"""
 
-    # Metadata / footer
-    generated_at = metadata.get("generated_at", datetime.now().strftime("%Y-%m-%d %H:%M"))
-    caveats = metadata.get("caveats", [])
-    caveats_html = ''.join(f'<li>{c}</li>' for c in caveats) if caveats else ''
+    # Caveats footer
+    caveats_html = ""
+    if caveats:
+        caveats_items = ''.join(f'<li>{c}</li>' for c in caveats)
+        caveats_html = f"""
+      <div class="caveats">
+        <strong>Note:</strong>
+        <ul>{caveats_items}</ul>
+      </div>"""
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -266,386 +307,238 @@ def render_report_html(
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{title}</title>
 <style>
-  /* ── Reset & Base ─────────────────────────────────────────── */
-  *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
-
+  /* ── Reset & Base ── */
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
   body {{
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    font-size: 11pt;
-    line-height: 1.6;
-    color: #1a1a2e;
-    background: #f0f0f5;
+    font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    color: #1a1a1a; background: #fff;
+    font-size: 16px; line-height: 1.6;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    margin: 0; padding: 0;
   }}
+  @page {{ size: A4; margin: 18mm 16mm 16mm 16mm; }}
 
-  /* ── Print / @page ────────────────────────────────────────── */
-  @page {{
-    size: A4;
-    margin: 18mm 15mm 22mm 15mm;
+  /* ── Fixed header repeats on every printed page ── */
+  .report-page-header {{
+    position: fixed; top: 0; left: 0; right: 0;
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 0 8px 0;
+    border-bottom: 2px solid #ef4444;
+    background: #fff;
+    height: 36px;
   }}
+  .report-page-header .logo {{ font-size: 18px; font-weight: 800; color: #ef4444; letter-spacing: -0.02em; }}
+  .report-page-header .divider {{ width: 1px; height: 16px; background: #d1d5db; }}
+  .report-page-header .label {{ font-size: 11px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: #9ca3af; }}
 
-  @page :first {{
-    margin-top: 12mm;
+  /* ── Push content below fixed header ── */
+  .report {{ padding-top: 48px; max-width: 900px; margin: 0 auto; }}
+  .report::after {{ content: ''; display: block; height: 30px; }}
+
+  /* ── Page break control ── */
+  .avoid-break {{ page-break-inside: avoid; break-inside: avoid; }}
+
+  /* ── Cover ── */
+  .cover-header {{ padding: 12px 0 16px 0; margin-bottom: 20px; }}
+  .report-badge {{
+    display: inline-block; font-size: 11px; font-weight: 700;
+    letter-spacing: 0.18em; text-transform: uppercase;
+    color: #dc2626; background: #fef2f2;
+    padding: 4px 12px; border-radius: 8px; margin-bottom: 10px;
   }}
+  .report-title {{ font-size: 32px; font-weight: 800; color: #111; margin: 0 0 6px 0; line-height: 1.2; }}
+  .report-subtitle {{ font-size: 18px; color: #6b7280; margin: 0 0 10px 0; }}
+  .report-meta {{ display: flex; gap: 18px; font-size: 14px; color: #9ca3af; }}
 
-  @media print {{
-    body {{ background: white; }}
-    .no-print {{ display: none !important; }}
-    .report-pages {{ box-shadow: none; padding: 0; max-width: none; }}
-    .report-page-break {{ page-break-after: always; }}
-  }}
-
-  /* ── Page break control ───────────────────────────────────── */
-  .avoid-break {{
-    page-break-inside: avoid;
-    break-inside: avoid;
-  }}
-
-  /* ── Toolbar (screen only) ────────────────────────────────── */
-  .toolbar {{
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    background: #1a1a2e;
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 24px;
-    font-size: 13px;
-  }}
-
-  .toolbar button {{
-    background: #2563eb;
-    color: white;
-    border: none;
-    padding: 8px 20px;
-    border-radius: 6px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background 0.15s;
-  }}
-
-  .toolbar button:hover {{ background: #1d4ed8; }}
-
-  /* ── A4 Container ─────────────────────────────────────────── */
-  .report-pages {{
-    max-width: 210mm;
-    margin: 24px auto;
-    padding: 20mm 18mm;
-    background: white;
-    box-shadow: 0 2px 20px rgba(0, 0, 0, 0.08);
-    min-height: 297mm;
-  }}
-
-  /* ── Letterhead ───────────────────────────────────────────── */
-  .letterhead {{
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
-    border-bottom: 2.5px solid #2563eb;
-    padding-bottom: 14px;
-    margin-bottom: 28px;
-  }}
-
-  .letterhead-brand {{
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }}
-
-  .letterhead-logo {{
-    width: 32px;
-    height: 32px;
-    background: #2563eb;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-weight: 800;
-    font-size: 16px;
-  }}
-
-  .letterhead h1 {{
-    font-size: 18pt;
-    font-weight: 700;
-    color: #1a1a2e;
-    letter-spacing: -0.5px;
-  }}
-
-  .letterhead-meta {{
-    text-align: right;
-    font-size: 9pt;
-    color: #6b7280;
-    line-height: 1.5;
-  }}
-
-  /* ── Report Title ─────────────────────────────────────────── */
-  .report-title {{
-    font-size: 20pt;
-    font-weight: 700;
-    color: #1a1a2e;
-    margin-bottom: 6px;
-    letter-spacing: -0.3px;
-    line-height: 1.3;
-  }}
-
-  .report-subtitle {{
-    font-size: 10pt;
-    color: #6b7280;
-    margin-bottom: 24px;
-    font-style: italic;
-  }}
-
-  /* ── Executive Summary ────────────────────────────────────── */
+  /* ── Executive Summary ── */
   .executive-summary {{
-    background: #f8fafc;
-    border-left: 4px solid #2563eb;
-    padding: 16px 20px;
-    margin-bottom: 32px;
-    border-radius: 0 8px 8px 0;
+    background: #f0f7ff; border: 1px solid #dbeafe;
+    border-radius: 8px; padding: 20px 24px; margin-bottom: 28px;
+    page-break-inside: avoid;
   }}
-
   .executive-summary h2 {{
-    font-size: 10pt;
-    text-transform: uppercase;
-    letter-spacing: 1.2px;
-    color: #2563eb;
-    margin-bottom: 8px;
-    font-weight: 700;
+    font-size: 13px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.14em; color: #2563eb; margin: 0 0 10px 0;
   }}
-
-  .executive-summary p {{
-    font-size: 10.5pt;
-    line-height: 1.7;
-    color: #374151;
-    margin-bottom: 6px;
-  }}
-
+  .executive-summary p {{ font-size: 16px; color: #374151; margin: 0 0 8px 0; line-height: 1.6; }}
   .executive-summary p:last-child {{ margin-bottom: 0; }}
 
-  /* ── Sections ─────────────────────────────────────────────── */
-  .report-section {{
-    margin-bottom: 28px;
-  }}
-
-  .report-section h3 {{
-    font-size: 13pt;
-    font-weight: 700;
-    color: #1a1a2e;
-    margin-bottom: 10px;
-    padding-bottom: 6px;
+  /* ── Sections ── */
+  .section {{
+    margin-bottom: 28px; padding-bottom: 24px;
     border-bottom: 1px solid #e5e7eb;
+    page-break-inside: avoid;
   }}
-
-  .section-content p {{
-    margin-bottom: 10px;
-    line-height: 1.7;
-    color: #374151;
-  }}
-
-  .section-content p:last-child {{ margin-bottom: 0; }}
-  .section-content strong {{ color: #1a1a2e; font-weight: 600; }}
-
-  .section-content ul {{
-    margin: 8px 0 12px 20px;
-    color: #374151;
-  }}
-
-  .section-content ul li {{
-    margin-bottom: 4px;
-    line-height: 1.6;
-  }}
-
-  /* ── Tables ───────────────────────────────────────────────── */
-  .report-table {{
-    margin: 16px 0;
-  }}
-
-  .table-title {{
-    font-size: 9.5pt;
-    font-weight: 600;
-    color: #6b7280;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    margin-bottom: 6px;
-  }}
-
-  table {{
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 9.5pt;
-  }}
-
-  thead {{
-    background: #f8fafc;
-  }}
-
-  th {{
-    padding: 8px 12px;
-    text-align: left;
-    font-weight: 600;
-    color: #374151;
+  .section:last-of-type {{ border-bottom: none; }}
+  .section-header {{
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 12px; padding-bottom: 8px;
     border-bottom: 2px solid #e5e7eb;
-    white-space: nowrap;
   }}
+  .section-type {{
+    font-size: 10px; font-weight: 700; letter-spacing: 0.14em;
+    text-transform: uppercase; color: #6b7280; background: #f3f4f6;
+    padding: 3px 10px; border-radius: 4px;
+  }}
+  .section-header h3 {{ font-size: 22px; font-weight: 700; color: #111827; margin: 0; }}
+  .narrative {{ font-size: 15px; color: #374151; margin: 0 0 14px 0; line-height: 1.65; }}
+  .narrative p {{ margin: 0 0 10px 0; }}
+  .narrative p:last-child {{ margin-bottom: 0; }}
+  .narrative strong {{ color: #111; font-weight: 600; }}
+  .narrative ul {{ margin: 6px 0 10px 20px; }}
+  .narrative li {{ margin-bottom: 4px; }}
 
-  td {{
-    padding: 7px 12px;
+  /* ── Tables ── */
+  .data-table {{
+    width: 100%; border-collapse: collapse; font-size: 14px;
+    margin: 14px 0; page-break-inside: avoid;
+  }}
+  .data-table thead {{ background: #f9fafb; }}
+  .data-table th {{
+    text-align: left; padding: 8px 12px; font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.1em;
+    color: #6b7280; border-bottom: 2px solid #d1d5db;
+  }}
+  .data-table td {{
+    padding: 8px 12px; color: #374151;
     border-bottom: 1px solid #f3f4f6;
-    color: #4b5563;
+    font-variant-numeric: tabular-nums;
   }}
 
-  tr:last-child td {{ border-bottom: none; }}
-  tbody tr:hover {{ background: #fafbfc; }}
-
-  /* ── Charts ────────────────────────────────────────────────── */
-  .report-chart {{
-    margin: 16px 0;
-    padding: 16px;
-    background: #fafbfc;
-    border: 1px solid #e5e7eb;
-    border-radius: 10px;
+  /* ── Charts (Chart.js canvas) ── */
+  .chart-container {{
+    margin: 14px 0; padding: 16px 18px;
+    background: #fafbfc; border: 1px solid #f0f0f0; border-radius: 8px;
+    page-break-inside: avoid;
   }}
-
-  .chart-title {{
-    font-size: 9.5pt;
-    font-weight: 600;
-    color: #6b7280;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    margin-bottom: 10px;
-  }}
-
+  .chart-title {{ font-size: 14px; font-weight: 700; color: #374151; margin-bottom: 10px; }}
   .chart-canvas-wrapper {{
-    position: relative;
-    width: 100%;
-    max-height: 280px;
+    position: relative; width: 100%; max-height: 320px;
   }}
+  .chart-canvas-wrapper canvas {{ max-height: 320px; }}
 
-  .chart-canvas-wrapper canvas {{
-    max-height: 280px;
+  /* ── Findings ── */
+  .findings {{ display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }}
+  .finding {{
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px 14px; border-radius: 6px; font-size: 14px;
+    page-break-inside: avoid;
   }}
-
-  .report-chart-placeholder {{
-    margin: 16px 0;
-    padding: 24px 20px;
-    background: #f8fafc;
-    border: 1.5px dashed #d1d5db;
-    border-radius: 10px;
-    text-align: center;
+  .finding-badge {{
+    font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+    padding: 2px 8px; border-radius: 3px; white-space: nowrap;
+    flex-shrink: 0; margin-top: 2px;
   }}
+  .finding-critical {{ background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }}
+  .finding-critical .finding-badge {{ background: #fee2e2; color: #dc2626; }}
+  .finding-high {{ background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; }}
+  .finding-high .finding-badge {{ background: #ffedd5; color: #ea580c; }}
+  .finding-medium {{ background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }}
+  .finding-medium .finding-badge {{ background: #fef3c7; color: #d97706; }}
+  .finding-low {{ background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; }}
+  .finding-low .finding-badge {{ background: #dbeafe; color: #2563eb; }}
+  .finding-info {{ background: #f9fafb; border: 1px solid #e5e7eb; color: #374151; }}
+  .finding-info .finding-badge {{ background: #f3f4f6; color: #6b7280; }}
 
-  .chart-label {{ font-size: 10pt; font-weight: 600; color: #374151; }}
-  .chart-type {{ font-size: 8.5pt; color: #9ca3af; margin-top: 2px; }}
-
-  /* ── Recommendations ──────────────────────────────────────── */
-  .recommendations {{
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    counter-reset: rec;
+  /* ── Conclusions ── */
+  .conclusions, .recommendations {{ margin-bottom: 28px; page-break-inside: avoid; }}
+  .conclusions h2, .recommendations h2 {{
+    font-size: 20px; font-weight: 700;
+    color: #111827; margin: 0 0 12px 0;
+    padding-bottom: 8px; border-bottom: 2px solid #e5e7eb;
   }}
+  .conclusions ol {{ margin: 0; padding-left: 20px; }}
+  .conclusions li {{ font-size: 15px; color: #374151; margin-bottom: 8px; line-height: 1.6; }}
 
-  .recommendations li {{
-    counter-increment: rec;
-    padding: 10px 14px 10px 44px;
-    position: relative;
-    margin-bottom: 8px;
-    background: #f0fdf4;
-    border-radius: 8px;
-    border: 1px solid #bbf7d0;
-    color: #166534;
-    line-height: 1.6;
+  /* ── Recommendations ── */
+  .recommendation {{
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 12px 16px; background: #f9fafb; border: 1px solid #e5e7eb;
+    border-radius: 8px; margin-bottom: 8px; page-break-inside: avoid;
   }}
-
-  .recommendations li::before {{
-    content: counter(rec);
-    position: absolute;
-    left: 12px;
-    top: 10px;
-    width: 22px;
-    height: 22px;
-    background: #22c55e;
-    color: white;
-    border-radius: 50%;
-    font-size: 11px;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  .priority-badge {{
+    display: flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; border-radius: 6px;
+    background: #fef3c7; color: #b45309;
+    font-size: 12px; font-weight: 700; flex-shrink: 0;
   }}
+  .recommendation p {{ font-size: 15px; color: #374151; margin: 0; line-height: 1.6; }}
 
-  /* ── Footer ───────────────────────────────────────────────── */
-  .report-footer {{
-    margin-top: 40px;
-    padding-top: 16px;
-    border-top: 1px solid #e5e7eb;
-    font-size: 8.5pt;
-    color: #9ca3af;
-  }}
-
-  .report-footer .generated {{ margin-bottom: 6px; }}
-
+  /* ── Caveats ── */
   .caveats {{
-    margin-top: 8px;
-    padding: 10px 14px;
-    background: #fffbeb;
-    border: 1px solid #fde68a;
-    border-radius: 6px;
-    font-size: 8.5pt;
-    color: #92400e;
+    margin-top: 20px; padding: 14px 18px;
+    background: #fffbeb; border: 1px solid #fde68a;
+    border-radius: 6px; font-size: 13px; color: #92400e;
   }}
+  .caveats ul {{ margin: 6px 0 0 18px; }}
+  .caveats li {{ margin-bottom: 4px; }}
 
-  .caveats ul {{ margin: 4px 0 0 16px; }}
-  .caveats li {{ margin-bottom: 2px; }}
+  /* ── Screen-only toolbar ── */
+  @media screen {{
+    .screen-toolbar {{
+      position: sticky; top: 0; z-index: 100;
+      background: #111; color: white;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 24px; font-size: 15px;
+    }}
+    .screen-toolbar button {{
+      background: #ef4444; color: white; border: none;
+      padding: 8px 20px; border-radius: 6px;
+      font-size: 14px; font-weight: 600; cursor: pointer;
+    }}
+    .screen-toolbar button:hover {{ background: #dc2626; }}
+  }}
+  @media print {{
+    .screen-toolbar {{ display: none !important; }}
+  }}
 </style>
 </head>
 <body>
 
-<!-- Toolbar (hidden when printing) -->
-<div class="toolbar no-print">
-  <span>Frammer AI Report — Preview</span>
+<!-- Screen-only toolbar -->
+<div class="screen-toolbar">
+  <span>Frammer AI — Report Preview</span>
   <button onclick="window.print()">Export PDF</button>
 </div>
 
-<!-- A4 Report Content -->
-<div class="report-pages">
+<!-- Fixed header (repeats on every printed page) -->
+<div class="report-page-header">
+  <span class="logo">FRAMMER AI</span>
+  <span class="divider"></span>
+  <span class="label">Analytics Report</span>
+</div>
 
-  <!-- Letterhead -->
-  <div class="letterhead avoid-break">
-    <div class="letterhead-brand">
-      <div class="letterhead-logo">F</div>
-      <h1>Frammer AI</h1>
-    </div>
-    <div class="letterhead-meta">
-      Analytics Report<br>
-      {generated_at}
+<!-- Report content -->
+<div class="report">
+
+  <!-- Cover -->
+  <div class="cover-header">
+    <div class="report-badge">ANALYTICAL REPORT</div>
+    <h1 class="report-title">{title}</h1>
+    <p class="report-subtitle">Auto-generated analytics report</p>
+    <div class="report-meta">
+      <span>Generated: {generated_at}</span>
     </div>
   </div>
 
-  <!-- Title -->
-  <div class="report-title">{title}</div>
-  <div class="report-subtitle">Auto-generated analytics report</div>
-
   <!-- Executive Summary -->
-  <div class="executive-summary avoid-break">
+  <div class="executive-summary">
     <h2>Executive Summary</h2>
     {md_to_html(summary)}
   </div>
 
-  <!-- Sections -->
+  <!-- Analysis Sections -->
   {sections_html}
+
+  <!-- Conclusions -->
+  {conclusions_html}
 
   <!-- Recommendations -->
   {recs_html}
 
-  <!-- Footer -->
-  <div class="report-footer avoid-break">
-    <div class="generated">Generated by Frammer AI on {generated_at}</div>
-    {f'<div class="caveats"><strong>Note:</strong><ul>{caveats_html}</ul></div>' if caveats_html else ''}
-  </div>
+  <!-- Caveats -->
+  {caveats_html}
 
 </div>
 
@@ -670,29 +563,29 @@ document.addEventListener('DOMContentLoaded', function() {{
         legend: {{
           display: cfg.datasets.length > 1 || isPie,
           position: isPie ? 'right' : 'top',
-          labels: {{ font: {{ size: 10, family: "'Inter', sans-serif" }}, padding: 12 }}
+          labels: {{ font: {{ size: 13, family: "-apple-system, 'Segoe UI', Roboto, sans-serif" }}, padding: 12 }}
         }},
         title: {{ display: false }},
         tooltip: {{
-          backgroundColor: 'rgba(26, 26, 46, 0.92)',
-          titleFont: {{ size: 11 }},
-          bodyFont: {{ size: 11 }},
+          backgroundColor: 'rgba(17, 17, 17, 0.92)',
+          titleFont: {{ size: 13 }},
+          bodyFont: {{ size: 13 }},
           padding: 10,
-          cornerRadius: 6,
+          cornerRadius: 4,
         }}
       }},
       scales: isPie ? {{}} : {{
         x: {{
           grid: {{ display: false }},
-          ticks: {{ font: {{ size: 9 }}, maxRotation: 45 }}
+          ticks: {{ font: {{ size: 12 }}, maxRotation: 45 }}
         }},
         y: {{
           beginAtZero: true,
-          grid: {{ color: 'rgba(0,0,0,0.05)' }},
-          ticks: {{ font: {{ size: 9 }} }}
+          grid: {{ color: 'rgba(0,0,0,0.04)' }},
+          ticks: {{ font: {{ size: 12 }} }}
         }}
       }},
-      animation: {{ duration: 0 }}  // Instant render for print
+      animation: {{ duration: 0 }}
     }};
 
     // Pie/doughnut need backgroundColor as array
@@ -712,10 +605,7 @@ document.addEventListener('DOMContentLoaded', function() {{
 
     new Chart(ctx, {{
       type: cfg.type,
-      data: {{
-        labels: cfg.labels,
-        datasets: cfg.datasets
-      }},
+      data: {{ labels: cfg.labels, datasets: cfg.datasets }},
       options: options
     }});
   }});
