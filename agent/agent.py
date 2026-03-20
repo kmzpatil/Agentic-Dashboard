@@ -309,13 +309,17 @@ You have six tools:
 
 **Process:**
 - First, decide if this is conversational (greeting, thanks, small talk) → call `answer` directly with a brief reply.
-- For data questions: call `execute_queries` with the SQL you need.
+- For data questions: call `execute_queries` with ALL the SQL you need in a SINGLE call. Pack as many queries as needed — they run in parallel.
 - You'll receive a summary of results (columns, row counts, sample rows, numeric stats).
-- If the data is sufficient to answer the question, call `answer`.
-- If you need more data (e.g. a follow-up query based on initial results, or a query failed and needs fixing), call `execute_queries` again.
-- IMPORTANT: After 1-2 rounds of queries, you almost certainly have enough data. Call `answer` with what you have. Do NOT re-query data you already have.
-- Never repeat the same queries. If the data is already in Previous Query Results, use it — do NOT re-fetch.
-- You have up to {max_iterations} iterations as a safety cap. Most questions need 1-2 iterations. Aim to answer as quickly as possible.
+- Then call `answer` with your response based on those results.
+- Only call `execute_queries` a second time if a query FAILED and needs fixing, or if the first results reveal you need a specific follow-up.
+
+**CRITICAL — when to call `answer`:**
+- After your FIRST batch of queries succeeds, call `answer`. Do not gather more data "just to be thorough."
+- The Previous Query Results section already contains everything you've gathered. READ IT. If the data is there, use it.
+- NEVER re-execute queries whose results already appear in Previous Query Results.
+- Most questions need exactly 1 iteration: one `execute_queries` call, then one `answer` call.
+- A second iteration is ONLY justified if: (a) a query errored and needs a fix, or (b) the results revealed something unexpected that requires a targeted follow-up.
 
 **When to use `get_column_values_tool`:**
 - You need to filter by a specific value but aren't sure what values exist.
@@ -848,24 +852,18 @@ async def run_agent(
         answer_charts: List[ChartResult] = []
 
         for iteration in range(start_iter, MAX_ITERATIONS):
-            # Report mode auto-break: if we've gathered enough data, skip to synthesis
-            if mode == "report" and iteration > start_iter:
-                successful_queries = sum(1 for qr in all_query_results if qr.get("status") == "success")
-                min_needed = max(len(report_sub_questions), 3)
-                if successful_queries >= min_needed:
-                    logger.info("=== REPORT MODE: %d successful queries >= %d needed, breaking to synthesis ===", successful_queries, min_needed)
-                    actions_log.append(f"Data gathering complete ({successful_queries} successful queries)")
-                    break
-
             system = _build_system_prompt(schema, metrics, auth, working_memory, all_query_results)
             if mode == "report":
                 sq_text = "\n".join(
                     f"  {sq['id']}. [{sq['type'].upper()}] {sq['question']}"
                     for sq in report_sub_questions
                 ) if report_sub_questions else ""
-                system += "\n\n## Mode: REPORT\nYou are gathering data for a comprehensive analytical report. Execute queries for each sub-question below, then call `answer` when done."
+                system += "\n\n## Mode: REPORT — Data Gathering Phase"
+                system += "\nYou are gathering data for a report. A separate system will format the final report from your data."
+                system += "\nYour ONLY job: execute ONE batch of queries covering all sub-questions below, then call `answer` with a brief summary."
+                system += "\nDo NOT format the report yourself. Do NOT re-query data that already appears in Previous Query Results."
                 if sq_text:
-                    system += f"\n\n## Report Sub-Questions to Investigate\n{sq_text}\nAddress these sub-questions systematically with your queries."
+                    system += f"\n\n## Sub-Questions (execute ALL in one batch)\n{sq_text}"
             messages = _build_messages(system, question, history)
 
             logger.info("=== ITERATION %d: Calling LLM (%d messages) ===", iteration + 1, len(messages))
@@ -1105,15 +1103,6 @@ async def run_agent_stream(
         # 4. ReAct loop
         report_step_idx = 0  # Track which sub-question we're on
         for iteration in range(start_iter, MAX_ITERATIONS):
-            # Report mode auto-break: if we've gathered enough data, skip to synthesis
-            if mode == "report" and iteration > start_iter:
-                successful_queries = sum(1 for qr in all_query_results if qr.get("status") == "success")
-                min_needed = max(len(report_sub_questions), 3)
-                if successful_queries >= min_needed:
-                    logger.info("=== REPORT MODE: %d successful queries >= %d needed, breaking to synthesis ===", successful_queries, min_needed)
-                    actions_log.append(f"Data gathering complete ({successful_queries} successful queries)")
-                    break
-
             # Yield thinking phase
             phase_label = "thinking" if iteration == 0 else f"thinking (round {iteration + 1})"
             if agent_state and iteration == start_iter:
@@ -1126,9 +1115,12 @@ async def run_agent_stream(
                     f"  {sq['id']}. [{sq['type'].upper()}] {sq['question']}"
                     for sq in report_sub_questions
                 ) if report_sub_questions else ""
-                system += f"\n\n## Mode: REPORT\nYou are gathering data for a comprehensive report. Execute queries for each sub-question below, then call `answer` when done."
+                system += "\n\n## Mode: REPORT — Data Gathering Phase"
+                system += "\nYou are gathering data for a report. A separate system will format the final report from your data."
+                system += "\nYour ONLY job: execute ONE batch of queries covering all sub-questions below, then call `answer` with a brief summary."
+                system += "\nDo NOT format the report yourself. Do NOT re-query data that already appears in Previous Query Results."
                 if sq_text:
-                    system += f"\n\n## Report Sub-Questions to Investigate\n{sq_text}\nAddress these sub-questions systematically with your queries."
+                    system += f"\n\n## Sub-Questions (execute ALL in one batch)\n{sq_text}"
             messages = _build_messages(system, question, history)
 
             logger.info("=== STREAM ITERATION %d: Calling LLM ===", iteration + 1)
