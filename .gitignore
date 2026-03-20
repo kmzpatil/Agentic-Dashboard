@@ -21,6 +21,7 @@ __pycache__/
 *.egg-info/
 
 # ── Databases & data files ────────────────────────────────────────────────────
+*.pkl
 *.dump
 *.txt
 *.db
