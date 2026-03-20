@@ -165,7 +165,7 @@ async def _plan_report_sub_questions(
     )
 
     fast_client = LLMClient.fast()
-    resp = await asyncio.to_thread(fast_client.call, prompt)
+    resp = await asyncio.to_thread(fast_client.invoke, prompt)
 
     # Parse JSON from response
     raw = resp.content.strip()
