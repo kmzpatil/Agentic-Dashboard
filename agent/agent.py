@@ -56,12 +56,14 @@ try:
         build_report_synthesis_prompt,
     )
     from gemini_client import get_gemini_llm
+    from report_formatter import render_report_html
 except ImportError:
     from agent.prompts.report_prompt import (
         build_report_planning_prompt,
         build_report_synthesis_prompt,
     )
     from agent.gemini_client import get_gemini_llm
+    from agent.report_formatter import render_report_html
 
 # -- Core MCP and Tools --
 try:
@@ -729,14 +731,68 @@ async def _handle_explore(args: Dict, auth: Any = None) -> Dict:
     }
 
 
-# ── Report Synthesis (Gemini) ────────────────────────────────────────────────
+# ── Report Synthesis (Gemini → JSON → deterministic HTML) ────────────────────
+
+
+def _parse_report_json(content: str) -> Dict:
+    """
+    Parse structured report JSON from LLM response.
+    Handles markdown fences, narrative wrapping, and graceful fallback.
+    """
+    raw = content.strip()
+    # Strip markdown code fences
+    raw = re.sub(r'^```(?:json)?\s*\n?', '', raw, flags=re.IGNORECASE)
+    raw = re.sub(r'\n?```\s*$', '', raw).strip()
+
+    # Try direct parse
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            return parsed
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # Extract JSON object from within narrative text
+    match = re.search(r'\{[\s\S]*\}', raw)
+    if match:
+        try:
+            parsed = json.loads(match.group(0))
+            if isinstance(parsed, dict):
+                return parsed
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    logger.warning("Failed to parse report JSON, creating minimal report from raw content")
+    return {
+        "title": "Analytics Report",
+        "executive_summary": content[:500] if content else "Report generation encountered an issue.",
+        "sections": [{
+            "title": "Analysis",
+            "content": content or "No analysis available.",
+        }],
+        "recommendations": [],
+        "metadata": {
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "caveats": ["Report structure could not be parsed; showing raw analysis."],
+        },
+    }
+
 
 async def _synthesize_report(question: str, all_query_results: List[Dict]) -> str:
     """
-    Format accumulated query results into an HTML report via Gemini.
+    Format accumulated query results into an HTML report.
+
+    Two phases:
+      1. Gemini generates structured JSON (what to show — narrative, chart specs, table specs).
+      2. render_report_html() produces deterministic HTML with Chart.js (how it looks).
+
+    Charts and tables bind to actual query data via source_query_index,
+    so visualizations show real values — not LLM approximations.
+
     Falls back to Anthropic if Gemini is unavailable.
-    Returns the HTML string directly.
+    Returns a complete self-contained HTML document.
     """
+    # Phase 1: Build results_block (30-row samples for Gemini context)
     results_parts = []
     for i, qr in enumerate(all_query_results):
         desc = qr.get("description", f"Query {i}")
@@ -763,12 +819,12 @@ async def _synthesize_report(question: str, all_query_results: List[Dict]) -> st
         results_block=results_block,
     )
 
-    # Use Gemini for report synthesis, fall back to Anthropic
+    # Phase 2: Call Gemini (or Anthropic fallback) for JSON report structure
     gemini = get_gemini_llm()
     llm_label = "Gemini" if gemini else "Anthropic (fallback)"
     llm_to_use = gemini or _llm_client.llm
 
-    logger.info("=== REPORT SYNTHESIZER: Calling %s ===", llm_label)
+    logger.info("=== REPORT SYNTHESIZER: Calling %s for JSON ===", llm_label)
     start = time.time()
     resp = await asyncio.to_thread(llm_to_use.invoke, prompt)
     duration = time.time() - start
@@ -783,17 +839,17 @@ async def _synthesize_report(question: str, all_query_results: List[Dict]) -> st
 
     content = _extract_response(resp.content)
 
-    # Strip markdown code fences if the LLM wrapped the HTML
-    content = re.sub(r"^```(?:html)?\s*\n?", "", content.strip(), flags=re.IGNORECASE)
-    content = re.sub(r"\n?```\s*$", "", content).strip()
+    # Phase 3: Parse JSON report structure
+    report_dict = _parse_report_json(content)
+    logger.info(
+        "Report JSON parsed: %d sections, %d recommendations",
+        len(report_dict.get("sections", [])),
+        len(report_dict.get("recommendations", [])),
+    )
 
-    # Ensure we have the report div
-    if '<div class="report">' not in content:
-        match = re.search(r'(<div class="report">.*</div>)\s*$', content, re.DOTALL)
-        if match:
-            content = match.group(1)
-
-    return content
+    # Phase 4: Render to deterministic HTML with Chart.js + real query data
+    html = render_report_html(report_dict, all_query_results)
+    return html
 
 
 # ── Main Entry Point ─────────────────────────────────────────────────────────

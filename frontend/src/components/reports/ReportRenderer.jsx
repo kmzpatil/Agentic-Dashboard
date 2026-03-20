@@ -221,7 +221,8 @@ export default function ReportRenderer({ reportHtml }) {
 
   if (!reportHtml) return null;
 
-  const titleMatch = reportHtml.match(/<(?:h1)[^>]*>(.*?)<\/(?:h1)>/si);
+  const titleMatch = reportHtml.match(/<(?:h1)[^>]*>(.*?)<\/(?:h1)>/si)
+    || reportHtml.match(/<div\s+class="report-title">(.*?)<\/div>/si);
   const reportTitle = titleMatch
     ? titleMatch[1].replace(/<[^>]+>/g, '').trim()
     : 'Analytical Report';
@@ -230,7 +231,10 @@ export default function ReportRenderer({ reportHtml }) {
     setDownloading(true);
     setDownloaded(false);
     try {
-      const fullDoc = buildPdfDocument(reportHtml);
+      // Detect if we received a complete document (from render_report_html) or a legacy fragment
+      const trimmed = reportHtml.trim().toLowerCase();
+      const isFullDocument = trimmed.startsWith('<!doctype html') || trimmed.startsWith('<html');
+      const fullDoc = isFullDocument ? reportHtml : buildPdfDocument(reportHtml);
 
       const iframe = document.createElement('iframe');
       iframe.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;border:none;visibility:hidden;';
@@ -245,7 +249,8 @@ export default function ReportRenderer({ reportHtml }) {
         if (iframe.contentWindow.document.readyState === 'complete') resolve();
         else iframe.contentWindow.addEventListener('load', resolve);
       });
-      await new Promise((r) => setTimeout(r, 300));
+      // Full documents need extra time for Chart.js CDN load + canvas rendering
+      await new Promise((r) => setTimeout(r, isFullDocument ? 800 : 300));
 
       iframe.contentWindow.focus();
       iframe.contentWindow.print();
@@ -255,8 +260,10 @@ export default function ReportRenderer({ reportHtml }) {
     } catch (err) {
       console.error('PDF generation failed:', err);
       try {
-        const fullDoc = buildPdfDocument(reportHtml);
-        const blob = new Blob([fullDoc], { type: 'text/html' });
+        const trimmed2 = reportHtml.trim().toLowerCase();
+        const isFullDoc2 = trimmed2.startsWith('<!doctype html') || trimmed2.startsWith('<html');
+        const fallbackDoc = isFullDoc2 ? reportHtml : buildPdfDocument(reportHtml);
+        const blob = new Blob([fallbackDoc], { type: 'text/html' });
         const url = URL.createObjectURL(blob);
         const win = window.open(url, '_blank');
         if (win) win.addEventListener('load', () => { win.print(); URL.revokeObjectURL(url); });
