@@ -7,6 +7,8 @@ import {
   LayoutDashboard,
   Microscope,
   FlaskConical,
+  ShieldCheck,
+  Braces,
 } from 'lucide-react';
 import './lib/chartSetup';
 import { API_BASE, customStyles } from './lib/constants';
@@ -14,16 +16,28 @@ import { useApi } from './hooks/useApi';
 import OverviewModule from './features/overview/OverviewModule';
 import UsageTrendsModule from './features/usage/UsageTrendsModule';
 import FunnelModule from './features/funnel/FunnelModule';
-import UserJourneyModule from './features/journey/UserJourneyModule';
 import ExplorerModule from './features/explorer/ExplorerModule';
 import TalkToDataModule from './features/talk/TalkToDataModule';
 import LabsModule from './features/labs/LabsModule';
+import DataQualityModule from './features/quality/DataQualityModule';
 
 function readRouteState() {
   const params = new URLSearchParams(window.location.search);
   return Object.fromEntries(params.entries());
 }
 
+function StatusPill({ label, ok, detail }) {
+  const tone = ok
+    ? 'border-emerald-500/30 text-emerald-300 bg-emerald-500/10'
+    : 'border-amber-500/30 text-amber-300 bg-amber-500/10';
+
+  return (
+    <div className={`rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em] ${tone}`}>
+      {label}: {ok ? 'online' : 'degraded'}
+      {detail ? <span className="ml-2 normal-case tracking-normal text-[10px] opacity-80">{detail}</span> : null}
+    </div>
+  );
+}
 
 export default function AppShell() {
   const [authToken, setAuthToken] = useState(() => localStorage.getItem('frammer_auth_token') || '');
@@ -98,8 +112,8 @@ export default function AppShell() {
     { id: 'mission-control', label: 'Mission Control', icon: <LayoutDashboard size={16} /> },
     { id: 'trends', label: 'Trends', icon: <BarChart3 size={16} /> },
     { id: 'funnel', label: 'Funnel', icon: <Funnel size={16} /> },
-    { id: 'journey', label: 'Metrics', icon: <Route size={16} /> },
     { id: 'explorer', label: 'Explorer', icon: <Microscope size={16} /> },
+    { id: 'quality', label: 'Data Quality', icon: <ShieldCheck size={16} /> },
     { id: 'copilot', label: 'Copilot', icon: <Bot size={16} /> },
     { id: 'labs', label: 'Labs', icon: <FlaskConical size={16} /> },
   ]), []);
@@ -199,24 +213,42 @@ export default function AppShell() {
       <header className="border-b border-neutral-900 bg-[#050505] px-6 py-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0">
-            <h1 className="text-2xl font-black tracking-tight text-red-500">FRAMMER AI</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-black tracking-tight text-red-500">FRAMMER AI</h1>
+              <div className="inline-flex items-center gap-2 rounded-full border border-neutral-800 bg-[#111111] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-500">
+                <Braces size={12} />
+                Analytics OS
+              </div>
+            </div>
+            <p className="mt-2 text-sm text-neutral-500">A single workspace for performance monitoring, operating priorities, and AI-guided analysis.</p>
           </div>
 
-          <div className="flex items-center gap-3">
-            {/* DB status — single dot indicator */}
-            {health.data?.services?.database && (() => {
-              const dbOk = Boolean(health.data.services.database.ok);
-              return (
-                <div className="flex items-center gap-2 rounded-full border border-neutral-800 bg-[#111111] px-3 py-1.5">
-                  <div className={`h-2 w-2 rounded-full ${dbOk ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)]' : 'bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.6)]'}`} />
-                  <span className="text-xs font-semibold text-neutral-400">DB</span>
-                </div>
-              );
-            })()}
-
-            <div className="h-4 w-px bg-neutral-800" />
-
-            <span className="text-sm text-neutral-400">{authUser.username}</span>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {health.data?.services && (
+              <>
+                <StatusPill
+                  label="DB"
+                  ok={Boolean(health.data.services.database?.ok)}
+                  detail={health.data.services.database?.missing_tables?.length
+                    ? `${health.data.services.database.missing_tables.length} missing`
+                    : health.data.services.database?.database}
+                />
+                <StatusPill
+                  label="AI"
+                  ok={Boolean(health.data.services.ai?.ok)}
+                  detail={health.data.services.ai?.detail || health.data.services.ai?.error}
+                />
+                <StatusPill
+                  label="MCP"
+                  ok={Boolean(health.data.services.mcp?.ok)}
+                  detail={health.data.services.mcp?.detail}
+                />
+              </>
+            )}
+            <div className="ml-2 text-xs text-neutral-500">
+              {authUser.username} · <span className="text-neutral-400">{authUser.role.replace(/_/g, ' ')}</span>
+              {authUser.clientName ? ` · ${authUser.clientName}` : ''}
+            </div>
             <button
               onClick={handleLogout}
               className="rounded-full bg-neutral-800 px-3 py-1.5 text-xs text-neutral-300 transition-colors hover:bg-neutral-700"
@@ -250,10 +282,10 @@ export default function AppShell() {
         {activeView === 'mission-control' && <OverviewModule routeState={routeState} onNavigate={navigate} />}
         {activeView === 'trends' && <UsageTrendsModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'funnel' && <FunnelModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
-        {activeView === 'journey' && <UserJourneyModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'explorer' && <ExplorerModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
+        {activeView === 'quality' && <DataQualityModule />}
         {activeView === 'copilot' && <TalkToDataModule authToken={authToken} routeState={routeState} onNavigate={navigate} />}
-        {activeView === 'labs' && <LabsModule />}
+        {activeView === 'labs' && <LabsModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
       </main>
     </div>
   );
