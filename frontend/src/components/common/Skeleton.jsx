@@ -138,25 +138,19 @@ export function OverviewSkeleton() {
   return (
     <div className="h-full overflow-y-auto bg-[#050505] px-6 py-6 space-y-6">
 
-      {/* Row 1: KPI cards (scrollable) + fixed Add/Create buttons */}
-      <div className="flex gap-4 items-stretch">
-        <div className="flex-1 min-w-0 overflow-x-auto hide-scrollbar">
-          <div className="flex gap-4 h-full">
-            {[...Array(4)].map((_, i) => (
-              <div key={i} className="flex-none min-h-[150px] bg-[#111111] rounded-xl border border-neutral-800 p-5 flex flex-col justify-between" style={{ width: 'calc(25% - 12px)' }}>
-                <div className="space-y-2">
-                  <Skeleton className="h-3 w-20" />
-                  <Skeleton className="h-9 w-28" />
-                </div>
-                <Skeleton className="h-3 w-16" />
-              </div>
-            ))}
+      {/* Row 1: KPI grid — 4 core cards + 2 action button placeholders */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="min-h-[150px] bg-[#111111] rounded-xl border border-neutral-800 p-5 flex flex-col justify-between">
+            <div className="space-y-2">
+              <Skeleton className="h-3 w-20" />
+              <Skeleton className="h-9 w-28" />
+            </div>
+            <Skeleton className="h-3 w-16" />
           </div>
-        </div>
-        <div className="shrink-0 w-52 min-h-[150px] flex flex-col gap-2">
-          <div className="flex-1 rounded-xl border border-dashed border-neutral-800 bg-[#111111]" />
-          <div className="flex-1 rounded-xl border border-dashed border-purple-900/30 bg-purple-950/5" />
-        </div>
+        ))}
+        <div className="min-h-[150px] rounded-xl border border-dashed border-neutral-800 bg-[#111111]" />
+        <div className="min-h-[150px] rounded-xl border border-dashed border-purple-900/30 bg-purple-950/5" />
       </div>
 
       {/* Row 2: Output Types Summary */}

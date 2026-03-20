@@ -60,7 +60,7 @@ export default function OverviewModule({ onNavigate }) {
   };
 
   const handlePromoteKpis = () => {
-    setActiveExtraKpis([...activeExtraKpis, ...stagedKpis]);
+    setActiveExtraKpis([...stagedKpis, ...activeExtraKpis]);
     setStagedKpis([]);
   };
 
@@ -177,64 +177,63 @@ export default function OverviewModule({ onNavigate }) {
 
   const sparklines = data?.sparklines || {};
 
+  const coreKpiCards = [
+    { title: 'UPLOADED', value: formatNumber(kpis.uploaded_count), subtitle: formatHours(kpis.uploaded_duration), trendData: [12, 18, 15, 22, 20, 28, 25], id: 'uploaded_count' },
+    { title: 'PROCESSED', value: formatNumber(kpis.processed_count), subtitle: 'Videos reaching create stage', trendData: [10, 14, 12, 19, 18, 24, 22], id: 'processed_count' },
+    { title: 'CREATED', value: formatNumber(kpis.created_count), subtitle: formatHours(kpis.created_duration), trendData: [45, 52, 48, 60, 58, 65, 62], id: 'created_count' },
+    { title: 'PUBLISHED', value: formatNumber(kpis.published_count), subtitle: formatHours(kpis.published_duration), trendData: [20, 25, 22, 30, 28, 35, 32], id: 'published_count' },
+  ];
+
   return (
     <div className="h-full overflow-y-auto hide-scrollbar bg-[#050505] px-6 py-6 space-y-6">
-      {/* KPI row: only the cards scroll, buttons stay fixed on the right */}
-      <section className="flex gap-4 items-stretch">
-        {/* Scrollable cards area */}
-        <div className="flex-1 min-w-0 overflow-x-auto hide-scrollbar">
-          <div className="flex gap-4 h-full">
-            {[
-              { title: 'UPLOADED', value: formatNumber(kpis.uploaded_count), subtitle: formatHours(kpis.uploaded_duration), trendData: [12, 18, 15, 22, 20, 28, 25], id: 'uploaded_count' },
-              { title: 'PROCESSED', value: formatNumber(kpis.processed_count), subtitle: 'Videos reaching create stage', trendData: [10, 14, 12, 19, 18, 24, 22], id: 'processed_count' },
-              { title: 'CREATED', value: formatNumber(kpis.created_count), subtitle: formatHours(kpis.created_duration), trendData: [45, 52, 48, 60, 58, 65, 62], id: 'created_count' },
-              { title: 'PUBLISHED', value: formatNumber(kpis.published_count), subtitle: formatHours(kpis.published_duration), trendData: [20, 25, 22, 30, 28, 35, 32], id: 'published_count' },
-            ].map(card => (
-              <div key={card.id} className="flex-none min-h-[150px]" style={{ width: 'calc(25% - 12px)' }}>
-                <KpiCard
-                  title={card.title}
-                  value={card.value}
-                  subtitle={card.subtitle}
-                  trendData={card.trendData}
-                  onClick={() => handleCoreKpiClick(card.id)}
-                />
-              </div>
-            ))}
+      {/* KPI grid — added cards appear first, then core 4, then action buttons */}
+      <section>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {/* Newly added KPIs — custom first (prepended), then extra */}
+          {customKpis.map(kpi => (
+            <div key={kpi.id} className="min-h-[150px]">
+              <KpiCard
+                title={kpi.title}
+                value={kpi.getValue(kpis)}
+                subtitle={kpi.getSubtitle(kpis)}
+                trendData={kpi.trendData}
+                onEdit={() => handleEditCustomKpi(kpi)}
+                onRemove={() => handleRemoveCustomKpi(kpi)}
+                onClick={() => handleCustomKpiClick(kpi)}
+              />
+            </div>
+          ))}
 
-            {visibleExtraKpis.map(kpi => (
-              <div key={kpi.id} className="flex-none min-h-[150px]" style={{ width: 'calc(25% - 12px)' }}>
-                <KpiCard
-                  title={kpi.title}
-                  value={kpi.getValue(kpis)}
-                  subtitle={kpi.getSubtitle(kpis)}
-                  trendData={kpi.trendData}
-                  onRemove={() => handleRemoveKpi(kpi.id)}
-                  onClick={() => setSelectedKpi(kpi)}
-                />
-              </div>
-            ))}
+          {visibleExtraKpis.map(kpi => (
+            <div key={kpi.id} className="min-h-[150px]">
+              <KpiCard
+                title={kpi.title}
+                value={kpi.getValue(kpis)}
+                subtitle={kpi.getSubtitle(kpis)}
+                trendData={kpi.trendData}
+                onRemove={() => handleRemoveKpi(kpi.id)}
+                onClick={() => setSelectedKpi(kpi)}
+              />
+            </div>
+          ))}
 
-            {customKpis.map(kpi => (
-              <div key={kpi.id} className="flex-none min-h-[150px]" style={{ width: 'calc(25% - 12px)' }}>
-                <KpiCard
-                  title={kpi.title}
-                  value={kpi.getValue(kpis)}
-                  subtitle={kpi.getSubtitle(kpis)}
-                  trendData={kpi.trendData}
-                  onEdit={() => handleEditCustomKpi(kpi)}
-                  onRemove={() => handleRemoveCustomKpi(kpi)}
-                  onClick={() => handleCustomKpiClick(kpi)}
-                />
-              </div>
-            ))}
-          </div>
-        </div>
+          {/* Core 4 KPIs */}
+          {coreKpiCards.map(card => (
+            <div key={card.id} className="min-h-[150px]">
+              <KpiCard
+                title={card.title}
+                value={card.value}
+                subtitle={card.subtitle}
+                trendData={card.trendData}
+                onClick={() => handleCoreKpiClick(card.id)}
+              />
+            </div>
+          ))}
 
-        {/* Fixed Add/Create buttons — never scrolls */}
-        <div className="shrink-0 w-52 flex flex-col gap-2 min-h-[150px]">
+          {/* Add More button */}
           <button
             onClick={handleAddMore}
-            className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-4 border border-dashed transition-colors ${
+            className={`min-h-[150px] flex items-center justify-center gap-2 rounded-xl px-4 border border-dashed transition-colors ${
               isSelectionPanelOpen
                 ? 'bg-[#161616] border-neutral-500 text-white'
                 : 'bg-[#111111] border-neutral-700 hover:border-neutral-500 hover:bg-[#161616] text-neutral-400 hover:text-white'
@@ -245,9 +244,11 @@ export default function OverviewModule({ onNavigate }) {
               {isSelectionPanelOpen ? 'Close' : 'Add More'}
             </span>
           </button>
+
+          {/* Create KPI button */}
           <button
             onClick={() => setShowKpiCreator(true)}
-            className="flex flex-1 items-center justify-center gap-2 rounded-xl px-4 border border-dashed border-purple-800/50 bg-purple-950/10 hover:bg-purple-950/20 hover:border-purple-600 text-purple-400 hover:text-purple-300 transition-colors"
+            className="min-h-[150px] flex items-center justify-center gap-2 rounded-xl px-4 border border-dashed border-purple-800/50 bg-purple-950/10 hover:bg-purple-950/20 hover:border-purple-600 text-purple-400 hover:text-purple-300 transition-colors"
           >
             <Wand2 size={18} />
             <span className="text-sm font-bold uppercase tracking-wider">Create KPI</span>

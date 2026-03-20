@@ -1,8 +1,10 @@
 import { useState, useMemo } from 'react';
+import { Line } from 'react-chartjs-2';
+import '../../lib/chartSetup';
 import {
   ShieldCheck, AlertTriangle, Copy, Unlink, MinusCircle, CalendarX,
   HelpCircle, UserX, RouteOff, Search, ChevronDown, ChevronRight,
-  LayoutDashboard, Database, Link2Off, Gauge
+  LayoutDashboard, TrendingUp, Link2Off, Gauge
 } from 'lucide-react';
 
 // ── Hardcoded realistic quality data (matches live DB checks) ──
@@ -182,14 +184,23 @@ const QUALITY_ISSUES = {
   offset: 0,
 };
 
+// ── Quality score 90-day rolling trend ──
+const QUALITY_TREND_90D = [
+  87.1, 87.8, 88.5, 89.6, 90.4, 91.2, 91.8, 91.5, 90.9, 90.2,
+  89.6, 88.8, 87.9, 87.0, 86.0, 85.2, 84.5, 83.8, 83.4, 83.1,
+  83.3, 83.6, 84.2, 85.0, 85.8, 86.6, 87.3, 87.8, 88.3, 88.8,
+  89.3, 89.8, 90.3, 90.7, 91.0, 91.4, 91.8, 92.0, 91.6, 91.2,
+  90.8, 90.5, 90.0, 89.6, 89.1, 88.6, 88.2, 87.9, 87.5, 87.3,
+];
+
 // ── Color maps ──
 const CHECK_COLOR_MAP = {
-  NULL_VIOLATION: { color: 'text-red-400', bg: 'bg-red-500/10', hex: '#ef4444', icon: AlertTriangle, label: 'NULL Violation' },
-  DUPLICATE_PK: { color: 'text-orange-400', bg: 'bg-orange-500/10', hex: '#f97316', icon: Copy, label: 'Duplicate PK' },
-  FK_VIOLATION: { color: 'text-amber-400', bg: 'bg-amber-500/10', hex: '#f59e0b', icon: Unlink, label: 'FK Violation' },
-  NEGATIVE_VALUE: { color: 'text-violet-400', bg: 'bg-violet-500/10', hex: '#8b5cf6', icon: MinusCircle, label: 'Negative Value' },
-  INVALID_DATE: { color: 'text-blue-400', bg: 'bg-blue-500/10', hex: '#3b82f6', icon: CalendarX, label: 'Invalid Date' },
-  UNKNOWN_VALUE: { color: 'text-neutral-400', bg: 'bg-neutral-500/10', hex: '#9ca3af', icon: HelpCircle, label: 'Unknown Value' },
+  NULL_VIOLATION: { color: 'text-red-400', bg: 'bg-red-500/10', hex: '#ef4444', icon: AlertTriangle, label: 'NULL Violation', description: 'Every required field in each table is scanned. If a field that must have a value is empty, it counts as a violation. Required fields include IDs, dates, durations, and key dimension columns like Platform and Team.' },
+  DUPLICATE_PK: { color: 'text-orange-400', bg: 'bg-orange-500/10', hex: '#f97316', icon: Copy, label: 'Duplicate PK', description: 'Each table\'s primary key is checked for duplicates. If the same ID appears more than once, those extra rows are counted. This typically happens from parallel pipeline runs or failed deduplication on re-uploads.' },
+  FK_VIOLATION: { color: 'text-amber-400', bg: 'bg-amber-500/10', hex: '#f59e0b', icon: Unlink, label: 'FK Violation', description: 'Every foreign key relationship is checked. A record is flagged when it references a parent row that no longer exists — for example, a video linked to a deleted user or an asset linked to a deleted video.' },
+  NEGATIVE_VALUE: { color: 'text-violet-400', bg: 'bg-violet-500/10', hex: '#8b5cf6', icon: MinusCircle, label: 'Negative Value', description: 'All duration and count columns are checked for numbers below zero. Negative values indicate a bad entry — typically from a failed upload, an encoding error, or a sentinel placeholder that was never cleaned up.' },
+  INVALID_DATE: { color: 'text-blue-400', bg: 'bg-blue-500/10', hex: '#3b82f6', icon: CalendarX, label: 'Invalid Date', description: 'Upload, creation, and publish dates are validated against YYYY-MM-DD format. Dates before 2020 or in the future are also flagged. Common sources are legacy CSV imports, wrong separators, and ISO timestamps with timezone offsets.' },
+  UNKNOWN_VALUE: { color: 'text-neutral-400', bg: 'bg-neutral-500/10', hex: '#9ca3af', icon: HelpCircle, label: 'Unknown Value', description: 'Dimension fields like type, language, team, and platform are scanned for placeholder text — "Unknown", "N/A", "None", or empty strings. These indicate content that was never properly classified or assigned after ingestion.' },
 };
 
 const TABLE_COLOR_MAP = {
@@ -211,6 +222,133 @@ const Panel = ({ children, className = '' }) => (
 const Badge = ({ children, className = '' }) => (
   <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${className}`}>{children}</span>
 );
+
+function FlipCard({ front, back, className = '' }) {
+  const [flipped, setFlipped] = useState(false);
+  return (
+    <div
+      className={`relative overflow-hidden ${className}`}
+      style={{ perspective: '900px' }}
+      onMouseEnter={() => setFlipped(true)}
+      onMouseLeave={() => setFlipped(false)}
+    >
+      {/* Invisible spacer — keeps the card's natural height in the grid */}
+      <div aria-hidden className="invisible pointer-events-none">{front}</div>
+      {/* Flip wrapper — absolutely fills the card */}
+      <div style={{ transformStyle: 'preserve-3d', transition: 'transform 0.42s cubic-bezier(0.4,0,0.2,1)', transform: flipped ? 'rotateY(180deg)' : 'rotateY(0deg)', position: 'absolute', inset: 0 }}>
+        <div style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden', position: 'absolute', inset: 0 }}>
+          {front}
+        </div>
+        <div style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden', transform: 'rotateY(180deg)', position: 'absolute', inset: 0 }}>
+          {back}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Quality Score Trend — Chart.js area chart ──
+const TREND_LABELS = QUALITY_TREND_90D.map((_, i) => {
+  const daysAgo = QUALITY_TREND_90D.length - 1 - i;
+  return daysAgo === 0 ? 'Today' : daysAgo % 15 === 0 ? `${daysAgo}d ago` : '';
+});
+
+const TREND_CHART_DATA = {
+  labels: TREND_LABELS,
+  datasets: [{
+    label: 'Quality Score',
+    data: QUALITY_TREND_90D,
+    borderColor: '#10b981',
+    backgroundColor: (ctx) => {
+      const canvas = ctx.chart.ctx;
+      const { chartArea } = ctx.chart;
+      if (!chartArea) return 'rgba(16,185,129,0.15)';
+      const gradient = canvas.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+      gradient.addColorStop(0, 'rgba(16,185,129,0.35)');
+      gradient.addColorStop(1, 'rgba(16,185,129,0.01)');
+      return gradient;
+    },
+    borderWidth: 2,
+    tension: 0.4,
+    fill: true,
+    pointRadius: 0,
+    pointHoverRadius: 4,
+    pointHoverBackgroundColor: '#10b981',
+    pointHoverBorderColor: '#fff',
+    pointHoverBorderWidth: 2,
+  }],
+};
+
+const TREND_CHART_OPTIONS = {
+  responsive: true,
+  maintainAspectRatio: false,
+  animation: { duration: 600 },
+  plugins: {
+    legend: { display: false },
+    tooltip: {
+      backgroundColor: '#111111',
+      borderColor: 'rgba(255,255,255,0.08)',
+      borderWidth: 1,
+      titleColor: '#a3a3a3',
+      bodyColor: '#ffffff',
+      padding: 10,
+      callbacks: {
+        label: (ctx) => ` ${ctx.parsed.y.toFixed(1)}%`,
+      },
+    },
+    annotation: {
+      annotations: {
+        targetLine: {
+          type: 'line',
+          yMin: 90,
+          yMax: 90,
+          borderColor: '#f59e0b',
+          borderWidth: 1.5,
+          borderDash: [8, 5],
+          label: {
+            display: true,
+            content: '90% Target',
+            position: 'start',
+            xAdjust: 6,
+            backgroundColor: 'transparent',
+            color: '#f59e0b',
+            font: { size: 11, weight: 'bold' },
+            padding: 0,
+          },
+        },
+      },
+    },
+  },
+  scales: {
+    x: {
+      ticks: { color: '#525252', font: { size: 10 }, maxRotation: 0 },
+      grid: { color: 'rgba(255,255,255,0.03)' },
+      border: { display: false },
+    },
+    y: {
+      min: 78,
+      max: 96,
+      ticks: { color: '#525252', font: { size: 10 }, callback: (v) => `${v}%` },
+      grid: { color: 'rgba(255,255,255,0.04)' },
+      border: { display: false },
+    },
+  },
+};
+
+function QualityTrendsChart() {
+  return (
+    <div className="flex flex-col h-full">
+      <div className="mb-3 flex items-center gap-2">
+        <TrendingUp className="h-3.5 w-3.5 text-emerald-400" strokeWidth={2.5} />
+        <span className="text-sm font-bold text-white">Quality Score Trend</span>
+        <span className="ml-1 text-[10px] text-neutral-500">90-day rolling average against 90% target</span>
+      </div>
+      <div className="flex-1 min-h-0" style={{ minHeight: 200 }}>
+        <Line data={TREND_CHART_DATA} options={TREND_CHART_OPTIONS} />
+      </div>
+    </div>
+  );
+}
 
 // ── Health ring (SVG) ──
 function HealthRing({ score, tableScores }) {
@@ -428,10 +566,10 @@ export default function DataQualityModule() {
 
   // KPI card definitions
   const kpiCards = [
-    { label: 'Total Issues', value: (data.total_issues ?? 0).toLocaleString(), sub: `across ${Object.keys(data.table_scores || {}).length} tables`, icon: AlertTriangle, iconBg: 'bg-red-500/10', iconColor: 'text-red-400', valueColor: 'text-red-400', accentColor: 'bg-red-500' },
-    { label: 'Orphan Records', value: totalOrphans.toLocaleString(), sub: 'broken FK references', icon: Link2Off, iconBg: 'bg-amber-500/10', iconColor: 'text-amber-400', valueColor: 'text-amber-400', accentColor: 'bg-amber-500' },
-    { label: 'Contamination', value: `${avgContam}%`, sub: 'NULL & Unknown values', icon: Gauge, iconBg: 'bg-violet-500/10', iconColor: 'text-violet-400', valueColor: 'text-violet-400', accentColor: 'bg-violet-500' },
-    { label: 'Dead Ends', value: totalDeadEnds, sub: 'zero-publish paths', icon: RouteOff, iconBg: 'bg-neutral-500/10', iconColor: 'text-neutral-400', valueColor: 'text-neutral-300', accentColor: 'bg-neutral-500' },
+    { label: 'Total Issues', value: (data.total_issues ?? 0).toLocaleString(), sub: `across ${Object.keys(data.table_scores || {}).length} tables`, icon: AlertTriangle, iconBg: 'bg-red-500/10', iconColor: 'text-red-400', valueColor: 'text-red-400', accentColor: 'bg-red-500', description: 'Every data problem found across all 8 tables is counted — null required fields, duplicate IDs, broken links between tables, negative durations, wrongly formatted dates, and unclassified placeholder values.' },
+    { label: 'Orphan Records', value: totalOrphans.toLocaleString(), sub: 'broken FK references', icon: Link2Off, iconBg: 'bg-amber-500/10', iconColor: 'text-amber-400', valueColor: 'text-amber-400', accentColor: 'bg-amber-500', description: 'Checks every foreign key link in the pipeline. A record becomes orphaned when its parent row was deleted but the child record was left behind — broken links from users to videos, videos to assets, and further down the chain.' },
+    { label: 'Contamination', value: `${avgContam}%`, sub: 'NULL & Unknown values', icon: Gauge, iconBg: 'bg-violet-500/10', iconColor: 'text-violet-400', valueColor: 'text-violet-400', accentColor: 'bg-violet-500', description: 'Measures how many dimension fields contain null or placeholder values like "Unknown" or "N/A", expressed as a share of all dimension cells. Dimension fields are type, language, team, platform, and channel.' },
+    { label: 'Dead Ends', value: totalDeadEnds, sub: 'zero-publish paths', icon: RouteOff, iconBg: 'bg-neutral-500/10', iconColor: 'text-neutral-400', valueColor: 'text-neutral-300', accentColor: 'bg-neutral-500', description: 'A content path is a dead end when content was uploaded but never published. Grouped by language, input type, channel, platform, team, and user to show which segments are stuck in the pipeline.' },
   ];
 
   return (
@@ -480,31 +618,94 @@ export default function DataQualityModule() {
               </div>
             </div> */}
 
-            {/* Health ring + KPI cards */}
-            <div className="grid grid-cols-1 gap-5 xl:grid-cols-[280px_1fr]">
-              <Panel className="flex items-center justify-center !p-4">
-                <HealthRing score={data.overall_score ?? 0} tableScores={data.table_scores || {}} />
-              </Panel>
-              <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-                {kpiCards.map(kpi => {
-                  const KpiIcon = kpi.icon;
-                  return (
-                    <div key={kpi.label} className="group relative overflow-hidden rounded-2xl border border-neutral-800 bg-[#0D0D0D] p-5 transition-all duration-200 hover:border-neutral-700 hover:bg-[#111111]">
-                      <div className={`absolute left-0 top-0 h-1 w-full ${kpi.accentColor} opacity-40 transition-opacity group-hover:opacity-70`} />
-                      <div className="flex items-start justify-between">
-                        <div className="min-w-0">
-                          <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-neutral-500">{kpi.label}</div>
-                          <div className={`mt-2 text-3xl font-black tracking-tight ${kpi.valueColor}`}>{kpi.value}</div>
-                          <div className="mt-1.5 text-[11px] text-neutral-600 transition-colors group-hover:text-neutral-500">{kpi.sub}</div>
-                        </div>
-                        <div className={`shrink-0 rounded-xl ${kpi.iconBg} p-2.5 transition-all duration-200 group-hover:scale-110`}>
-                          <KpiIcon className={`h-4 w-4 ${kpi.iconColor} opacity-60`} />
+            {/* Health ring + KPI cards — flat 5-col grid, ring spans 2 rows */}
+            <div className="grid gap-3 lg:grid-cols-5" style={{ gridTemplateColumns: 'repeat(5, minmax(0,1fr))', gridAutoRows: '1fr' }}>
+              {/* Health ring — 1 col wide, spans 2 rows */}
+              <FlipCard
+                className="row-span-2 rounded-2xl border border-neutral-800 bg-[#0D0D0D]"
+                front={
+                  <div className="flex h-full items-center justify-center p-3">
+                    <HealthRing score={data.overall_score ?? 0} tableScores={data.table_scores || {}} />
+                  </div>
+                }
+                back={
+                  <div className="flex h-full flex-col justify-center rounded-2xl bg-[#0D0D0D] p-5">
+                    <div className="mb-2 text-[9px] font-bold uppercase tracking-[0.15em] text-emerald-400">Health Score</div>
+                    <p className="text-[11px] leading-relaxed text-neutral-400">
+                      Calculated as the share of clean rows across all 8 tables. Total issues are divided by total row count, then subtracted from 100% to give the overall score.
+                    </p>
+                    <p className="mt-3 text-[11px] leading-relaxed text-neutral-400">
+                      Each table in the inner ring has its own score based on the same logic — tables with fewer issues relative to their size score higher and appear brighter.
+                    </p>
+                    <p className="mt-3 text-[11px] leading-relaxed text-neutral-500">
+                      Issues counted: NULL violations, duplicate PKs, broken FK links, negative values, invalid dates, and unknown placeholders.
+                    </p>
+                  </div>
+                }
+              />
+
+              {/* Row 1: 4 summary KPI cards */}
+              {kpiCards.map(kpi => {
+                const KpiIcon = kpi.icon;
+                return (
+                  <FlipCard
+                    key={kpi.label}
+                    className="rounded-2xl border border-neutral-800 bg-[#0D0D0D]"
+                    front={
+                      <div className="relative h-full p-3">
+                        <div className={`absolute left-0 top-0 h-0.5 w-full ${kpi.accentColor} opacity-40`} />
+                        <div className="flex h-full items-start justify-between">
+                          <div className="min-w-0">
+                            <div className="text-[9px] font-bold uppercase tracking-[0.15em] text-neutral-500">{kpi.label}</div>
+                            <div className={`mt-1.5 text-2xl font-black tracking-tight ${kpi.valueColor}`}>{kpi.value}</div>
+                            <div className="mt-1 text-[10px] text-neutral-600">{kpi.sub}</div>
+                          </div>
+                          <div className={`shrink-0 rounded-lg ${kpi.iconBg} p-2`}>
+                            <KpiIcon className={`h-3.5 w-3.5 ${kpi.iconColor} opacity-60`} />
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    }
+                    back={
+                      <div className="flex h-full flex-col justify-center rounded-2xl bg-[#0D0D0D] p-3">
+                        <div className={`mb-1.5 text-[9px] font-bold uppercase tracking-[0.15em] ${kpi.valueColor}`}>{kpi.label}</div>
+                        <p className="text-[11px] leading-relaxed text-neutral-400">{kpi.description}</p>
+                      </div>
+                    }
+                  />
+                );
+              })}
+
+              {/* Row 2: 4 check-type cards */}
+              {['NULL_VIOLATION', 'NEGATIVE_VALUE', 'INVALID_DATE', 'UNKNOWN_VALUE'].map(key => {
+                const conf = CHECK_COLOR_MAP[key];
+                const Icon = conf.icon;
+                const cnt = checks[key] || 0;
+                return (
+                  <FlipCard
+                    key={key}
+                    className="rounded-2xl border border-neutral-800 bg-[#0D0D0D]"
+                    front={
+                      <div className="flex h-full items-start justify-between p-3">
+                        <div className="min-w-0">
+                          <div className="text-[9px] font-bold uppercase tracking-[0.15em] text-neutral-500">{conf.label}</div>
+                          <div className={`mt-1.5 text-2xl font-black tracking-tight ${conf.color}`}>{cnt}</div>
+                          <div className="mt-1 text-[10px] text-neutral-600">issues detected</div>
+                        </div>
+                        <div className={`shrink-0 rounded-lg ${conf.bg} p-2`}>
+                          <Icon className={`h-3.5 w-3.5 ${conf.color} opacity-60`} />
+                        </div>
+                      </div>
+                    }
+                    back={
+                      <div className="flex h-full flex-col justify-center rounded-2xl bg-[#0D0D0D] p-3">
+                        <div className={`mb-1.5 text-[9px] font-bold uppercase tracking-[0.15em] ${conf.color}`}>{conf.label}</div>
+                        <p className="text-[11px] leading-relaxed text-neutral-400">{conf.description}</p>
+                      </div>
+                    }
+                  />
+                );
+              })}
             </div>
 
             {/* Heatmap + Orphan flow */}
@@ -535,34 +736,9 @@ export default function DataQualityModule() {
 
             <div className="grid grid-cols-1 gap-5 xl:h-[500px] xl:grid-cols-[1.2fr_0.9fr_0.9fr]">
 
-              {/* Column 1: The "Anchor" height */}
+              {/* Column 1: Quality Score Trends */}
               <Panel className="flex flex-col overflow-hidden">
-                <h3 className="mb-4 flex items-center gap-2 text-sm font-bold text-white">
-                  <div className="rounded-lg bg-blue-500/10 p-1.5"><Database className="h-3.5 w-3.5 text-blue-400" /></div>
-                  Issues by Check Type
-                </h3>
-                {/* Wrapping the list in a scrollable container just in case it grows */}
-                <div className="flex-1 space-y-2 overflow-y-auto pr-1">
-                  {Object.entries(CHECK_COLOR_MAP).map(([key, conf]) => {
-                    const cnt = checks[key] || 0;
-                    const pct = data.total_issues ? ((cnt / data.total_issues) * 100).toFixed(1) : 0;
-                    const Icon = conf.icon;
-                    return (
-                      <div key={key} className="group flex items-center gap-3 rounded-xl border border-neutral-800/60 bg-[#080808] p-3 transition-all duration-200 hover:border-neutral-700 hover:bg-[#0e0e0e]">
-                        <div className={`shrink-0 rounded-lg p-2 ${conf.bg} transition-transform duration-200 group-hover:scale-110`}><Icon className={`h-4 w-4 ${conf.color}`} /></div>
-                        <div className="flex-1">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium text-neutral-400 group-hover:text-neutral-200">{conf.label}</span>
-                            <span className="font-mono text-sm font-bold text-white">{cnt}</span>
-                          </div>
-                          <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-neutral-800/80">
-                            <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.max(Number(pct), 2)}%`, backgroundColor: conf.hex }} />
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                <QualityTrendsChart />
               </Panel>
 
               <Panel className="flex flex-col overflow-hidden !border-amber-900/20 !bg-[#0d0b08]">
