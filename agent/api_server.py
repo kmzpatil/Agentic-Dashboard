@@ -78,6 +78,7 @@ class ChatRequest(BaseModel):
     message: str
     filters: Optional[dict] = Field(default_factory=dict)
     conversation_id: Optional[str] = Field(default=None)
+    report_mode: bool = Field(default=False)
 
 class QueryResponse(BaseModel):
     question: str
@@ -94,6 +95,8 @@ class ChatResponse(BaseModel):
     chart_data: dict = {}
     conversation_id: str = ""
     error: str = ""
+    report_html: str = ""
+    intent: str = "analytics"
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -162,7 +165,7 @@ async def chat(req: ChatRequest):
             question = f"[Filters: {', '.join(parts)}] {question}"
 
     try:
-        result = await run_agent(question, working_memory=working_mem)
+        result = await run_agent(question, working_memory=working_mem, report_mode=req.report_mode)
         logger.info("Agent done: intent=%s actions=%d", result.intent, len(result.actions))
 
         append_message(conv_id, "assistant", result.response, metadata={
@@ -181,6 +184,9 @@ async def chat(req: ChatRequest):
             except Exception:
                 pass
 
+        # For report mode, the response IS the XML
+        report_html = result.response if result.intent == "report" else ""
+
         return ChatResponse(
             response=result.response,
             actions=result.actions,
@@ -188,6 +194,8 @@ async def chat(req: ChatRequest):
             chart_data=jsonable_encoder(result.chart_data),
             conversation_id=conv_id,
             error=result.error,
+            report_html=report_html,
+            intent=result.intent,
         )
 
     except Exception as exc:
