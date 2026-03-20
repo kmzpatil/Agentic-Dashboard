@@ -40,6 +40,19 @@ try:
 except ImportError:
     from agent.client import LLMClient
 
+try:
+    from prompts.report_prompt import (
+        build_report_planning_prompt,
+        build_report_synthesis_prompt,
+    )
+    from gemini_client import get_gemini_llm
+except ImportError:
+    from agent.prompts.report_prompt import (
+        build_report_planning_prompt,
+        build_report_synthesis_prompt,
+    )
+    from agent.gemini_client import get_gemini_llm
+
 # -- Core MCP and Tools --
 try:
     from mcp_server.config import ServerSettings
@@ -320,8 +333,20 @@ def create_plan(
     })
 
 
+@tool
+def create_report_plan(
+    sub_questions: Optional[List[Dict]] = None,
+) -> str:
+    """Create an analytical plan for a detailed report.
+    Args:
+        sub_questions: List of sub-questions. Each has: id (q1, q2, ...), type (trend|breakdown|comparison|anomaly|forecast), question, sql.
+    """
+    return json.dumps({"sub_questions": sub_questions or []})
+
+
 # ── LLM with plan tool ──────────────────────────────────────────────────────
 _planner_llm = _llm_client.llm.bind_tools([create_plan])
+_report_planner_llm = _llm_client.llm.bind_tools([create_report_plan])
 _synthesizer_llm = _llm_client.llm
 _repair_llm = _llm_client.llm
 
@@ -697,6 +722,376 @@ async def _run_synthesizer(question: str, results: Dict[str, Any], plan_steps: L
     return _extract_response(resp.content)
 
 
+# ── Report Mode Functions ────────────────────────────────────────────────────
+
+async def _run_report_planner(
+    question: str,
+    schema: str,
+    metrics: str,
+    auth: Any = None,
+) -> List[Dict]:
+    """Run the report planner LLM to decompose query into sub-questions."""
+    auth_block = ""
+    if auth:
+        role = getattr(auth, "role", "user")
+        username = getattr(auth, "username", "Unknown")
+        client_name = getattr(auth, "client_name", None)
+        user_id = getattr(auth, "user_id", None)
+        auth_block = f"\n## USER PROFILE\n- User: **{username}** | Role: **{role}**"
+        if role != "website_admin":
+            if client_name:
+                auth_block += f"\n- RESTRICTION: Only client **{client_name}** data."
+            elif role == "user" and user_id:
+                auth_block += f"\n- RESTRICTION: Only data for user ID **{user_id}**."
+
+    prompt = build_report_planning_prompt(
+        question=question,
+        schema_context=schema or "",
+        metrics_context=metrics or "",
+        auth_block=auth_block,
+    )
+
+    messages = [SystemMessage(content=prompt), HumanMessage(content=question)]
+
+    logger.info("=== REPORT PLANNER: Calling LLM ===")
+    start = time.time()
+    resp = await asyncio.to_thread(_report_planner_llm.invoke, messages)
+    duration = time.time() - start
+
+    usage = getattr(resp, "usage_metadata", {})
+    logger.info(
+        "=== REPORT PLANNER DONE (%.2fs) — %d input, %d output tokens ===",
+        duration, usage.get("input_tokens", 0), usage.get("output_tokens", 0),
+    )
+
+    tool_calls = getattr(resp, "tool_calls", [])
+    if tool_calls:
+        args = tool_calls[0].get("args", {})
+        return args.get("sub_questions", [])
+
+    # Fallback: try parsing text
+    content = _extract_response(resp.content)
+    try:
+        parsed = json.loads(content)
+        return parsed.get("sub_questions", [])
+    except json.JSONDecodeError:
+        return []
+
+
+async def _gather_report_data(
+    sub_questions: List[Dict],
+    schema: str,
+    auth: Any = None,
+) -> Dict[str, Any]:
+    """Execute SQL for each sub-question and collect results."""
+    gathered = {}
+
+    for sq in sub_questions:
+        sq_id = sq.get("id", "?")
+        sql = sq.get("sql", "")
+        question_text = sq.get("question", "")
+        sq_type = sq.get("type", "breakdown")
+
+        logger.info("--- REPORT GATHER %s: %s ---", sq_id, question_text[:60])
+
+        if not sql:
+            gathered[sq_id] = {
+                "status": "error",
+                "error": "No SQL provided",
+                "question": question_text,
+                "type": sq_type,
+            }
+            continue
+
+        try:
+            result = await _execute_sql_step({"sql": sql}, auth=auth)
+            result["question"] = question_text
+            result["type"] = sq_type
+            gathered[sq_id] = result
+        except Exception as e:
+            logger.error("--- REPORT GATHER %s FAILED: %s ---", sq_id, e)
+            gathered[sq_id] = {
+                "status": "error",
+                "error": str(e),
+                "question": question_text,
+                "type": sq_type,
+            }
+
+    # Attempt one repair round for failed queries
+    failed = [
+        (sq, gathered[sq["id"]])
+        for sq in sub_questions
+        if gathered.get(sq["id"], {}).get("status") == "error"
+        and sq.get("sql")
+    ]
+    if failed:
+        logger.info("=== REPORT REPAIR: %d failed queries ===", len(failed))
+        repair_pairs = [
+            ({"id": sq["id"], "action": "run_sql", "params": {"sql": sq["sql"]}}, res)
+            for sq, res in failed
+        ]
+        repaired = await _repair_sql(repair_pairs, schema)
+        for step, fixed_sql in repaired:
+            step["params"]["sql"] = fixed_sql
+            result = await _execute_sql_step(step["params"], auth=auth)
+            sq_id = step["id"]
+            # Preserve question/type metadata
+            result["question"] = gathered[sq_id].get("question", "")
+            result["type"] = gathered[sq_id].get("type", "")
+            gathered[sq_id] = result
+
+    return gathered
+
+
+async def _synthesize_report(question: str, gathered: Dict[str, Any]) -> str:
+    """Call Gemini to produce the final HTML report from gathered data.
+    Falls back to Anthropic if Gemini is unavailable."""
+    results_parts = []
+    for sq_id in sorted(gathered.keys()):
+        result = gathered[sq_id]
+        q_text = result.get("question", sq_id)
+        sq_type = result.get("type", "breakdown")
+
+        if result.get("status") == "success":
+            sample = result.get("sample", result.get("data", []))[:30]
+            cols = result.get("columns", [])
+            results_parts.append(
+                f"### Sub-question {sq_id} ({sq_type}): {q_text}\n"
+                f"Status: SUCCESS | Rows: {result.get('row_count', 0)} | Columns: {cols}\n"
+                f"Data:\n```json\n{json.dumps(sample, default=str, indent=1)}\n```"
+            )
+        else:
+            results_parts.append(
+                f"### Sub-question {sq_id} ({sq_type}): {q_text}\n"
+                f"Status: FAILED — {result.get('error', 'Unknown error')[:200]}"
+            )
+
+    results_block = "\n\n".join(results_parts) if results_parts else "No data was retrieved."
+
+    prompt = build_report_synthesis_prompt(
+        question=question,
+        results_block=results_block,
+    )
+
+    # Use Gemini 2.5 Flash for report synthesis, fall back to Anthropic
+    gemini = get_gemini_llm()
+    llm_label = "Gemini" if gemini else "Anthropic (fallback)"
+    llm_to_use = gemini or _synthesizer_llm
+
+    logger.info("=== REPORT SYNTHESIZER: Calling %s ===", llm_label)
+    start = time.time()
+    resp = await asyncio.to_thread(llm_to_use.invoke, prompt)
+    duration = time.time() - start
+
+    usage = getattr(resp, "usage_metadata", {})
+    logger.info(
+        "=== REPORT SYNTHESIZER DONE (%s, %.2fs) — %d input, %d output tokens ===",
+        llm_label, duration,
+        usage.get("input_tokens", 0),
+        usage.get("output_tokens", 0),
+    )
+
+    content = _extract_response(resp.content)
+
+    # Strip markdown code fences if the LLM wrapped the HTML
+    content = re.sub(r"^```(?:html)?\s*\n?", "", content.strip(), flags=re.IGNORECASE)
+    content = re.sub(r"\n?```\s*$", "", content).strip()
+
+    # Ensure we have the report div
+    if '<div class="report">' not in content:
+        # Try to extract it
+        match = re.search(r'(<div class="report">.*</div>)\s*$', content, re.DOTALL)
+        if match:
+            content = match.group(1)
+
+    return content
+
+
+async def run_agent_report(
+    question: str,
+    auth: Optional[Any] = None,
+    working_memory: str = "",
+    history: Optional[List[Dict]] = None,
+) -> AgentResult:
+    """
+    Report mode entry point. Runs the three-phase report pipeline:
+    Plan → Gather → Synthesize, returning the XML report.
+    """
+    logger.info("=== AGENT REPORT START ===")
+    overall_start = time.time()
+    actions_log: List[str] = []
+
+    try:
+        global _schema_cache
+        if not _schema_cache:
+            _schema_cache = get_frammer_schema()
+
+        all_metrics = "\n".join(f"- **{k}**: {v}" for k, v in METRIC_DICTIONARY.items())
+        all_metrics += "\n\n" + retrieve_metric_definitions("XYZ_FAIL")
+
+        # Phase 1: Plan
+        actions_log.append("Report Mode: Planning analysis...")
+        sub_questions = await _run_report_planner(
+            question=question,
+            schema=_schema_cache,
+            metrics=all_metrics,
+            auth=auth,
+        )
+
+        if not sub_questions:
+            return AgentResult(
+                response="I couldn't decompose your question into sub-analyses. Could you rephrase?",
+                actions=actions_log,
+            )
+
+        actions_log.append(f"Report Plan: {len(sub_questions)} sub-questions")
+        for sq in sub_questions:
+            actions_log.append(f"  {sq.get('id')}: [{sq.get('type')}] {sq.get('question', '')[:80]}")
+
+        # Phase 2: Gather data
+        actions_log.append("Report Mode: Gathering data...")
+        gathered = await _gather_report_data(sub_questions, _schema_cache, auth=auth)
+
+        success_count = sum(1 for r in gathered.values() if r.get("status") == "success")
+        actions_log.append(f"Data gathered: {success_count}/{len(gathered)} queries succeeded")
+
+        # Phase 3: Synthesize report XML
+        actions_log.append("Report Mode: Synthesizing report...")
+        report_html = await _synthesize_report(question, gathered)
+        actions_log.append("Report synthesized")
+
+        total_time = time.time() - overall_start
+        logger.info("=== AGENT REPORT COMPLETE (%.2fs) ===", total_time)
+
+        return AgentResult(
+            intent="report",
+            response=report_html,
+            actions=actions_log,
+            plan=f"Report with {len(sub_questions)} sub-analyses",
+        )
+
+    except Exception as exc:
+        logger.error("!!! Agent Report Error: %s !!!", exc, exc_info=True)
+        return AgentResult(
+            response=f"I'm sorry, an error occurred generating the report: {exc}",
+            error=str(exc),
+            actions=actions_log,
+        )
+
+
+async def run_agent_report_stream(
+    question: str,
+    auth: Optional[Any] = None,
+    working_memory: str = "",
+    history: Optional[List[Dict]] = None,
+) -> AsyncGenerator[Dict, None]:
+    """
+    Streaming version of run_agent_report. Yields SSE events for report progress.
+    """
+    logger.info("=== AGENT REPORT STREAM START ===")
+    overall_start = time.time()
+
+    try:
+        global _schema_cache
+        if not _schema_cache:
+            _schema_cache = get_frammer_schema()
+
+        all_metrics = "\n".join(f"- **{k}**: {v}" for k, v in METRIC_DICTIONARY.items())
+        all_metrics += "\n\n" + retrieve_metric_definitions("XYZ_FAIL")
+
+        # Phase 1: Plan
+        yield {"type": "phase", "phase": "report_planning"}
+
+        sub_questions = await _run_report_planner(
+            question=question,
+            schema=_schema_cache,
+            metrics=all_metrics,
+            auth=auth,
+        )
+
+        if not sub_questions:
+            yield {"type": "complete", "message": {
+                "response": "I couldn't decompose your question into sub-analyses. Could you rephrase?",
+                "intent": "report",
+                "actions": [],
+                "charts": [],
+                "sql": "",
+                "report_html": "",
+            }}
+            return
+
+        yield {
+            "type": "report_plan",
+            "sub_questions": [
+                {"id": sq.get("id"), "type": sq.get("type"), "question": sq.get("question", "")}
+                for sq in sub_questions
+            ],
+        }
+
+        # Phase 2: Gather
+        yield {"type": "phase", "phase": "report_gathering"}
+
+        gathered = {}
+        for sq in sub_questions:
+            sq_id = sq.get("id", "?")
+            sql = sq.get("sql", "")
+            question_text = sq.get("question", "")
+            sq_type = sq.get("type", "breakdown")
+
+            if not sql:
+                gathered[sq_id] = {
+                    "status": "error", "error": "No SQL",
+                    "question": question_text, "type": sq_type,
+                }
+                yield {"type": "report_step", "step_id": sq_id, "status": "error", "question": question_text}
+                continue
+
+            try:
+                result = await _execute_sql_step({"sql": sql}, auth=auth)
+                result["question"] = question_text
+                result["type"] = sq_type
+                gathered[sq_id] = result
+                yield {
+                    "type": "report_step",
+                    "step_id": sq_id,
+                    "status": result.get("status", "unknown"),
+                    "question": question_text,
+                    "row_count": result.get("row_count", 0),
+                }
+            except Exception as e:
+                gathered[sq_id] = {
+                    "status": "error", "error": str(e),
+                    "question": question_text, "type": sq_type,
+                }
+                yield {"type": "report_step", "step_id": sq_id, "status": "error", "question": question_text}
+
+        # Phase 3: Synthesize
+        yield {"type": "phase", "phase": "report_synthesizing"}
+
+        report_html = await _synthesize_report(question, gathered)
+
+        actions_log = [
+            f"Report Plan: {len(sub_questions)} sub-questions",
+            f"Data gathered: {sum(1 for r in gathered.values() if r.get('status') == 'success')}/{len(gathered)} succeeded",
+            "Report synthesized",
+        ]
+
+        yield {"type": "complete", "message": {
+            "response": report_html,
+            "intent": "report",
+            "actions": actions_log,
+            "charts": [],
+            "sql": "",
+            "report_html": report_html,
+        }}
+
+        logger.info("=== AGENT REPORT STREAM COMPLETE (%.2fs) ===", time.time() - overall_start)
+
+    except Exception as exc:
+        logger.error("!!! Agent Report Stream Error: %s !!!", exc, exc_info=True)
+        yield {"type": "error", "error": str(exc)}
+
+
 # ── Main Entry Point ─────────────────────────────────────────────────────────
 
 async def run_agent(
@@ -704,10 +1099,15 @@ async def run_agent(
     auth: Optional[Any] = None,
     working_memory: str = "",
     history: Optional[List[Dict]] = None,
+    report_mode: bool = False,
 ) -> AgentResult:
     """
     Main agent entry point. Runs the plan-execute-synthesize pipeline.
+    When report_mode=True, delegates to the three-phase report pipeline.
     """
+    if report_mode:
+        return await run_agent_report(question, auth=auth, working_memory=working_memory, history=history)
+
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     logger.info("=== AGENT START === @ %s", now_str)
     overall_start = time.time()
@@ -860,10 +1260,17 @@ async def run_agent_stream(
     auth: Optional[Any] = None,
     working_memory: str = "",
     history: Optional[List[Dict]] = None,
+    report_mode: bool = False,
 ) -> AsyncGenerator[Dict, None]:
     """
     Streaming version of run_agent. Yields SSE events as the agent progresses.
+    When report_mode=True, delegates to the report streaming pipeline.
     """
+    if report_mode:
+        async for event in run_agent_report_stream(question, auth=auth, working_memory=working_memory, history=history):
+            yield event
+        return
+
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     logger.info("=== AGENT STREAM START === @ %s", now_str)
     overall_start = time.time()
