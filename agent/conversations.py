@@ -49,6 +49,7 @@ class Conversation(Base):
     title = Column(String(256), nullable=False, default="New conversation")
     messages_json = Column(Text, nullable=False, default="[]")  # deprecated — kept for backward compat
     working_memory = Column(Text, nullable=False, default="")
+    agent_state_json = Column(Text, nullable=True)  # Serialized agent state for clarification resumption
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -75,29 +76,26 @@ _SessionLocal = None
 
 def _init_engine():
     global _engine, _SessionLocal
-    if _engine is not None and _SessionLocal is not None:
-        return
-
-    try:
-        if _engine is None:
-            url = resolve_database_url()
-            _engine = create_engine(url, pool_pre_ping=True, future=True)
-
+    if _engine is None:
+        url = resolve_database_url()
+        _engine = create_engine(url, pool_pre_ping=True, future=True)
         Base.metadata.create_all(_engine)
         _SessionLocal = sessionmaker(bind=_engine)
-    except Exception:
-        # Avoid half-initialized globals causing TypeError on later requests.
-        _engine = None
-        _SessionLocal = None
-        raise
+        # Migrate: add agent_state_json column if missing (existing DBs)
+        try:
+            with _engine.connect() as conn:
+                conn.execute(text(
+                    "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS agent_state_json TEXT"
+                ))
+                conn.commit()
+        except Exception:
+            pass  # Column already exists or table doesn't exist yet
 
 
 @contextmanager
 def _session_scope():
     """Context manager that commits on success, rolls back on failure."""
     _init_engine()
-    if _SessionLocal is None:
-        raise RuntimeError("Conversation database session factory is not initialized")
     session = _SessionLocal()
     try:
         yield session
@@ -177,6 +175,27 @@ def update_title(conversation_id: str, title: str) -> None:
             conv.updated_at = datetime.utcnow()
 
 
+def update_agent_state(conversation_id: str, state: Optional[Dict]) -> None:
+    """Store agent loop state for clarification resumption. Pass None to clear."""
+    with _session_scope() as session:
+        conv = session.get(Conversation, conversation_id)
+        if conv:
+            conv.agent_state_json = json.dumps(state, default=str) if state else None
+            conv.updated_at = datetime.utcnow()
+
+
+def get_agent_state(conversation_id: str) -> Optional[Dict]:
+    """Retrieve stored agent state. Returns None if no state is stored."""
+    with _session_scope() as session:
+        conv = session.get(Conversation, conversation_id)
+        if conv and conv.agent_state_json:
+            try:
+                return json.loads(conv.agent_state_json)
+            except (json.JSONDecodeError, TypeError):
+                return None
+        return None
+
+
 def delete_conversation(conversation_id: str) -> bool:
     with _session_scope() as session:
         conv = session.get(Conversation, conversation_id)
@@ -210,12 +229,19 @@ def _load_messages(session: Session, conversation_id: str) -> List[Dict]:
 
 
 def _to_dict(conv: Conversation, messages: List[Dict] | None = None) -> Dict:
+    agent_state = None
+    if conv.agent_state_json:
+        try:
+            agent_state = json.loads(conv.agent_state_json)
+        except (json.JSONDecodeError, TypeError):
+            pass
     return {
         "id": conv.id,
         "user_id": conv.user_id,
         "title": conv.title,
         "messages": messages if messages is not None else [],
         "working_memory": conv.working_memory or "",
+        "agent_state": agent_state,
         "created_at": conv.created_at.isoformat() if conv.created_at else None,
         "updated_at": conv.updated_at.isoformat() if conv.updated_at else None,
     }

@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   ChevronRight,
   Database,
+  FileText,
   Loader2,
   MessageSquare,
   Mic,
@@ -40,9 +41,13 @@ const markdownComponents = {
 
 const PHASE_LABELS = {
   planning: 'Analyzing question...',
+  thinking: 'Analyzing question...',
+  'thinking (continued)': 'Continuing analysis...',
   executing: 'Running queries...',
   repairing: 'Fixing queries...',
   synthesizing: 'Composing response...',
+  'formatting report': 'Formatting report...',
+  'generating charts': 'Building visualizations...',
 };
 
 const SUGGESTIONS = [
@@ -150,6 +155,42 @@ function ErrorBanner({ error }) {
   );
 }
 
+function ReportViewer({ html }) {
+  const iframeRef = useRef(null);
+  useEffect(() => {
+    if (iframeRef.current && html) {
+      iframeRef.current.srcdoc = html;
+    }
+  }, [html]);
+
+  const handleOpenFullReport = () => {
+    const win = window.open('', '_blank');
+    if (win) {
+      win.document.write(html);
+      win.document.close();
+    }
+  };
+
+  return (
+    <div className="mt-4">
+      <iframe
+        ref={iframeRef}
+        className="w-full rounded-xl border border-neutral-800 bg-white"
+        style={{ height: '700px' }}
+        sandbox="allow-scripts"
+        title="Report"
+      />
+      <button
+        onClick={handleOpenFullReport}
+        className="mt-2 inline-flex items-center gap-2 text-sm text-neutral-400 hover:text-white transition-colors"
+      >
+        <FileText size={14} />
+        Open full report & export PDF
+      </button>
+    </div>
+  );
+}
+
 function AssistantMessageItem({ message, onOpenCanvas, onNavigate }) {
   const artifacts = message.artifacts || [];
   const hasChart = artifacts.some(a => a.kind === 'chart');
@@ -178,10 +219,11 @@ function AssistantMessageItem({ message, onOpenCanvas, onNavigate }) {
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
           {message.markdown || message.content || ''}
         </ReactMarkdown>
+        {message.report_html && <ReportViewer html={message.report_html} />}
         {kpiArtifact && <InlineKpiCards artifact={kpiArtifact} />}
         {tableArtifact && <InlineTablePreview artifact={tableArtifact} datasets={message.datasets} />}
         <ErrorBanner error={message.error} />
-        {hasAnyArtifact && (
+        {hasAnyArtifact && !message.report_html && (
           <button
             onClick={() => onOpenCanvas(message)}
             className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-neutral-800 bg-[#111111] px-4 py-2.5 text-[13px] font-semibold text-neutral-400 transition-colors hover:border-neutral-700 hover:bg-[#171717] hover:text-neutral-200"
@@ -217,7 +259,8 @@ function UserMessage({ message }) {
 }
 
 function StreamingIndicator({ phase, planSteps, completedSteps }) {
-  const phaseLabel = PHASE_LABELS[phase] || 'Working...';
+  const phaseLabel = PHASE_LABELS[phase]
+    || (phase?.startsWith('thinking') ? 'Analyzing...' : 'Working...');
 
   return (
     <div className="max-w-[780px]">
@@ -385,6 +428,9 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
   const [conversations, setConversations] = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [canvasMessage, setCanvasMessage] = useState(null);
+  // Mode and clarification state
+  const [currentMode, setCurrentMode] = useState('normal');
+  const [pendingClarification, setPendingClarification] = useState(false);
   // Streaming state
   const [streamPhase, setStreamPhase] = useState('');
   const [planSteps, setPlanSteps] = useState([]);
@@ -465,8 +511,11 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
           'Content-Type': 'application/json',
           ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         },
-        body: JSON.stringify({ message: text, filters: {}, conversation_id: conversationId }),
+        body: JSON.stringify({ message: text, filters: {}, conversation_id: conversationId, mode: currentMode }),
       });
+
+      // Clear clarification state after sending
+      if (pendingClarification) setPendingClarification(false);
 
       if (!res.ok) {
         const errPayload = await res.json().catch(() => ({}));
@@ -514,6 +563,28 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
                 });
                 break;
 
+              case 'clarification_needed': {
+                const clarificationMessage = {
+                  role: 'assistant',
+                  content: event.question,
+                  markdown: event.question,
+                  intent: 'clarification',
+                  artifacts: [],
+                  datasets: [],
+                  suggested_actions: [],
+                  actions: [],
+                  sql: '',
+                  error: '',
+                };
+                setMessages(curr => [...curr, clarificationMessage]);
+                setPendingClarification(true);
+                setLoading(false);
+                setStreamPhase('');
+                setPlanSteps([]);
+                setCompletedSteps(new Map());
+                break;
+              }
+
               case 'complete': {
                 const msg = event.message || {};
                 const assistantMessage = {
@@ -527,6 +598,8 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
                   intent: msg.intent || 'analytics',
                   sql: msg.sql || '',
                   error: msg.error || '',
+                  report_html: msg.report_html || '',
+                  report: msg.report || null,
                 };
                 setMessages(curr => [...curr, assistantMessage]);
                 if (shouldAutoOpenCanvas(assistantMessage.artifacts)) {
@@ -575,7 +648,7 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
             'Content-Type': 'application/json',
             ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
           },
-          body: JSON.stringify({ message: text, filters: {}, conversation_id: conversationId }),
+          body: JSON.stringify({ message: text, filters: {}, conversation_id: conversationId, mode: currentMode }),
         });
         const payload = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(payload.detail || payload.error || `Request failed: ${res.status}`);
@@ -689,6 +762,17 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
                   {voice.listening ? <MicOff size={15} /> : <Mic size={15} />}
                 </button>
               )}
+              <button
+                onClick={() => setCurrentMode(m => m === 'normal' ? 'report' : 'normal')}
+                className={`rounded-xl p-2.5 transition-all ${
+                  currentMode === 'report'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-[#1A1A1A] text-neutral-400 hover:bg-neutral-700'
+                }`}
+                title={currentMode === 'report' ? 'Report mode (click to switch to chat)' : 'Chat mode (click to switch to report)'}
+              >
+                <FileText size={15} />
+              </button>
               <button
                 onClick={() => send()}
                 disabled={loading || !input.trim()}

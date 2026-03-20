@@ -3,6 +3,7 @@ langchain>=0.2.0
 langgraph>=0.2.0
 langchain-anthropic>=0.3.0
 langchain-core>=0.3.0
+langchain-google-genai>=2.0.0
 
 # ─── MCP Server ───
 mcp[cli]>=1.0.0             # FastMCP server framework
