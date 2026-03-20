@@ -52,14 +52,24 @@ def get_dimensions(_auth: AuthContext = Depends(require_auth)):
 
 
 @router.get("/channels")
-def get_channels(_auth: AuthContext = Depends(require_auth)):
+def get_channels(auth: AuthContext = Depends(require_auth)):
     try:
-        result = query("""
-            SELECT DISTINCT "Channel_Name" 
-            FROM channels 
-            WHERE "Channel_Name" IS NOT NULL 
-            ORDER BY "Channel_Name"
-        """)
+        if auth.role == "website_admin":
+            result = query("""
+                SELECT DISTINCT "Channel_Name"
+                FROM channels
+                WHERE "Channel_Name" IS NOT NULL
+                ORDER BY "Channel_Name"
+            """)
+        else:
+            # client_admin and user: only channels belonging to their client
+            result = query("""
+                SELECT DISTINCT "Channel_Name"
+                FROM channels
+                WHERE "Channel_Name" IS NOT NULL
+                  AND "Client_Name" = $1
+                ORDER BY "Channel_Name"
+            """, [auth.client_name])
         return {"channels": [row["Channel_Name"] for row in result.rows]}
     except Exception as error:
         return JSONResponse(status_code=500, content={"error": str(error)})

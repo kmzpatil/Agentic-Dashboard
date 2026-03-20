@@ -27,4 +27,11 @@ export const customStyles = `
   }
   .animate-ticker { animation: tickerFlow 30s linear infinite; }
   .hide-scrollbar::-webkit-scrollbar { display: none; }
+
+  /* ── Global scrollbar — consistent grey everywhere ── */
+  *::-webkit-scrollbar { width: 6px; height: 6px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb { background: #333333; border-radius: 9999px; }
+  *::-webkit-scrollbar-thumb:hover { background: #333333; }
+  * { scrollbar-width: thin; scrollbar-color: #333333 transparent; }
 `;

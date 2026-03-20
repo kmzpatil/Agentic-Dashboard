@@ -16,6 +16,7 @@ import pandas as pd
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 
@@ -132,12 +133,14 @@ def _train_and_save() -> None:
         X, y, test_size=0.2, random_state=42
     )
 
-    model = RandomForestClassifier(
-        n_estimators=1000,
+    base_rf = RandomForestClassifier(
+        n_estimators=100,
         class_weight="balanced",
         random_state=42,
         n_jobs=-1,
     )
+    # Wrap with isotonic calibration → continuous probabilities (not 1/100 steps)
+    model = CalibratedClassifierCV(base_rf, method="isotonic", cv=3)
     model.fit(X_train, y_train)
     accuracy = float(model.score(X_test, y_test))
     logger.info("publish_predictor: accuracy=%.4f  classes=%s", accuracy, model.classes_)
@@ -159,16 +162,21 @@ def _train_and_save() -> None:
     _model, _meta = model, meta
 
 
-def _ensure_model() -> None:
+def _ensure_model(auth: AuthContext | None = None) -> str | None:
+    """Load or train the model. Returns an error string if unavailable."""
     global _model, _meta
     if _model is not None:
-        return
+        return None
     if MODEL_PATH.exists() and META_PATH.exists():
         logger.info("publish_predictor: loading cached model from disk")
         _model = joblib.load(MODEL_PATH)
         _meta = joblib.load(META_PATH)
-        return
+        return None
+    # Model not on disk — only website_admin may trigger first-time training
+    if auth is None or auth.role != "website_admin":
+        return "Model not trained yet. Please ask a Frammer admin to log in first to initialize the model."
     _train_and_save()
+    return None
 
 
 # ── request schema ────────────────────────────────────────────────────────────
@@ -184,14 +192,54 @@ class PredictRequest(BaseModel):
     upload_to_create_days: float
 
 
+# ── auth helpers ──────────────────────────────────────────────────────────────
+
+def _allowed_clients(auth: AuthContext) -> list[str] | None:
+    """Return the list of clients the user may access, or None for admins."""
+    if auth.role == "website_admin":
+        return None  # no restriction
+    # client_admin and user are scoped to their own client
+    return [auth.client_name] if auth.client_name else []
+
+
+def _scope_options(opts: dict, auth: AuthContext) -> dict:
+    """Filter dropdown options to only what the user is allowed to see."""
+    allowed = _allowed_clients(auth)
+    if allowed is None:
+        return opts  # admin sees everything
+
+    scoped = {**opts}
+    scoped["clients"] = [c for c in opts.get("clients", []) if c in allowed]
+    # Only keep channels belonging to allowed clients
+    cbc = opts.get("channel_by_client", {})
+    scoped["channel_by_client"] = {c: cbc[c] for c in allowed if c in cbc}
+    scoped["channels"] = sorted(
+        ch for c in allowed for ch in cbc.get(c, [])
+    )
+    return scoped
+
+
+def _validate_client(auth: AuthContext, requested_client: str) -> str | None:
+    """Return an error message if the user is not allowed to use this client."""
+    allowed = _allowed_clients(auth)
+    if allowed is None:
+        return None
+    if requested_client not in allowed:
+        return f"Access denied: you may only use client(s) {', '.join(allowed)}"
+    return None
+
+
 # ── endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("/options")
 def predictor_options(auth: AuthContext = Depends(require_auth)):
     try:
-        _ensure_model()
+        model_err = _ensure_model(auth)
+        if model_err:
+            return JSONResponse({"error": model_err}, status_code=503)
+        scoped = _scope_options(_meta["options"], auth)
         return {
-            **_meta["options"],
+            **scoped,
             "accuracy": _meta["accuracy"],
             "classes": _meta["classes"],
             "total_samples": _meta.get("total_samples", 0),
@@ -204,7 +252,14 @@ def predictor_options(auth: AuthContext = Depends(require_auth)):
 @router.post("/predict")
 def predictor_predict(req: PredictRequest, auth: AuthContext = Depends(require_auth)):
     try:
-        _ensure_model()
+        # Enforce client scope
+        err = _validate_client(auth, req.client_name)
+        if err:
+            return JSONResponse({"error": err}, status_code=403)
+
+        model_err = _ensure_model(auth)
+        if model_err:
+            return JSONResponse({"error": model_err}, status_code=503)
 
         sample = pd.DataFrame([{
             "Client_Name":           req.client_name,
@@ -251,7 +306,9 @@ def predictor_predict(req: PredictRequest, auth: AuthContext = Depends(require_a
 
 @router.post("/retrain")
 def predictor_retrain(auth: AuthContext = Depends(require_auth)):
-    """Force retrain from current DB data."""
+    """Force retrain from current DB data. Admin only."""
+    if auth.role != "website_admin":
+        return JSONResponse({"error": "Admin access required"}, status_code=403)
     global _model, _meta
     try:
         _model, _meta = None, None

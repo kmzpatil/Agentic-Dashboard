@@ -726,8 +726,8 @@ export default function UserJourneyModule({ authUser }) {
         .frammer-scrollbar::-webkit-scrollbar { width: 4px; }
         .frammer-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .frammer-scrollbar::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 9999px; }
-        .frammer-scrollbar::-webkit-scrollbar-thumb:hover { background: #ef4444; }
-        .frammer-scrollbar { scrollbar-width: thin; scrollbar-color: #2a2a2a transparent; }
+        .frammer-scrollbar::-webkit-scrollbar-thumb:hover { background: #333333; }
+        .frammer-scrollbar { scrollbar-width: thin; scrollbar-color: #333333 transparent; }
         .frammer-range { -webkit-appearance: none; appearance: none; pointer-events: none; background: transparent; }
         .frammer-range:focus { outline: none; }
         .frammer-range::-webkit-slider-runnable-track { height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; }
