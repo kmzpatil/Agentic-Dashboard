@@ -23,6 +23,7 @@ export default function OverviewModule({ onNavigate }) {
   const [isSelectionPanelOpen, setIsSelectionPanelOpen] = useState(false);
   const [selectedKpi, setSelectedKpi] = useState(null);
   const [activeOutputTab, setActiveOutputTab] = useState(null);
+  const [outputChartMetric, setOutputChartMetric] = useState('created');
   const [showKpiCreator, setShowKpiCreator] = useState(false);
   const [editingKpi, setEditingKpi] = useState(null);  // custom KPI being edited
   const [customKpis, setCustomKpis] = useState([]);  // KPIs created by user
@@ -326,52 +327,131 @@ export default function OverviewModule({ onNavigate }) {
         </section>
       )}
 
-      {data?.outputStats && data.outputStats.length > 0 && (
-        <section className="rounded-[28px] border border-neutral-800 bg-[#0D0D0D] p-5">
-           <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.2em] text-neutral-500">
+      {data?.outputStats && data.outputStats.length > 0 && (() => {
+        const activeStat = data.outputStats.find(s => s.label === activeOutputTab) || data.outputStats[0];
+        const allStats = data.outputStats;
+        const maxCreated = Math.max(...allStats.map(s => s.total_created_count || 0), 1);
+
+        // Build time series for the active output type
+        const tsRows = (data.outputTimeseries || []).filter(r => r.output_type === activeStat?.label);
+        const tsLabels = tsRows.map(r => r.period);
+        const METRIC_CFG = {
+          uploaded:  { label: 'Uploaded',  color: '#a3a3a3', bg: 'rgba(163,163,163,0.08)' },
+          created:   { label: 'Created',   color: '#10b981', bg: 'rgba(16,185,129,0.08)' },
+          published: { label: 'Published', color: '#3b82f6', bg: 'rgba(59,130,246,0.08)' },
+        };
+        const cfg = METRIC_CFG[outputChartMetric];
+        const tsData = {
+          labels: tsLabels,
+          datasets: [{
+            label: cfg.label,
+            data: tsRows.map(r => r[outputChartMetric] || 0),
+            borderColor: cfg.color,
+            backgroundColor: cfg.bg,
+            borderWidth: 2,
+            tension: 0.3,
+            fill: true,
+            pointRadius: tsLabels.length > 20 ? 0 : 3,
+            pointHoverRadius: 4,
+          }],
+        };
+        const tsOpts = {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 400 },
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: '#525252', font: { size: 9 }, maxTicksLimit: 12 }, grid: { color: 'rgba(255,255,255,0.03)' } },
+            y: { ticks: { color: '#525252', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.04)' }, beginAtZero: true },
+          },
+        };
+
+        return (
+          <section className="rounded-[28px] border border-neutral-800 bg-[#0D0D0D] p-5">
+            <div className="mb-5 flex items-center gap-2 text-sm font-bold uppercase tracking-[0.2em] text-neutral-500">
               <TrendingUp size={15} />
               Output Types Summary
             </div>
-          </div>
-          <div className="flex border-b border-neutral-800 mb-6">
-            {data.outputStats.map(stat => (
-              <button
-                key={stat.label}
-                onClick={() => setActiveOutputTab(stat.label)}
-                className={`px-4 py-2 font-medium tracking-wide transition-colors ${activeOutputTab === stat.label ? 'text-white border-b-2 border-primary-500' : 'text-neutral-500 hover:text-neutral-300'}`}
-              >
-                {stat.label}
-              </button>
-            ))}
-          </div>
-          
-          {(() => {
-            const activeStat = data?.outputStats?.find(s => s.label === activeOutputTab) || data?.outputStats?.[0];
-            if (!activeStat) return null; // Prevent crash if data hasn't loaded or is completely empty
-            
-            return (
-              <div className="grid grid-cols-3 gap-4">
-                 <div className="rounded-2xl border border-neutral-900 bg-[#121212] p-4 text-center">
-                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-500 mb-2">Uploaded</div>
-                    <div className="text-2xl font-bold text-white mb-1">{formatNumber(activeStat?.total_uploaded_count || 0)}</div>
-                    <div className="text-xs text-neutral-400">{formatHours(activeStat?.total_uploaded_duration || 0)}</div>
-                 </div>
-                 <div className="rounded-2xl border border-neutral-900 bg-[#121212] p-4 text-center">
-                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-500 mb-2">Created</div>
-                    <div className="text-2xl font-bold text-[#10b981] mb-1">{formatNumber(activeStat?.total_created_count || 0)}</div>
-                    <div className="text-xs text-neutral-400">{formatHours(activeStat?.total_created_duration || 0)}</div>
-                 </div>
-                 <div className="rounded-2xl border border-neutral-900 bg-[#121212] p-4 text-center">
-                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-500 mb-2">Published</div>
-                    <div className="text-2xl font-bold text-[#3b82f6] mb-1">{formatNumber(activeStat?.total_published_count || 0)}</div>
-                    <div className="text-xs text-neutral-400">{formatHours(activeStat?.total_published_duration || 0)}</div>
-                 </div>
+
+            <div className="flex gap-5">
+              {/* ── Vertical tabs ── */}
+              <div className="shrink-0 flex flex-col gap-1 w-40">
+                {allStats.map(stat => {
+                  const isActive = stat.label === activeStat?.label;
+                  const barW = (stat.total_created_count || 0) / maxCreated * 100;
+                  return (
+                    <button
+                      key={stat.label}
+                      onClick={() => setActiveOutputTab(stat.label)}
+                      className={`group text-left rounded-xl px-3 py-2.5 transition-all ${
+                        isActive
+                          ? 'bg-[#171717] border border-neutral-700'
+                          : 'border border-transparent hover:bg-[#121212] hover:border-neutral-800'
+                      }`}
+                    >
+                      <div className={`text-xs font-bold tracking-wide ${isActive ? 'text-white' : 'text-neutral-400 group-hover:text-neutral-200'}`}>
+                        {stat.label}
+                      </div>
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <div className="flex-1 h-1 rounded-full bg-neutral-800 overflow-hidden">
+                          <div className="h-full rounded-full bg-red-500/60 transition-all duration-500" style={{ width: `${barW}%` }} />
+                        </div>
+                        <span className="text-[10px] text-neutral-500 tabular-nums font-bold">{formatNumber(stat.total_created_count || 0)}</span>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
-            )
-          })()}
-        </section>
-      )}
+
+              {/* ── Content ── */}
+              {activeStat && (
+                <div className="flex-1 min-w-0 space-y-4">
+                  {/* Stat cards — clickable to switch chart metric */}
+                  <div className="grid grid-cols-3 gap-3">
+                    {[
+                      { key: 'uploaded',  label: 'Uploaded',  count: activeStat.total_uploaded_count,  dur: activeStat.total_uploaded_duration,  color: 'text-white',        ring: 'border-neutral-500' },
+                      { key: 'created',   label: 'Created',   count: activeStat.total_created_count,   dur: activeStat.total_created_duration,   color: 'text-emerald-400',   ring: 'border-emerald-500' },
+                      { key: 'published', label: 'Published', count: activeStat.total_published_count, dur: activeStat.total_published_duration, color: 'text-blue-400',      ring: 'border-blue-500' },
+                    ].map(s => {
+                      const isActive = outputChartMetric === s.key;
+                      return (
+                        <button
+                          key={s.key}
+                          onClick={() => setOutputChartMetric(s.key)}
+                          className={`rounded-xl border bg-[#111] p-4 text-center transition-all ${
+                            isActive ? `${s.ring} border-opacity-60` : 'border-neutral-800/60 hover:border-neutral-700'
+                          }`}
+                        >
+                          <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-neutral-500 mb-1.5">{s.label}</div>
+                          <div className={`text-xl font-black ${s.color}`}>{formatNumber(s.count || 0)}</div>
+                          <div className="text-[11px] text-neutral-500 mt-1">{formatHours(s.dur || 0)}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Time series chart */}
+                  <div className="rounded-xl border border-neutral-800/60 bg-[#111] p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-neutral-500">
+                        {cfg.label} — Monthly Trend
+                      </div>
+                      <div className="text-[10px] text-neutral-600">{activeStat.label}</div>
+                    </div>
+                    <div className="h-44">
+                      {tsLabels.length > 0 ? (
+                        <Line data={tsData} options={tsOpts} />
+                      ) : (
+                        <div className="flex items-center justify-center h-full text-xs text-neutral-600">No time series data</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+        );
+      })()}
 
       <section className="grid grid-cols-1 xl:grid-cols-[1.25fr_0.95fr] gap-6">
         <div className="space-y-6">

@@ -189,6 +189,26 @@ def get_output_type_stats_query(access_filter: dict) -> str:
     )
     SELECT * FROM output_stats ORDER BY total_created_count DESC;
     '''
+def get_output_type_timeseries_query(access_filter: dict) -> str:
+    return f'''{get_scoped_ctes(access_filter)}
+    , monthly AS (
+        SELECT
+            sa."Output_Type"                              AS output_type,
+            to_char(to_date(sa."Create_Date",'YYYY-MM-DD'),'YYYY-MM') AS period,
+            COUNT(DISTINCT sv."Video_ID")::int             AS uploaded,
+            COUNT(DISTINCT sa."Asset_ID")::int             AS created,
+            COUNT(DISTINCT sp."Post_ID")::int              AS published
+        FROM scoped_assets sa
+        JOIN scoped_videos sv ON sv."Video_ID" = sa."Video_ID"
+        LEFT JOIN scoped_posts sp ON sa."Asset_ID" = sp."Asset_ID"
+        WHERE sa."Output_Type" IS NOT NULL
+          AND sa."Create_Date" IS NOT NULL
+        GROUP BY sa."Output_Type",
+                 to_char(to_date(sa."Create_Date",'YYYY-MM-DD'),'YYYY-MM')
+    )
+    SELECT * FROM monthly ORDER BY output_type, period;
+    '''
+
 def get_kpi_sparklines_query(access_filter: dict) -> str:
     return f'''{get_scoped_ctes(access_filter)}
     , daily_uploaded AS (
