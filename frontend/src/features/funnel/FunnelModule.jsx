@@ -345,16 +345,15 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
         .frammer-scrollbar::-webkit-scrollbar-thumb,
         .frammer-anomaly-scroll::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 9999px; }
         .frammer-scrollbar::-webkit-scrollbar-thumb:hover,
-        .frammer-anomaly-scroll::-webkit-scrollbar-thumb:hover { background: #ef4444; }
-        .frammer-scrollbar, .frammer-anomaly-scroll { scrollbar-width: thin; scrollbar-color: #2a2a2a transparent; }
-        .frammer-scrollbar:hover, .frammer-anomaly-scroll:hover { scrollbar-color: #ef4444 transparent; }
+        .frammer-anomaly-scroll::-webkit-scrollbar-thumb:hover { background: #333333; }
+        .frammer-scrollbar, .frammer-anomaly-scroll { scrollbar-width: thin; scrollbar-color: #333333 transparent; }
       `}</style>
       {/* Ambient glow blob */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
         <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[700px] h-[340px] rounded-full bg-violet-600/5 blur-[120px]" />
       </div>
 
-      <div className="relative mx-auto w-full max-w-[1440px] px-6 pt-5 pb-8 space-y-6">
+      <div className="relative w-full px-6 pt-5 pb-8 space-y-6">
 
         {/* ── Filter bar ── */}
         <FunnelFilterBar

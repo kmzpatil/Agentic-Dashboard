@@ -1491,9 +1491,8 @@ export default function UsageTrendsModule({
           .frammer-scrollbar::-webkit-scrollbar-thumb,
           .frammer-anomaly-scroll::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 9999px; }
           .frammer-scrollbar::-webkit-scrollbar-thumb:hover,
-          .frammer-anomaly-scroll::-webkit-scrollbar-thumb:hover { background: #ef4444; }
-          .frammer-scrollbar, .frammer-anomaly-scroll { scrollbar-width: thin; scrollbar-color: #2a2a2a transparent; }
-          .frammer-scrollbar:hover, .frammer-anomaly-scroll:hover { scrollbar-color: #ef4444 transparent; }
+          .frammer-anomaly-scroll::-webkit-scrollbar-thumb:hover { background: #333333; }
+          .frammer-scrollbar, .frammer-anomaly-scroll { scrollbar-width: thin; scrollbar-color: #333333 transparent; }
           .frammer-range {
             -webkit-appearance: none;
             appearance: none;
