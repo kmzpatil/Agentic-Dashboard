@@ -10,8 +10,11 @@ import {
   FileText,
   Info,
   Lightbulb,
+  Loader2,
   TrendingUp,
 } from 'lucide-react';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 const SEVERITY_STYLES = {
   critical: { bg: 'bg-red-950/30', border: 'border-red-800/40', text: 'text-red-300', icon: AlertTriangle, iconColor: 'text-red-400' },
@@ -143,11 +146,57 @@ function ReportSection({ section, index }) {
 
 export default function ReportRenderer({ report }) {
   const reportRef = useRef(null);
+  const [exporting, setExporting] = useState(false);
 
   if (!report) return null;
 
-  const handleDownload = () => {
-    // Simple text export as fallback — PDF requires external lib
+  const handleExportPDF = async () => {
+    if (!reportRef.current || exporting) return;
+    setExporting(true);
+
+    try {
+      const element = reportRef.current;
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#0B0B0B',
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      
+      const imgWidth = pdfWidth;
+      const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+      
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      // Add the first page
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pdfHeight;
+
+      // Add extra pages if needed
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pdfHeight;
+      }
+
+      pdf.save(`${report.metadata.title.replace(/[^a-zA-Z0-9]/g, '_')}_report.pdf`);
+    } catch (err) {
+      console.error('PDF export failed:', err);
+      // Fallback to text download
+      handleDownloadText();
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleDownloadText = () => {
     const text = [
       report.metadata.title,
       report.metadata.subtitle,
@@ -179,7 +228,7 @@ export default function ReportRenderer({ report }) {
   };
 
   return (
-    <div ref={reportRef} className="max-w-[820px] space-y-6">
+    <div className="max-w-[820px] space-y-6">
       {/* Header */}
       <div className="rounded-2xl border border-neutral-800 bg-gradient-to-br from-[#111111] to-[#0A0A0A] p-6">
         <div className="flex items-start justify-between gap-4">
@@ -198,17 +247,32 @@ export default function ReportRenderer({ report }) {
               <p className="mt-2 text-[12px] text-neutral-600">{report.metadata.dateRange}</p>
             )}
           </div>
-          <button
-            onClick={handleDownload}
-            className="flex items-center gap-1.5 rounded-xl border border-neutral-800 bg-[#0E0E0E] px-3 py-2 text-[12px] font-semibold text-neutral-400 transition-colors hover:border-neutral-700 hover:text-neutral-200"
-          >
-            <Download size={13} />
-            Export
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={handleExportPDF}
+              disabled={exporting}
+              className="flex items-center gap-1.5 rounded-xl border border-neutral-800 bg-[#0E0E0E] px-3 py-2 text-[12px] font-semibold text-neutral-400 transition-colors hover:border-neutral-700 hover:text-neutral-200 disabled:opacity-50"
+            >
+              {exporting ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <Download size={13} />
+              )}
+              {exporting ? 'Generating...' : 'PDF'}
+            </button>
+            <button
+              onClick={handleDownloadText}
+              className="flex items-center justify-center rounded-xl border border-neutral-800 bg-[#0E0E0E] px-3 py-2 text-[12px] font-semibold text-neutral-500 transition-colors hover:border-neutral-700 hover:text-neutral-300"
+              title="Download as Text"
+            >
+              TXT
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Executive Summary */}
+      <div ref={reportRef} className="space-y-6">
+
       {report.executiveSummary && (
         <div className="rounded-2xl border border-neutral-800 bg-[#0C0C0C] p-5">
           <div className="flex items-center gap-2 mb-3">
@@ -262,5 +326,6 @@ export default function ReportRenderer({ report }) {
         </div>
       )}
     </div>
-  );
+  </div>
+);
 }

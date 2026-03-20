@@ -820,6 +820,7 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
             artifacts={canvasMessage.artifacts || []}
             datasets={canvasMessage.datasets || []}
             sql={canvasMessage.sql || ''}
+            reportXml={canvasMessage.reportXml || ''}
             onClose={() => setCanvasMessage(null)}
           />
         </div>

@@ -6,8 +6,13 @@ import ChartDataLabels from 'chartjs-plugin-datalabels';
 import {
   BarChart3, Check, ChevronDown, Copy, Download, LineChart, PieChart, X,
   ScatterChart, Activity, Grid3x3, Target, TrendingUp, Layers,
-  RotateCcw,
+  RotateCcw, Loader2, FileText,
 } from 'lucide-react';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
+
+import ReportRenderer from '../reports/ReportRenderer';
+import { parseReportXml } from '../../lib/reportXmlParser';
 
 // ── Colors ──────────────────────────────────────────────────────────────────
 const SERIES_COLORS = [
@@ -936,25 +941,30 @@ function QueryTab({ sql }) {
 }
 
 // ── Main ArtifactCanvas ─────────────────────────────────────────────────────
-export default function ArtifactCanvas({ artifacts = [], datasets = [], sql = '', onClose }) {
+export default function ArtifactCanvas({ artifacts = [], datasets = [], sql = '', reportXml = '', onClose }) {
   const datasetMap = useMemo(() => buildDatasetMap(datasets), [datasets]);
   const chartArtifacts = useMemo(() => artifacts.filter(a => a.kind === 'chart'), [artifacts]);
   const tableArtifact = artifacts.find(a => a.kind === 'table');
   const hasCharts = chartArtifacts.length > 0;
+  const parsedReport = useMemo(() => parseReportXml(reportXml), [reportXml]);
 
-  const [activeTab, setActiveTab] = useState(hasCharts ? 'visualize' : 'data');
+  const [activeTab, setActiveTab] = useState(
+    parsedReport ? 'report' : (hasCharts ? 'visualize' : 'data')
+  );
   const [activeChartIndex, setActiveChartIndex] = useState(0);
 
   const activeChart = chartArtifacts[activeChartIndex] || chartArtifacts[0] || null;
-  const panelTitle = activeChart?.title || tableArtifact?.title || 'Analysis';
+  const panelTitle = parsedReport?.metadata?.title || activeChart?.title || tableArtifact?.title || 'Analysis';
 
   useEffect(() => {
-    if (!hasCharts && activeTab === 'visualize') setActiveTab('data');
-  }, [hasCharts]);
+    if (!hasCharts && activeTab === 'visualize' && !parsedReport) setActiveTab('data');
+    if (parsedReport && !hasCharts && activeTab === 'visualize') setActiveTab('report');
+  }, [hasCharts, parsedReport]);
 
   useEffect(() => { setActiveChartIndex(0); }, [chartArtifacts.length]);
 
   const tabs = [
+    ...(parsedReport ? [{ id: 'report', label: 'Report' }] : []),
     ...(hasCharts ? [{ id: 'visualize', label: 'Visualize' }] : []),
     { id: 'data', label: 'Data' },
     { id: 'query', label: 'Query' },
@@ -993,6 +1003,11 @@ export default function ArtifactCanvas({ artifacts = [], datasets = [], sql = ''
       </div>
 
       <div className="flex-1 min-h-0 overflow-hidden">
+        {activeTab === 'report' && parsedReport && (
+          <div className="h-full overflow-y-auto p-5 message-list">
+            <ReportRenderer report={parsedReport} />
+          </div>
+        )}
         {activeTab === 'visualize' && activeChart && (
           <div className="flex flex-col h-full">
             {chartArtifacts.length > 1 && (

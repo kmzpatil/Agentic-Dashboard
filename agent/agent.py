@@ -78,7 +78,14 @@ def _clean(text: str) -> str:
     return _THINK_BLOCK_RE.sub("", text).strip()
 
 
-def _extract_response(text: str) -> str:
+def _extract_response(text: Any) -> str:
+    if isinstance(text, list):
+        # Handle list of content parts (common in Gemini)
+        text = "".join(str(part.get("text", part) if isinstance(part, dict) else part) for part in text)
+    
+    if not isinstance(text, str):
+        text = str(text)
+
     if _THINK_CLOSE in text:
         after = text.split(_THINK_CLOSE, 1)[-1].strip()
         if after:
@@ -333,6 +340,7 @@ def create_report_plan(
 _planner_llm = _llm_client.llm.bind_tools([create_plan])
 _report_planner_llm = _llm_client.llm.bind_tools([create_report_plan])
 _synthesizer_llm = _llm_client.llm
+_report_synthesizer_llm = LLMClient.reporter().llm
 _repair_llm = _llm_client.llm
 
 
@@ -848,9 +856,9 @@ async def _synthesize_report(question: str, gathered: Dict[str, Any]) -> str:
         results_block=results_block,
     )
 
-    logger.info("=== REPORT SYNTHESIZER: Calling LLM ===")
+    logger.info("=== REPORT SYNTHESIZER (Gemini): Calling LLM ===")
     start = time.time()
-    resp = await asyncio.to_thread(_synthesizer_llm.invoke, prompt)
+    resp = await asyncio.to_thread(_report_synthesizer_llm.invoke, prompt)
     duration = time.time() - start
 
     usage = getattr(resp, "usage_metadata", {})
