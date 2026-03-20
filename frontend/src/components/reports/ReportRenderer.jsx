@@ -17,7 +17,7 @@ const PDF_CSS = `
     print-color-adjust: exact;
     margin: 0; padding: 0;
   }
-  @page { size: A4; margin: 14mm 16mm 12mm 16mm; }
+  @page { size: A4; margin: 18mm 16mm 16mm 16mm; }
 
   /* ── Fixed header repeats on every printed page ── */
   .report-page-header {
@@ -25,18 +25,25 @@ const PDF_CSS = `
     display: flex; align-items: center; gap: 8px;
     padding: 0 0 6px 0;
     border-bottom: 2px solid #ef4444;
-    margin-bottom: 8px;
     background: #fff;
+    height: 24px;
   }
   .report-page-header .logo { font-size: 13px; font-weight: 800; color: #ef4444; letter-spacing: -0.02em; }
   .report-page-header .divider { width: 1px; height: 12px; background: #d1d5db; }
   .report-page-header .label { font-size: 8px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: #9ca3af; }
 
-  /* Push content below fixed header */
-  .report { padding-top: 28px; }
+  /* ── Push content below fixed header + breathing room ── */
+  .report { padding-top: 36px; }
+
+  /* ── Footer space so content doesn't touch bottom edge ── */
+  .report::after {
+    content: '';
+    display: block;
+    height: 20px;
+  }
 
   /* ── Cover ── */
-  .cover-header { padding: 6px 0 8px 0; margin-bottom: 10px; }
+  .cover-header { padding: 8px 0 10px 0; margin-bottom: 12px; }
   .report-badge {
     display: inline-block; font-size: 8px; font-weight: 700;
     letter-spacing: 0.18em; text-transform: uppercase;
@@ -50,25 +57,25 @@ const PDF_CSS = `
   /* ── Executive Summary ── */
   .executive-summary {
     background: #f0f7ff; border: 1px solid #dbeafe;
-    border-radius: 6px; padding: 10px 12px; margin-bottom: 12px;
+    border-radius: 6px; padding: 12px 14px; margin-bottom: 14px;
     page-break-inside: avoid;
   }
   .executive-summary h2 {
     font-size: 9px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.14em; color: #2563eb; margin: 0 0 5px 0;
+    letter-spacing: 0.14em; color: #2563eb; margin: 0 0 6px 0;
   }
   .executive-summary p { font-size: 10.5px; color: #374151; margin: 0; line-height: 1.55; }
 
   /* ── Sections ── */
   .section {
-    margin-bottom: 10px; padding-bottom: 10px;
+    margin-bottom: 14px; padding-bottom: 12px;
     border-bottom: 1px solid #f3f4f6;
     page-break-inside: avoid;
   }
   .section:last-of-type { border-bottom: none; }
   .section-header {
     display: flex; align-items: center; gap: 7px;
-    margin-bottom: 4px; padding-bottom: 3px;
+    margin-bottom: 6px; padding-bottom: 4px;
     border-bottom: 1px solid #e5e7eb;
   }
   .section-type {
@@ -77,41 +84,79 @@ const PDF_CSS = `
     padding: 2px 6px; border-radius: 3px;
   }
   .section-header h3 { font-size: 12px; font-weight: 700; color: #111827; margin: 0; }
-  .narrative { font-size: 10.5px; color: #374151; margin: 0 0 5px 0; line-height: 1.55; }
+  .narrative { font-size: 10.5px; color: #374151; margin: 0 0 8px 0; line-height: 1.55; }
 
   /* ── Table ── */
   .data-table {
     width: 100%; border-collapse: collapse; font-size: 9px;
-    margin: 5px 0; page-break-inside: avoid;
+    margin: 8px 0; page-break-inside: avoid;
   }
   .data-table thead { background: #f9fafb; }
   .data-table th {
-    text-align: left; padding: 3px 6px; font-size: 7px; font-weight: 700;
+    text-align: left; padding: 4px 6px; font-size: 7px; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.1em;
     color: #6b7280; border-bottom: 1px solid #d1d5db;
   }
   .data-table td {
-    padding: 3px 6px; color: #374151;
+    padding: 4px 6px; color: #374151;
     border-bottom: 1px solid #f3f4f6;
     font-variant-numeric: tabular-nums;
   }
 
-  /* ── Charts ── */
-  .chart-container { margin: 5px 0; page-break-inside: avoid; }
-  .chart-title { font-size: 9px; font-weight: 700; color: #374151; margin-bottom: 4px; }
-  .bar-chart-row { display: flex; align-items: center; gap: 4px; margin-bottom: 2px; }
-  .bar-chart-label {
-    width: 85px; font-size: 8px; color: #6b7280; text-align: right;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  /* ── Charts — Horizontal Bar ── */
+  .chart-container {
+    margin: 8px 0; padding: 8px 10px;
+    background: #fafbfc; border: 1px solid #f0f0f0; border-radius: 6px;
+    page-break-inside: avoid;
   }
-  .bar-chart-bar { height: 11px; border-radius: 2px; min-width: 2px; }
-  .bar-chart-value { font-size: 8px; color: #374151; font-weight: 600; min-width: 30px; }
+  .chart-title { font-size: 9px; font-weight: 700; color: #374151; margin-bottom: 6px; }
+  .bar-chart-row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+  .bar-chart-label {
+    width: 110px; font-size: 8.5px; color: #6b7280; text-align: right;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0;
+  }
+  .bar-chart-bar { height: 14px; border-radius: 3px; min-width: 3px; transition: width 0.3s; }
+  .bar-chart-value { font-size: 8.5px; color: #374151; font-weight: 600; min-width: 40px; }
+
+  /* ── Charts — Comparison Row ── */
+  .comparison-row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+
+  /* ── Charts — Sparkline (vertical bars for trends) ── */
+  .sparkline-row {
+    display: flex; align-items: flex-end; gap: 2px;
+    height: 60px; padding: 4px 0;
+  }
+  .sparkline-bar {
+    flex: 1; min-width: 8px; border-radius: 2px 2px 0 0;
+    transition: height 0.3s;
+  }
+  .sparkline-label {
+    flex: 1; text-align: center;
+    font-size: 7px; color: #9ca3af; margin-top: 2px;
+  }
+  .sparkline-labels {
+    display: flex; gap: 2px;
+  }
+
+  /* ── Charts — Proportion Bar ── */
+  .proportion-row {
+    display: flex; height: 16px; border-radius: 4px; overflow: hidden;
+    margin-bottom: 4px;
+  }
+  .proportion-segment { min-width: 2px; }
+  .proportion-legend {
+    display: flex; gap: 10px; flex-wrap: wrap; margin-top: 2px;
+  }
+  .proportion-legend span { font-size: 8px; color: #6b7280; display: flex; align-items: center; gap: 3px; }
+  .legend-dot {
+    display: inline-block; width: 7px; height: 7px; border-radius: 2px;
+  }
 
   /* ── Findings ── */
-  .findings { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
+  .findings { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
   .finding {
     display: flex; align-items: flex-start; gap: 6px;
-    padding: 4px 8px; border-radius: 4px; font-size: 9px;
+    padding: 5px 8px; border-radius: 4px; font-size: 9px;
     page-break-inside: avoid;
   }
   .finding-badge {
@@ -131,18 +176,18 @@ const PDF_CSS = `
   .finding-info .finding-badge { background: #f3f4f6; color: #6b7280; }
 
   /* ── Conclusions ── */
-  .conclusions, .recommendations { margin-bottom: 10px; page-break-inside: avoid; }
+  .conclusions, .recommendations { margin-bottom: 14px; page-break-inside: avoid; }
   .conclusions h2, .recommendations h2 {
     font-size: 9px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.14em; color: #374151; margin: 0 0 5px 0;
-    padding-bottom: 3px; border-bottom: 1px solid #e5e7eb;
+    letter-spacing: 0.14em; color: #374151; margin: 0 0 6px 0;
+    padding-bottom: 4px; border-bottom: 1px solid #e5e7eb;
   }
   .conclusions ol { margin: 0; padding-left: 14px; }
-  .conclusions li { font-size: 10px; color: #374151; margin-bottom: 3px; line-height: 1.5; }
+  .conclusions li { font-size: 10px; color: #374151; margin-bottom: 4px; line-height: 1.5; }
   .recommendation {
     display: flex; align-items: flex-start; gap: 8px;
-    padding: 5px 10px; background: #f9fafb; border: 1px solid #e5e7eb;
-    border-radius: 6px; margin-bottom: 4px; page-break-inside: avoid;
+    padding: 6px 10px; background: #f9fafb; border: 1px solid #e5e7eb;
+    border-radius: 6px; margin-bottom: 5px; page-break-inside: avoid;
   }
   .priority-badge {
     display: flex; align-items: center; justify-content: center;
@@ -232,7 +277,7 @@ export default function ReportRenderer({ reportHtml }) {
             <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-red-400/70 mb-1">Report Generated</div>
             <div className="text-[15px] font-semibold text-white leading-tight truncate">{reportTitle}</div>
             <p className="mt-1.5 text-[12px] text-neutral-500 leading-relaxed">
-              Click below to save as PDF. Select "Save as PDF" in the print dialog.
+              Click below to save as PDF. Select &quot;Save as PDF&quot; in the print dialog.
             </p>
           </div>
         </div>

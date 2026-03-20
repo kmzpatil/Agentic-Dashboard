@@ -37,6 +37,7 @@ Your job in this phase is to PLAN the report by decomposing the user's query int
 - For comparison questions, compare across categories
 - For anomaly questions, compute period-over-period changes
 - For forecast questions, compute recent averages/growth rates
+- IMPORTANT: Design queries that return data suitable for charting — include a category/label column and at least one numeric column
 {auth_block}
 
 ## User Query
@@ -72,21 +73,81 @@ Everything flows continuously — no wrappers, no page divs, no artificial break
 - Include data tables (keep ≤8 rows for compactness)
 - Severity levels: critical, high, medium, low, info
 
-## INLINE CHARTS
+## CHARTS — MANDATORY
 
-Include horizontal bar charts using this HTML pattern:
+You MUST include at least ONE chart in EVERY analysis section. Charts are critical for the report.
+Use the HTML bar chart pattern below. Pick the best chart type for the data:
+
+### Horizontal Bar Chart (for comparisons, rankings, breakdowns)
 <div class="chart-container">
-  <div class="chart-title">Title</div>
+  <div class="chart-title">Chart Title Here</div>
   <div class="bar-chart-row">
-    <span class="bar-chart-label">Category</span>
-    <div class="bar-chart-bar" style="width: 80%; background: #3b82f6;"></div>
+    <span class="bar-chart-label">Category A</span>
+    <div class="bar-chart-bar" style="width: 100%; background: #3b82f6;"></div>
     <span class="bar-chart-value">1,234</span>
+  </div>
+  <div class="bar-chart-row">
+    <span class="bar-chart-label">Category B</span>
+    <div class="bar-chart-bar" style="width: 65%; background: #10b981;"></div>
+    <span class="bar-chart-value">802</span>
+  </div>
+  <div class="bar-chart-row">
+    <span class="bar-chart-label">Category C</span>
+    <div class="bar-chart-bar" style="width: 40%; background: #f59e0b;"></div>
+    <span class="bar-chart-value">493</span>
   </div>
 </div>
 
-- Bar width = percentage of largest value (largest = 100%)
+### Stacked Comparison Bar (for comparing 2 metrics side by side)
+<div class="chart-container">
+  <div class="chart-title">Metric Comparison</div>
+  <div class="comparison-row">
+    <span class="bar-chart-label">Group A</span>
+    <div style="display:flex;gap:2px;flex:1;">
+      <div class="bar-chart-bar" style="width: 60%; background: #3b82f6;" title="Metric 1: 600"></div>
+      <div class="bar-chart-bar" style="width: 40%; background: #f59e0b;" title="Metric 2: 400"></div>
+    </div>
+    <span class="bar-chart-value">1,000</span>
+  </div>
+</div>
+
+### Trend Sparkline (for time-series in trend sections)
+<div class="chart-container">
+  <div class="chart-title">Monthly Trend</div>
+  <div class="sparkline-row">
+    <span class="sparkline-label">Jan</span><div class="sparkline-bar" style="height:30%;background:#3b82f6;"></div>
+    <span class="sparkline-label">Feb</span><div class="sparkline-bar" style="height:45%;background:#3b82f6;"></div>
+    <span class="sparkline-label">Mar</span><div class="sparkline-bar" style="height:80%;background:#3b82f6;"></div>
+    <span class="sparkline-label">Apr</span><div class="sparkline-bar" style="height:65%;background:#3b82f6;"></div>
+    <span class="sparkline-label">May</span><div class="sparkline-bar" style="height:100%;background:#10b981;"></div>
+  </div>
+</div>
+
+### Proportion Indicators (for percentage breakdowns)
+<div class="chart-container">
+  <div class="chart-title">Distribution</div>
+  <div class="proportion-row">
+    <div class="proportion-segment" style="flex:45;background:#3b82f6;" title="Type A: 45%"></div>
+    <div class="proportion-segment" style="flex:30;background:#10b981;" title="Type B: 30%"></div>
+    <div class="proportion-segment" style="flex:25;background:#f59e0b;" title="Type C: 25%"></div>
+  </div>
+  <div class="proportion-legend">
+    <span><span class="legend-dot" style="background:#3b82f6;"></span>Type A (45%)</span>
+    <span><span class="legend-dot" style="background:#10b981;"></span>Type B (30%)</span>
+    <span><span class="legend-dot" style="background:#f59e0b;"></span>Type C (25%)</span>
+  </div>
+</div>
+
+## CHART RULES
+- EVERY section MUST have at least one chart. This is NON-NEGOTIABLE.
+- Calculate bar widths as percentage of the largest value (largest = 100%)
 - Colors: #3b82f6 (blue), #10b981 (green), #f59e0b (amber), #8b5cf6 (purple), #ef4444 (red), #06b6d4 (cyan)
-- Max 8 bars per chart. Include charts for trend/breakdown/comparison sections.
+- Max 8 bars per chart
+- For trend sections, use the sparkline pattern
+- For breakdown sections, use horizontal bar charts
+- For comparison sections, use grouped/stacked bars
+- For proportion data, use the proportion indicator
+- Place the chart AFTER the narrative paragraph and BEFORE the findings
 
 ## HTML STRUCTURE
 
@@ -109,7 +170,9 @@ Start with <div class="report"> and end with </div>. Use these classes:
       <h3>Section Title</h3>
     </div>
     <p class="narrative">Analysis paragraph.</p>
-    <!-- chart-container or data-table here -->
+    <!-- CHART IS MANDATORY HERE — use one of the chart patterns above -->
+    <div class="chart-container">...</div>
+    <!-- Optional data table -->
     <div class="findings">
       <div class="finding finding-high">
         <span class="finding-badge">HIGH</span>
@@ -117,7 +180,7 @@ Start with <div class="report"> and end with </div>. Use these classes:
       </div>
     </div>
   </div>
-  <!-- more sections... -->
+  <!-- more sections, each with a chart... -->
   <div class="conclusions">
     <h2>Conclusions</h2>
     <ol><li>Conclusion 1</li></ol>
@@ -139,6 +202,7 @@ Start with <div class="report"> and end with </div>. Use these classes:
 
 ## Output
 Start with <div class="report"> end with </div>. NO markdown fences. ONLY raw HTML.
+REMEMBER: Every section MUST contain a chart. No exceptions.
 """
 
 
