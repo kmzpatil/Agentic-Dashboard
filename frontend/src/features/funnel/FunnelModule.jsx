@@ -336,18 +336,8 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
   const hasActive = Object.values(effectiveFilters).some(Boolean);
 
   return (
-    <div className="h-full overflow-y-auto bg-[#050505] frammer-scrollbar">
-      <style>{`
-        .frammer-scrollbar::-webkit-scrollbar,
-        .frammer-anomaly-scroll::-webkit-scrollbar { width: 4px; height: 4px; }
-        .frammer-scrollbar::-webkit-scrollbar-track,
-        .frammer-anomaly-scroll::-webkit-scrollbar-track { background: transparent; }
-        .frammer-scrollbar::-webkit-scrollbar-thumb,
-        .frammer-anomaly-scroll::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 9999px; }
-        .frammer-scrollbar::-webkit-scrollbar-thumb:hover,
-        .frammer-anomaly-scroll::-webkit-scrollbar-thumb:hover { background: #333333; }
-        .frammer-scrollbar, .frammer-anomaly-scroll { scrollbar-width: thin; scrollbar-color: #333333 transparent; }
-      `}</style>
+    <div className="h-full overflow-y-auto bg-[#050505]">
+      
       {/* Ambient glow blob */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
         <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[700px] h-[340px] rounded-full bg-violet-600/5 blur-[120px]" />

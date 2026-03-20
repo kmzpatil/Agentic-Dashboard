@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Microscope,
   FlaskConical,
+  ShieldCheck,
 } from 'lucide-react';
 import './lib/chartSetup';
 import { API_BASE, customStyles } from './lib/constants';
@@ -18,6 +19,7 @@ import UserJourneyModule from './features/journey/UserJourneyModule';
 import ExplorerModule from './features/explorer/ExplorerModule';
 import TalkToDataModule from './features/talk/TalkToDataModule';
 import LabsModule from './features/labs/LabsModule';
+import DataQualityModule from './features/quality/DataQualityModule';
 
 function readRouteState() {
   const params = new URLSearchParams(window.location.search);
@@ -102,6 +104,7 @@ export default function AppShell() {
     { id: 'explorer', label: 'Explorer', icon: <Microscope size={16} /> },
     { id: 'copilot', label: 'Copilot', icon: <Bot size={16} /> },
     { id: 'labs', label: 'Labs', icon: <FlaskConical size={16} /> },
+    { id: 'quality', label: 'Data Quality', icon: <ShieldCheck size={16} /> },
   ]), []);
 
   const handleLogin = async (event) => {
@@ -254,6 +257,7 @@ export default function AppShell() {
         {activeView === 'explorer' && <ExplorerModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'copilot' && <TalkToDataModule authToken={authToken} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'labs' && <LabsModule />}
+        {activeView === 'quality' && <DataQualityModule />}
       </main>
     </div>
   );

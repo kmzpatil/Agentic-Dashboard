@@ -67,7 +67,7 @@ function FilterSelect({ label, value, options, onChange, disabled }) {
       </button>
 
       {open && !disabled && (
-        <div className="absolute left-0 right-0 mt-2 z-50 rounded-xl border border-neutral-800 bg-[#0f0f0f] shadow-[0_18px_40px_rgba(0,0,0,0.45)] p-1 max-h-[260px] overflow-y-auto frammer-anomaly-scroll">
+        <div className="absolute left-0 right-0 mt-2 z-50 rounded-xl border border-neutral-800 bg-[#0f0f0f] shadow-[0_18px_40px_rgba(0,0,0,0.45)] p-1 max-h-[260px] overflow-y-auto">
           {options.map((item) => {
             const active = item.value === value;
             return (

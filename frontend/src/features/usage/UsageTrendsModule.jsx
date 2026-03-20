@@ -875,16 +875,9 @@ export default function UsageTrendsModule({
     if (appliedMultiDimFilters.dateTo)
       params.append("date_to", appliedMultiDimFilters.dateTo);
 
-    // Mix in the global applied filters too
-    if (appliedFiltersQuery) {
-      const globalParams = new URLSearchParams(appliedFiltersQuery);
-      for (const [key, value] of globalParams.entries()) {
-        if (!params.has(key)) params.append(key, value);
-      }
-    }
 
     return `${API_BASE}/usage-trends/v1/multi-dim?${params.toString()}`;
-  }, [multiDim, granularity, appliedMultiDimFilters, appliedFiltersQuery]);
+    }, [multiDim, granularity, appliedMultiDimFilters]);
 
   const {
     data: multiDimData,
@@ -1431,12 +1424,7 @@ export default function UsageTrendsModule({
   };
 
   // ── Early returns ─────────────────────────────────────────────────────────
-  if (metricsLoading)
-    return (
-      <div className="p-6">
-        <UsageTrendsSkeleton />
-      </div>
-    );
+  
   if (metricsError)
     return (
       <div className="p-6 text-red-500 font-medium">
@@ -1470,7 +1458,7 @@ export default function UsageTrendsModule({
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div
-      className={`h-full overflow-y-auto bg-[#050505] px-4 md:px-8 text-neutral-200 frammer-scrollbar ${isMaximized ? "fixed inset-0 z-50 overflow-hidden !p-8 bg-[#0a0a0a]" : "space-y-8"
+      className={`h-full overflow-y-auto bg-[#050505] px-4 md:px-8 text-neutral-200 ${isMaximized ? "fixed inset-0 z-50 overflow-hidden !p-8 bg-[#0a0a0a]" : "space-y-8"
         }`}
     >
       {/* ── Custom scrollbar + forecast animation styles ── */}
@@ -1484,15 +1472,6 @@ export default function UsageTrendsModule({
             40%  { opacity: 1;   box-shadow: 0 0 0 6px rgba(56,189,248,0.25); }
             100% { opacity: 0;   box-shadow: 0 0 0 12px rgba(56,189,248,0); }
           }
-          .frammer-scrollbar::-webkit-scrollbar,
-          .frammer-anomaly-scroll::-webkit-scrollbar { width: 4px; }
-          .frammer-scrollbar::-webkit-scrollbar-track,
-          .frammer-anomaly-scroll::-webkit-scrollbar-track { background: transparent; }
-          .frammer-scrollbar::-webkit-scrollbar-thumb,
-          .frammer-anomaly-scroll::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 9999px; }
-          .frammer-scrollbar::-webkit-scrollbar-thumb:hover,
-          .frammer-anomaly-scroll::-webkit-scrollbar-thumb:hover { background: #333333; }
-          .frammer-scrollbar, .frammer-anomaly-scroll { scrollbar-width: thin; scrollbar-color: #333333 transparent; }
           .frammer-range {
             -webkit-appearance: none;
             appearance: none;
@@ -1817,7 +1796,7 @@ export default function UsageTrendsModule({
             {isFiltersOpen && (
               <>
                 {/* Scrollable filter list — fills space between header and footer */}
-                <div className="flex-1 overflow-y-auto frammer-scrollbar min-h-0">
+                <div className="flex-1 overflow-y-auto min-h-0">
                   <div className="space-y-3 p-3">
                     {/* HIDE Client filter for client_admin and user roles */}
                     {authUser?.role !== "client_admin" &&
@@ -2109,6 +2088,16 @@ export default function UsageTrendsModule({
           {/* Chart body — flex-1 fills all remaining height */}
           <div className="flex-1 min-h-0 p-6 flex flex-col">
             <div className="relative flex-1 min-h-0 w-full">
+              {metricsLoading && metricsData === null && (
+                <div className="absolute inset-0 z-10">
+                  <UsageTrendsSkeleton />
+                </div>
+              )}
+              {metricsLoading && metricsData !== null && (
+                <div className="absolute inset-0 flex items-center justify-center bg-[#0e0e0e]/70 backdrop-blur-sm z-10 rounded-2xl">
+                  <div className="w-10 h-10 rounded-full border-2 border-neutral-700 border-t-red-500 animate-spin" />
+                </div>
+              )}
               <Line
                 key={`trend-chart-${isMaximized ? "max" : "normal"}-${isPredicting && predictionSeries.length > 0 ? predictionSeries[0]?.period : 'base'}`}
                 ref={chartRef}
@@ -2400,6 +2389,12 @@ export default function UsageTrendsModule({
       {/* ── Multi-dim section ────────────────────────────────────────────── */}
       {!isMaximized && (
         <section className="relative z-50 rounded-[24px] border border-neutral-800/80 bg-[#101010]/80 backdrop-blur-md p-4 sm:p-6 shadow-xl transition-all duration-300 hover:border-neutral-700/80">
+          <div className="flex items-center gap-3 mb-5">
+            <Layers size={16} className="text-neutral-400 flex-shrink-0" />
+            <h2 className="text-sm font-black uppercase tracking-[0.2em] text-neutral-300">
+              Multi Dim
+            </h2>
+          </div>
           <div className="flex flex-col">
             <div className="flex flex-col lg:flex-row lg:flex-wrap items-stretch lg:items-end gap-4 lg:gap-6">
             
@@ -2471,6 +2466,23 @@ export default function UsageTrendsModule({
                   }}
                 />
               </div>
+            </div>
+
+             {/* Reset */}
+            <div className="flex items-end shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setMultiDim("output_type");
+                  setClientFilter(["All"]);
+                  setUserFilter(["All"]);
+                  setMultiDimStartIndex(0);
+                  setMultiDimEndIndex(sliderDates.length - 1);
+                }}
+                className="rounded-xl border border-neutral-800 px-4 py-3 text-[11px] font-bold uppercase tracking-[0.15em] text-neutral-500 transition-all hover:border-red-500/30 hover:text-red-400"
+              >
+                Reset
+              </button>
             </div>
 
           </div>

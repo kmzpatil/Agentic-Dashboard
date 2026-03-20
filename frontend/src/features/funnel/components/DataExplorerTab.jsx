@@ -43,7 +43,7 @@ export default function DataExplorerTab({ authUser, data, breakdown, filters }) 
 
       <Card>
         <CardTitle title={`Top-down breakdown (${breakdown})`} desc="Breakdown of volume and conversion across the current view." />
-        <div className="overflow-auto max-h-[340px] frammer-anomaly-scroll">
+        <div className="overflow-auto max-h-[340px]">
           <table className="w-full min-w-[680px] table-fixed text-sm">
             <colgroup>
               <col className="w-auto" />
@@ -86,7 +86,7 @@ export default function DataExplorerTab({ authUser, data, breakdown, filters }) 
         <div className="mb-2 text-[12px] text-neutral-500">
           Showing {journeyVideos.length} video pipelines from the current filtered view.
         </div>
-        <div className="overflow-auto max-h-[320px] frammer-anomaly-scroll">
+        <div className="overflow-auto max-h-[320px]">
           <table className="w-full min-w-[980px] table-fixed text-sm">
             <colgroup>
               <col className="w-28" />
@@ -156,7 +156,7 @@ export default function DataExplorerTab({ authUser, data, breakdown, filters }) 
               </button>
             </div>
 
-            <div className="max-h-[calc(88vh-72px)] overflow-y-auto pr-1 frammer-anomaly-scroll">
+            <div className="max-h-[calc(88vh-72px)] overflow-y-auto pr-1">
               {videoDetails.loading && <div className="text-neutral-400 text-sm">Loading video details...</div>}
               {videoDetails.error && <div className="text-red-400 text-sm">{videoDetails.error}</div>}
               {videoDetails.data && (
@@ -175,7 +175,7 @@ export default function DataExplorerTab({ authUser, data, breakdown, filters }) 
                       </div>
                     ))}
                   </div>
-                  <div className="overflow-auto max-h-[340px] frammer-anomaly-scroll">
+                  <div className="overflow-auto max-h-[340px]">
                     <table className="w-full min-w-[760px] table-fixed text-[12px]">
                       <colgroup>
                         <col className="w-32" />

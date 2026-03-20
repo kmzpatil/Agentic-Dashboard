@@ -53,7 +53,6 @@ const SCATTER_TICK_FONT_SIZE = 13;
 const SCATTER_TITLE_FONT_SIZE = 14;
 const SCATTER_TOOLTIP_TITLE_FONT_SIZE = 13;
 const SCATTER_TOOLTIP_BODY_FONT_SIZE = 13;
-const THIN_DIM_SCROLLBAR = '[scrollbar-width:thin] [scrollbar-color:rgba(115,115,115,0.35)_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-neutral-600/35 [&::-webkit-scrollbar-thumb]:transition-colors [&::-webkit-scrollbar-thumb]:duration-200 [&::-webkit-scrollbar-thumb:hover]:bg-neutral-400/65';
 
 const riskQuadrantPlugin = {
   id: 'riskQuadrant',
@@ -674,7 +673,7 @@ export default function ChannelEfficiencyTab({ authUser, data, breakdown, filter
                   </div>
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  <div className={`flex max-h-[50px] flex-wrap gap-1 overflow-y-auto pr-1 ${THIN_DIM_SCROLLBAR}`}>
+                  <div className={`flex max-h-[50px] flex-wrap gap-1 overflow-y-auto pr-1`}>
                     {scatterLegendItems.map((item) => (
                       <div key={item.key} className="inline-flex items-center gap-1 rounded-md border border-neutral-800 bg-black/30 px-1.5 py-0.5 text-[10px] text-neutral-300">
                         <div className="h-2 w-2 rounded-sm" style={{ background: item.color }} />
@@ -730,7 +729,7 @@ export default function ChannelEfficiencyTab({ authUser, data, breakdown, filter
                     <span>{activeWaste.title}</span>
                     <span className="text-right">Waste</span>
                   </div>
-                  <div className={`h-[190px] overflow-y-auto md:h-[210px] ${THIN_DIM_SCROLLBAR}`}>
+                  <div className={`h-[190px] overflow-y-auto md:h-[210px]`}>
                     {activeWaste.entries.map((row, idx) => {
                       const waste = Number(row.waste_slots || 0);
                       const pct = (waste / normalizedWasteScale) * 100;
@@ -846,7 +845,7 @@ export default function ChannelEfficiencyTab({ authUser, data, breakdown, filter
                   <span className="text-right">Videos</span>
                   <span className="text-right">Yield</span>
                 </div>
-                <div className={`max-h-[300px] overflow-y-auto ${THIN_DIM_SCROLLBAR}`}>
+                <div className={`max-h-[300px] overflow-y-auto`}>
                   {flaggedEntities.map((entity) => (
                     <div key={entity.key} className="grid grid-cols-[minmax(0,1fr)_96px_80px] items-center gap-2 border-b border-neutral-900/70 px-3 py-2 text-[12px] last:border-b-0">
                       <div className="min-w-0">

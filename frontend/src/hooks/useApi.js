@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
 
+const cache = new Map(); // url -> { data, timestamp }
+const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
 export function useApi(url, dependencies = []) {
   const [data, setData] = useState(null);
   const [dataUrl, setDataUrl] = useState(null);
@@ -16,6 +19,16 @@ export function useApi(url, dependencies = []) {
     }
 
     const load = async () => {
+      const cached = cache.get(url);
+      if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+        if (!ignore) {
+          setData(cached.data);
+          setDataUrl(url);
+          setLoading(false);
+        }
+        return;
+      }
+
       setLoading(true);
       setError('');
       try {
@@ -34,6 +47,7 @@ export function useApi(url, dependencies = []) {
 
         const payload = await response.json();
         if (!ignore) {
+          cache.set(url, { data: payload, timestamp: Date.now() });
           setData(payload);
           setDataUrl(url);
         }

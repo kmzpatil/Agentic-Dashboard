@@ -506,14 +506,11 @@ export default function ExplorerModule({ authUser }) {
     return cache;
   }, [rowsData]);
 
-  // Dark scrollbar class
-  const darkScrollbar = "[&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-[#050505] [&::-webkit-scrollbar-thumb]:bg-neutral-800 [&::-webkit-scrollbar-thumb]:rounded-full";
-
   return (
-    <div className={`flex h-full w-full bg-[#050505] text-white overflow-hidden font-sans ${darkScrollbar}`}>
+    <div className="flex h-full w-full bg-[#050505] text-white overflow-hidden font-sans">
 
       {/* MAIN CONTENT (Filters and Views) */}
-      <div className={`flex-1 overflow-y-auto min-w-0 min-h-0 p-6 bg-[#050505] ${darkScrollbar}`}>
+      <div className="flex-1 overflow-y-auto min-w-0 min-h-0 p-6 bg-[#050505]">
 
         {/* View Switcher (Admin Only) */}
         {canUseRawExplorer && (
@@ -558,7 +555,7 @@ export default function ExplorerModule({ authUser }) {
                   {isChannelDropdownOpen && (
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setIsChannelDropdownOpen(false)} />
-                      <div className={`absolute top-[100%] left-0 mt-1 w-[220px] bg-[#111111] border border-neutral-700 rounded-lg shadow-2xl z-50 max-h-[280px] overflow-y-auto overflow-x-hidden ${darkScrollbar} pb-1 flex flex-col`}>
+                      <div className={`absolute top-[100%] left-0 mt-1 w-[220px] bg-[#111111] border border-neutral-700 rounded-lg shadow-2xl z-50 max-h-[280px] overflow-y-auto overflow-x-hidden pb-1 flex flex-col`}>
                         <div className="sticky top-0 bg-[#111111] z-10 px-2 py-2 border-b border-neutral-800">
                           <div className="relative">
                             <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-500" />
@@ -630,7 +627,7 @@ export default function ExplorerModule({ authUser }) {
                     {isDim2DropdownOpen && (
                       <>
                         <div className="fixed inset-0 z-40" onClick={() => setIsDim2DropdownOpen(false)} />
-                        <div className={`absolute top-[100%] left-0 mt-1 w-[220px] bg-[#111111] border border-neutral-700 rounded-lg shadow-2xl z-50 max-h-[280px] overflow-y-auto overflow-x-hidden ${darkScrollbar} pb-1 flex flex-col`}>
+                        <div className={`absolute top-[100%] left-0 mt-1 w-[220px] bg-[#111111] border border-neutral-700 rounded-lg shadow-2xl z-50 max-h-[280px] overflow-y-auto overflow-x-hidden pb-1 flex flex-col`}>
                           <div className="sticky top-0 bg-[#111111] z-10 px-2 py-2 border-b border-neutral-800">
                             <div className="relative">
                               <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-500" />
@@ -839,7 +836,7 @@ export default function ExplorerModule({ authUser }) {
                         <span className="text-xs">No data available for the selected filters</span>
                       </div>
                     ) : (
-                      <div className={`w-full overflow-x-auto overflow-y-hidden ${darkScrollbar}`}>
+                      <div className={`w-full overflow-x-auto overflow-y-hidden`}>
                         <div
                           style={{
                             minWidth: Math.max(100, (effectiveTimeGrain === 'none' ? matrixChartData.labels.length : timeSeriesChartData.labels.length) * 40) + 'px',
@@ -911,7 +908,7 @@ export default function ExplorerModule({ authUser }) {
               ) : multi.error ? (
                 <div className="text-red-400 text-sm py-10 text-center">{multi.error}</div>
               ) : (
-                <div className={`overflow-x-auto max-h-[420px] ${darkScrollbar}`}>
+                <div className={`overflow-x-auto max-h-[420px]`}>
                   <table className="min-w-full text-xs text-left border-collapse whitespace-nowrap">
                     <thead className="bg-[#0A0A0A] sticky top-0 z-10">
                       <tr>
@@ -1049,7 +1046,7 @@ export default function ExplorerModule({ authUser }) {
               {rowsLoading && <div className="text-neutral-500 text-sm py-10 text-center">Loading table...</div>}
               {rowsError && <div className="text-red-400 text-sm py-10 text-center">{rowsError}</div>}
               {!rowsLoading && !rowsError && (
-                <div className={`overflow-x-auto overflow-y-auto max-h-[600px] ${darkScrollbar}`}>
+                <div className={`overflow-x-auto overflow-y-auto max-h-[600px]`}>
                   <table className="min-w-full text-xs text-left border-collapse whitespace-nowrap relative">
                     <thead className="sticky top-0 z-20 shadow-sm after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-full after:h-[1px] after:bg-neutral-800">
                       <tr>
@@ -1171,7 +1168,7 @@ export default function ExplorerModule({ authUser }) {
                                         {isOpen && (
                                           <>
                                             <div className="fixed inset-0 z-40" onClick={() => handleColumnFilterChange(col, 'dropdownOpen', false)} />
-                                            <div className={`absolute top-[100%] left-0 mt-1 w-[220px] bg-[#111111] border border-neutral-700 rounded-lg shadow-2xl z-50 max-h-[240px] overflow-y-auto overflow-x-hidden ${darkScrollbar} py-1 flex flex-col font-normal`}>
+                                            <div className={`absolute top-[100%] left-0 mt-1 w-[220px] bg-[#111111] border border-neutral-700 rounded-lg shadow-2xl z-50 max-h-[240px] overflow-y-auto overflow-x-hidden py-1 flex flex-col font-normal`}>
                                               <div className="sticky top-0 bg-[#111111] z-10 px-2 py-2 border-b border-neutral-800">
                                                 <div className="relative">
                                                   <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-500" />

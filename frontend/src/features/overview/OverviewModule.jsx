@@ -5,7 +5,7 @@ import { useApi } from '../../hooks/useApi';
 import { API_BASE } from '../../lib/constants';
 import { formatHours, formatNumber, formatPct } from '../../lib/formatters';
 import KpiCard from '../../components/common/KpiCard';
-import { OverviewSkeleton } from '../../components/common/Skeleton';
+import { OverviewSkeleton, Skeleton } from '../../components/common/Skeleton';
 import InsightCard from '../../components/insights/InsightCard';
 import KpiDetailsModal from './KpiDetailsModal';
 import { KPI_DEFINITIONS } from './kpiDefinitions';
@@ -15,7 +15,7 @@ export default function OverviewModule({ onNavigate }) {
   const overview = useApi(`${API_BASE}/overview`, []);
   const insights = useApi(`${API_BASE}/insights?surface=mission-control`, []);
 
-  const loading = overview.loading || insights.loading;
+  const loading = overview.loading;
   const error = overview.error || insights.error;
   const data = overview.data || {};
   const [activeExtraKpis, setActiveExtraKpis] = useState([]);
@@ -178,65 +178,60 @@ export default function OverviewModule({ onNavigate }) {
   const sparklines = data?.sparklines || {};
 
   return (
-    <div className="h-full overflow-y-auto bg-[#050505] px-6 py-6 space-y-6">
-      <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
-        <KpiCard 
-          title="UPLOADED" 
-          value={formatNumber(kpis.uploaded_count)} 
-          subtitle={formatHours(kpis.uploaded_duration)} 
-          trendData={[12, 18, 15, 22, 20, 28, 25]}
-          onClick={() => handleCoreKpiClick('uploaded_count')}
-        />
-        <KpiCard 
-          title="PROCESSED" 
-          value={formatNumber(kpis.processed_count)} 
-          subtitle="Videos reaching create stage" 
-          trendData={[10, 14, 12, 19, 18, 24, 22]}
-          onClick={() => handleCoreKpiClick('processed_count')}
-        />
-        <KpiCard 
-          title="CREATED" 
-          value={formatNumber(kpis.created_count)} 
-          subtitle={formatHours(kpis.created_duration)} 
-          trendData={[45, 52, 48, 60, 58, 65, 62]}
-          onClick={() => handleCoreKpiClick('created_count')}
-        />
-        <KpiCard 
-          title="PUBLISHED" 
-          value={formatNumber(kpis.published_count)} 
-          subtitle={formatHours(kpis.published_duration)} 
-          trendData={[20, 25, 22, 30, 28, 35, 32]}
-          onClick={() => handleCoreKpiClick('published_count')}
-        />
-        
-        {visibleExtraKpis.map(kpi => (
-          <KpiCard
-            key={kpi.id}
-            title={kpi.title}
-            value={kpi.getValue(kpis)}
-            subtitle={kpi.getSubtitle(kpis)}
-            trendData={kpi.trendData}
-            onRemove={() => handleRemoveKpi(kpi.id)}
-            onClick={() => setSelectedKpi(kpi)}
-          />
-        ))}
+    <div className="h-full overflow-y-auto hide-scrollbar bg-[#050505] px-6 py-6 space-y-6">
+      {/* KPI row: only the cards scroll, buttons stay fixed on the right */}
+      <section className="flex gap-4 items-stretch">
+        {/* Scrollable cards area */}
+        <div className="flex-1 min-w-0 overflow-x-auto hide-scrollbar">
+          <div className="flex gap-4 h-full">
+            {[
+              { title: 'UPLOADED', value: formatNumber(kpis.uploaded_count), subtitle: formatHours(kpis.uploaded_duration), trendData: [12, 18, 15, 22, 20, 28, 25], id: 'uploaded_count' },
+              { title: 'PROCESSED', value: formatNumber(kpis.processed_count), subtitle: 'Videos reaching create stage', trendData: [10, 14, 12, 19, 18, 24, 22], id: 'processed_count' },
+              { title: 'CREATED', value: formatNumber(kpis.created_count), subtitle: formatHours(kpis.created_duration), trendData: [45, 52, 48, 60, 58, 65, 62], id: 'created_count' },
+              { title: 'PUBLISHED', value: formatNumber(kpis.published_count), subtitle: formatHours(kpis.published_duration), trendData: [20, 25, 22, 30, 28, 35, 32], id: 'published_count' },
+            ].map(card => (
+              <div key={card.id} className="flex-none min-h-[150px]" style={{ width: 'calc(25% - 12px)' }}>
+                <KpiCard
+                  title={card.title}
+                  value={card.value}
+                  subtitle={card.subtitle}
+                  trendData={card.trendData}
+                  onClick={() => handleCoreKpiClick(card.id)}
+                />
+              </div>
+            ))}
 
-        {/* Custom KPI cards */}
-        {customKpis.map(kpi => (
-          <KpiCard
-            key={kpi.id}
-            title={kpi.title}
-            value={kpi.getValue(kpis)}
-            subtitle={kpi.getSubtitle(kpis)}
-            trendData={kpi.trendData}
-            onEdit={() => handleEditCustomKpi(kpi)}
-            onRemove={() => handleRemoveCustomKpi(kpi)}
-            onClick={() => handleCustomKpiClick(kpi)}
-          />
-        ))}
+            {visibleExtraKpis.map(kpi => (
+              <div key={kpi.id} className="flex-none min-h-[150px]" style={{ width: 'calc(25% - 12px)' }}>
+                <KpiCard
+                  title={kpi.title}
+                  value={kpi.getValue(kpis)}
+                  subtitle={kpi.getSubtitle(kpis)}
+                  trendData={kpi.trendData}
+                  onRemove={() => handleRemoveKpi(kpi.id)}
+                  onClick={() => setSelectedKpi(kpi)}
+                />
+              </div>
+            ))}
 
-        {/* Add More + Create KPI — combined in one grid slot, stacked vertically */}
-        <div className="flex flex-col gap-2 min-h-[140px]">
+            {customKpis.map(kpi => (
+              <div key={kpi.id} className="flex-none min-h-[150px]" style={{ width: 'calc(25% - 12px)' }}>
+                <KpiCard
+                  title={kpi.title}
+                  value={kpi.getValue(kpis)}
+                  subtitle={kpi.getSubtitle(kpis)}
+                  trendData={kpi.trendData}
+                  onEdit={() => handleEditCustomKpi(kpi)}
+                  onRemove={() => handleRemoveCustomKpi(kpi)}
+                  onClick={() => handleCustomKpiClick(kpi)}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Fixed Add/Create buttons — never scrolls */}
+        <div className="shrink-0 w-52 flex flex-col gap-2 min-h-[150px]">
           <button
             onClick={handleAddMore}
             className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-4 border border-dashed transition-colors ${
@@ -250,7 +245,6 @@ export default function OverviewModule({ onNavigate }) {
               {isSelectionPanelOpen ? 'Close' : 'Add More'}
             </span>
           </button>
-
           <button
             onClick={() => setShowKpiCreator(true)}
             className="flex flex-1 items-center justify-center gap-2 rounded-xl px-4 border border-dashed border-purple-800/50 bg-purple-950/10 hover:bg-purple-950/20 hover:border-purple-600 text-purple-400 hover:text-purple-300 transition-colors"
@@ -453,43 +447,69 @@ export default function OverviewModule({ onNavigate }) {
         );
       })()}
 
-      <section className="grid grid-cols-1 xl:grid-cols-[1.25fr_0.95fr] gap-6">
-        <div className="space-y-6">
-          <div className="rounded-[28px] border border-neutral-800 bg-[#101010] p-5">
-            <div className="mb-4 text-sm font-bold uppercase tracking-[0.2em] text-neutral-500">Frammer AI Insights</div>
-            <div className="grid grid-cols-1 gap-4">
-              {(insights.data?.insights || []).map((insight) => (
-                <InsightCard key={insight.id} insight={insight} onNavigate={onNavigate} />
-              ))}
-              {!insights.loading && !(insights.data?.insights || []).length && (
-                <div className="rounded-3xl border border-dashed border-neutral-800 p-6 text-sm text-neutral-500">
-                  No major issues are active in the current scope.
+      <section className="grid grid-cols-1 xl:grid-cols-[1.25fr_0.95fr] gap-6 xl:items-stretch">
+        <div className="rounded-[28px] border border-neutral-800 bg-[#101010] p-5 flex flex-col" style={{ height: '580px' }}>
+          <div className="mb-4 text-sm font-bold uppercase tracking-[0.2em] text-neutral-500 shrink-0">Frammer AI Insights</div>
+          <div className="flex flex-col gap-3 flex-1 min-h-0 overflow-y-auto hide-scrollbar">
+            {insights.loading && [...Array(5)].map((_, i) => (
+              <div key={i} className="flex-1 rounded-2xl border border-neutral-800/60 bg-[#0C0C0C] border-l-[3px] border-l-neutral-700 px-4 py-3.5 flex flex-col justify-between">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <Skeleton className="h-4 w-16 rounded-md" />
+                      <Skeleton className="h-3 w-32" />
+                    </div>
+                    <Skeleton className="h-3 w-8 shrink-0" />
+                  </div>
+                  <Skeleton className="h-3 w-full" />
+                  <Skeleton className="h-3 w-3/4" />
                 </div>
-              )}
-            </div>
+                <div className="flex items-center justify-between mt-2.5">
+                  <div className="flex gap-1.5">
+                    <Skeleton className="h-4 w-20 rounded-md" />
+                    <Skeleton className="h-4 w-16 rounded-md" />
+                  </div>
+                  <Skeleton className="h-6 w-20 rounded-lg" />
+                </div>
+              </div>
+            ))}
+            {!insights.loading && (insights.data?.insights || []).map((insight) => (
+              <div key={insight.id} className="flex-1 flex flex-col min-h-0">
+                <InsightCard insight={insight} onNavigate={onNavigate} />
+              </div>
+            ))}
+            {!insights.loading && !(insights.data?.insights || []).length && (
+              <div className="rounded-3xl border border-dashed border-neutral-800 p-6 text-sm text-neutral-500">
+                No major issues are active in the current scope.
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="space-y-6">
+        <div className="flex flex-col gap-6" style={{ height: '580px' }}>
           <div className="rounded-[28px] border border-neutral-800 bg-[#101010] p-5">
             <div className="mb-4 text-sm font-bold uppercase tracking-[0.2em] text-neutral-500">Top Performers</div>
-            <div className="space-y-3">
-              {(data.topPerformers || []).map((item) => (
-                <div key={item.dimension} className="flex items-center justify-between rounded-2xl border border-neutral-900 bg-[#0C0C0C] px-4 py-3">
-                  <div>
-                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-500">{item.dimension}</div>
-                    <div className="mt-1 text-sm font-semibold text-white">{item.label}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-lg font-black text-white">{formatPct(item.conversion)}</div>
-                    <div className="text-xs text-neutral-500">publish conversion</div>
-                  </div>
-                </div>
-              ))}
+            <div className="space-y-2">
+              {(() => {
+                const performers = data.topPerformers || [];
+                const maxPct = Math.max(...performers.map(i => i.conversion || 0), 1);
+                return performers.map((item) => {
+                  const pct = item.conversion || 0;
+                  return (
+                    <div key={item.dimension} className="flex items-center gap-3 rounded-xl border border-neutral-900 bg-[#0C0C0C] px-4 py-3">
+                      <div className="text-sm font-semibold text-white shrink-0 w-28 truncate">{item.label}</div>
+                      <div className="flex-1 h-1.5 rounded-full bg-neutral-800 overflow-hidden">
+                        <div className="h-full rounded-full bg-emerald-500/80" style={{ width: `${Math.min(pct, 100)}%` }} />
+                      </div>
+                      <div className="text-xs font-bold text-neutral-400 tabular-nums shrink-0">{formatPct(pct)}</div>
+                    </div>
+                  );
+                });
+              })()}
             </div>
           </div>
 
-          <div className="rounded-[28px] border border-red-900/40 bg-[#120b0b] p-5">
+          <div className="rounded-[28px] border border-red-900/40 bg-[#120b0b] p-5 flex-1 overflow-y-auto hide-scrollbar">
             <div className="mb-4 text-sm font-bold uppercase tracking-[0.2em] text-red-300">Alerts</div>
             <div className="space-y-3">
               {(data.alerts || []).map((alert) => (

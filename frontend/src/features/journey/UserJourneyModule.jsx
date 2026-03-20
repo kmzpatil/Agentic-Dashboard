@@ -721,27 +721,6 @@ export default function UserJourneyModule({ authUser }) {
   return (
     <div className={`h-full bg-[#050505] text-white ${isMaximized ? 'fixed inset-0 z-50 overflow-hidden p-8 bg-[#0a0a0a]' : 'overflow-hidden flex'}`}>
 
-      {/* ── Shared range-slider styles ── */}
-      <style>{`
-        .frammer-scrollbar::-webkit-scrollbar { width: 4px; }
-        .frammer-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .frammer-scrollbar::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 9999px; }
-        .frammer-scrollbar::-webkit-scrollbar-thumb:hover { background: #333333; }
-        .frammer-scrollbar { scrollbar-width: thin; scrollbar-color: #333333 transparent; }
-        .frammer-range { -webkit-appearance: none; appearance: none; pointer-events: none; background: transparent; }
-        .frammer-range:focus { outline: none; }
-        .frammer-range::-webkit-slider-runnable-track { height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; }
-        .frammer-range::-moz-range-track { height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; }
-        .frammer-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; pointer-events: auto; width: 18px; height: 18px; border-radius: 9999px; background: #fafafa; border: 2px solid #ef4444; box-shadow: 0 0 0 4px rgba(239,68,68,0.15); cursor: pointer; margin-top: -6px; }
-        .frammer-range::-moz-range-thumb { pointer-events: auto; width: 18px; height: 18px; border-radius: 9999px; background: #fafafa; border: 2px solid #ef4444; box-shadow: 0 0 0 4px rgba(239,68,68,0.15); cursor: pointer; }
-        .comparison-slider::-webkit-slider-thumb { background: #A855F7 !important; border: 2px solid #000 !important; box-shadow: 0 0 10px rgba(168,85,247,0.4) !important; }
-        .comparison-slider::-webkit-slider-runnable-track { background: rgba(168,85,247,0.1) !important; }
-        .comparison-slider::-moz-range-thumb { background: #fafafa !important; border: 2px solid #A855F7 !important; box-shadow: 0 0 0 4px rgba(168,85,247,0.15) !important; }
-        .comparison-slider { pointer-events: auto !important; }
-        .sens-slider::-webkit-slider-thumb { width: 14px; height: 14px; border-radius: 9999px; background: #fff; border: 2px solid #ef4444; cursor: pointer; margin-top: -5px; }
-        .sens-slider::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; }
-      `}</style>
-
       {/* Sidebar + content sit side by side; sidebar is fixed, content scrolls */}
 
         {/* ══════════════════════════════════════════════════════════════════════
@@ -786,7 +765,7 @@ export default function UserJourneyModule({ authUser }) {
             {/* Expanded filters */}
             {isFiltersOpen && (
               <>
-                <div className="flex-1 overflow-y-auto frammer-scrollbar min-h-0">
+                <div className="flex-1 overflow-y-auto min-h-0">
                   <div className="space-y-3 p-3">
                     {authUser?.role !== 'client_admin' && authUser?.role !== 'user' && (
                       <div>
@@ -855,7 +834,7 @@ export default function UserJourneyModule({ authUser }) {
         {/* ══════════════════════════════════════════════════════════════════════
             MAIN CONTENT
            ══════════════════════════════════════════════════════════════════════ */}
-        <div className={`overflow-y-auto frammer-scrollbar ${isMaximized ? 'h-full' : 'flex-1 min-w-0 h-full px-6 py-6 space-y-6'}`}>
+        <div className={`overflow-y-auto ${isMaximized ? 'h-full' : 'flex-1 min-w-0 h-full px-6 py-6 space-y-6'}`}>
 
           {!isMaximized && (
             <>
@@ -1094,7 +1073,7 @@ export default function UserJourneyModule({ authUser }) {
                   <AlertTriangle size={14} className="text-amber-500" />
                   <h3 className="text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-300">Anomalies</h3>
                 </div>
-                <div className="flex-1 min-h-0 overflow-y-auto frammer-scrollbar p-4 space-y-3">
+                <div className="flex-1 min-h-0 overflow-y-auto frammer p-4 space-y-3">
                   {anomalies.length === 0 ? (
                     <div className="flex flex-col items-center justify-center p-6 text-center border border-dashed border-neutral-800 rounded-xl">
                       <AlertTriangle size={24} className="text-emerald-500/20 mb-2" />

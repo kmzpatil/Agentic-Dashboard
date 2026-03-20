@@ -66,7 +66,7 @@ export default function KpiCard({ title, value, subtitle, trendData, onRemove, o
 
   return (
     <div 
-      className={`relative bg-[#111111] rounded-xl p-5 border border-neutral-800 transition-colors flex flex-col justify-between ${onClick ? 'cursor-pointer hover:border-neutral-500' : 'hover:border-neutral-600'}`}
+      className={`relative bg-[#111111] rounded-xl p-5 border border-neutral-800 transition-colors flex flex-col justify-between h-full ${onClick ? 'cursor-pointer hover:border-neutral-500' : 'hover:border-neutral-600'}`}
       onClick={onClick}
     >
       {onRemove && (
