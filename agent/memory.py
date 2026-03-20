@@ -22,7 +22,7 @@ logger = logging.getLogger("frammer.memory")
 
 _compactor = LLMClient.fast()
 
-MAX_MEMORY_CHARS = 2000
+MAX_MEMORY_CHARS = 8000
 
 
 def build_memory_update(
@@ -65,7 +65,7 @@ def _compact_memory(memory: str) -> str:
         "- Important data findings and insights mentioned\n"
         "- Any context needed for follow-up questions\n\n"
         "Drop redundant details, repeated queries, and verbose explanations.\n"
-        "Keep the summary under 1500 characters.\n\n"
+        "Keep the summary under 6000 characters.\n\n"
         f"Memory to compact:\n{memory}\n\n"
         "Compacted memory:"
     )
@@ -74,7 +74,7 @@ def _compact_memory(memory: str) -> str:
         return resp.content.strip()
     except Exception as exc:
         logger.warning("Memory compaction failed: %s — truncating instead", exc)
-        return memory[-2000:]
+        return memory[-8000:]
 
 
 def generate_title(user_query: str) -> str:
