@@ -309,17 +309,16 @@ You have six tools:
 
 **Process:**
 - First, decide if this is conversational (greeting, thanks, small talk) → call `answer` directly with a brief reply.
-- For data questions: call `execute_queries` with ALL the SQL you need in a SINGLE call. Pack as many queries as needed — they run in parallel.
+- For data questions: call `execute_queries` with the SQL you need. Pack as many queries as you can into each call — they run in parallel.
 - You'll receive a summary of results (columns, row counts, sample rows, numeric stats).
-- Then call `answer` with your response based on those results.
-- Only call `execute_queries` a second time if a query FAILED and needs fixing, or if the first results reveal you need a specific follow-up.
+- If the data is sufficient to answer the question, call `answer`.
+- If you need more data (e.g. a follow-up query based on initial results, or a query failed and needs fixing), call `execute_queries` again.
+- You may iterate up to {max_iterations} times. Make each iteration count.
 
-**CRITICAL — when to call `answer`:**
-- After your FIRST batch of queries succeeds, call `answer`. Do not gather more data "just to be thorough."
-- The Previous Query Results section already contains everything you've gathered. READ IT. If the data is there, use it.
-- NEVER re-execute queries whose results already appear in Previous Query Results.
-- Most questions need exactly 1 iteration: one `execute_queries` call, then one `answer` call.
-- A second iteration is ONLY justified if: (a) a query errored and needs a fix, or (b) the results revealed something unexpected that requires a targeted follow-up.
+**Efficiency rules:**
+- Check "Previous Query Results" before every iteration. If data is already there, use it — do NOT re-fetch.
+- Never repeat a query whose results already appear in Previous Query Results.
+- For broad questions, gather all the data you need in one or two batches, then call `answer`.
 
 **When to use `get_column_values_tool`:**
 - You need to filter by a specific value but aren't sure what values exist.
@@ -390,12 +389,14 @@ When specifying charts in `answer`, reference queries by their 0-based index in 
 {results_context}
 
 ## Rules for Answering
-- **Extreme brevity**: 2-3 sentences max. No fluff.
+- **Extreme brevity**: 2-3 sentences max for simple questions. For broad questions, up to a short paragraph with key findings.
 - **Data integrity**: ONLY use numbers from the results. Never estimate or hallucinate.
 - **Business language**: uploads (not raw_videos), generated content/assets (not created_assets), published content (not published_posts), content format (not Input_Type), asset type (not Output_Type).
 - **Never expose**: SQL, table names, column names, internal IDs, or schema details.
 - **Bold** key numbers and terms. Use markdown.
 - If results show trends or comparisons, highlight the most important finding.
+- **NEVER generate HTML**. Your response must be plain text with markdown formatting only. No `<div>`, `<style>`, `<html>`, or any HTML tags.
+- If the user asks for a "report", still answer in concise markdown. Full formatted reports are generated separately via report mode.
 
 Current System Time: {now_str}
 """
@@ -858,12 +859,14 @@ async def run_agent(
                     f"  {sq['id']}. [{sq['type'].upper()}] {sq['question']}"
                     for sq in report_sub_questions
                 ) if report_sub_questions else ""
-                system += "\n\n## Mode: REPORT — Data Gathering Phase"
-                system += "\nYou are gathering data for a report. A separate system will format the final report from your data."
-                system += "\nYour ONLY job: execute ONE batch of queries covering all sub-questions below, then call `answer` with a brief summary."
-                system += "\nDo NOT format the report yourself. Do NOT re-query data that already appears in Previous Query Results."
+                system += "\n\n## Mode: REPORT"
+                system += "\nYou are gathering data for a comprehensive analytical report. A separate system will format the final report — you do NOT need to format anything."
+                system += "\nGather data by executing queries for the sub-questions below. Query multiple angles, breakdowns, and comparisons to ensure thorough coverage."
+                system += "\nOnce you have data covering the sub-questions, call `answer` with a brief text summary of what you found. Do NOT generate HTML."
+                system += "\nIf a query fails, fix it and retry. If you need a follow-up query based on results, go ahead."
+                system += "\nCheck Previous Query Results — do not re-run queries whose data is already there."
                 if sq_text:
-                    system += f"\n\n## Sub-Questions (execute ALL in one batch)\n{sq_text}"
+                    system += f"\n\n## Report Sub-Questions to Investigate\n{sq_text}\nAddress these systematically with your queries."
             messages = _build_messages(system, question, history)
 
             logger.info("=== ITERATION %d: Calling LLM (%d messages) ===", iteration + 1, len(messages))
@@ -1115,12 +1118,14 @@ async def run_agent_stream(
                     f"  {sq['id']}. [{sq['type'].upper()}] {sq['question']}"
                     for sq in report_sub_questions
                 ) if report_sub_questions else ""
-                system += "\n\n## Mode: REPORT — Data Gathering Phase"
-                system += "\nYou are gathering data for a report. A separate system will format the final report from your data."
-                system += "\nYour ONLY job: execute ONE batch of queries covering all sub-questions below, then call `answer` with a brief summary."
-                system += "\nDo NOT format the report yourself. Do NOT re-query data that already appears in Previous Query Results."
+                system += "\n\n## Mode: REPORT"
+                system += "\nYou are gathering data for a comprehensive analytical report. A separate system will format the final report — you do NOT need to format anything."
+                system += "\nGather data by executing queries for the sub-questions below. Query multiple angles, breakdowns, and comparisons to ensure thorough coverage."
+                system += "\nOnce you have data covering the sub-questions, call `answer` with a brief text summary of what you found. Do NOT generate HTML."
+                system += "\nIf a query fails, fix it and retry. If you need a follow-up query based on results, go ahead."
+                system += "\nCheck Previous Query Results — do not re-run queries whose data is already there."
                 if sq_text:
-                    system += f"\n\n## Sub-Questions (execute ALL in one batch)\n{sq_text}"
+                    system += f"\n\n## Report Sub-Questions to Investigate\n{sq_text}\nAddress these systematically with your queries."
             messages = _build_messages(system, question, history)
 
             logger.info("=== STREAM ITERATION %d: Calling LLM ===", iteration + 1)
