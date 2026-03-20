@@ -136,18 +136,108 @@ export function SankeySkeleton({ height = 300 }) {
 /* ── Overview full-page skeleton ───────────────────────────────────────── */
 export function OverviewSkeleton() {
   return (
-    <div className="p-6 space-y-6 h-full overflow-y-auto bg-[#050505]">
-      <KpiSkeleton count={5} />
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <TableSkeleton rows={4} cols={2} />
-        <TableSkeleton rows={3} cols={1} />
+    <div className="h-full overflow-y-auto bg-[#050505] px-6 py-6 space-y-6">
+
+      {/* Row 1: KPI cards (scrollable) + fixed Add/Create buttons */}
+      <div className="flex gap-4 items-stretch">
+        <div className="flex gap-4 flex-1 min-w-0 overflow-hidden">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="flex-none min-h-[150px] bg-[#111111] rounded-xl border border-neutral-800 p-5 flex flex-col justify-between" style={{ width: 'calc(25% - 12px)' }}>
+              <div className="space-y-2">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-9 w-28" />
+              </div>
+              <Skeleton className="h-3 w-16" />
+            </div>
+          ))}
+        </div>
+        {/* Add/Create buttons placeholder */}
+        <div className="shrink-0 w-52 min-h-[150px] flex flex-col gap-2">
+          <div className="flex-1 rounded-xl border border-dashed border-neutral-800 bg-[#111111]" />
+          <div className="flex-1 rounded-xl border border-dashed border-purple-900/30 bg-purple-950/5" />
+        </div>
       </div>
-      <div className="bg-[#111111] rounded-xl border border-neutral-800 p-5 flex items-start gap-4">
-        <Skeleton className="w-10 h-10 rounded-full shrink-0" />
-        <div className="flex-1 space-y-2">
-          <Skeleton className="h-4 w-36" />
-          <Skeleton className="h-3 w-full" />
-          <Skeleton className="h-3 w-3/4" />
+
+      {/* Row 2: Output Types Summary */}
+      <div className="rounded-[28px] border border-neutral-800 bg-[#0D0D0D] p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <Skeleton className="h-3 w-3" />
+          <Skeleton className="h-3 w-36" />
+        </div>
+        {/* Tabs */}
+        <div className="flex gap-2 border-b border-neutral-800 mb-6 pb-2">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton key={i} className="h-4 w-20" />
+          ))}
+        </div>
+        {/* Stat boxes */}
+        <div className="grid grid-cols-3 gap-4">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="rounded-2xl border border-neutral-900 bg-[#121212] p-4 text-center space-y-2">
+              <Skeleton className="h-2 w-16 mx-auto" />
+              <Skeleton className="h-8 w-20 mx-auto" />
+              <Skeleton className="h-3 w-14 mx-auto" />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Row 3: AI Insights (left) + Top Performers & Alerts (right) */}
+      <div className="grid grid-cols-1 xl:grid-cols-[1.25fr_0.95fr] gap-6">
+        {/* Left: AI Insights */}
+        <div className="rounded-[28px] border border-neutral-800 bg-[#101010] p-5 flex flex-col" style={{ height: '580px' }}>
+          <Skeleton className="h-3 w-36 mb-4 shrink-0" />
+          <div className="flex flex-col gap-3 flex-1 min-h-0">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="flex-1 rounded-2xl border border-neutral-800/60 bg-[#0C0C0C] border-l-[3px] border-l-neutral-700 px-4 py-3.5 flex flex-col justify-between">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Skeleton className="h-4 w-16 rounded-md" />
+                    <Skeleton className="h-3 flex-1" />
+                  </div>
+                  <Skeleton className="h-3 w-full" />
+                </div>
+                <div className="flex items-center justify-between mt-2">
+                  <div className="flex gap-1">
+                    <Skeleton className="h-4 w-16 rounded-md" />
+                    <Skeleton className="h-4 w-20 rounded-md" />
+                  </div>
+                  <Skeleton className="h-6 w-20 rounded-lg" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Right: Top Performers + Alerts */}
+        <div className="flex flex-col gap-6" style={{ height: '580px' }}>
+          {/* Top Performers */}
+          <div className="rounded-[28px] border border-neutral-800 bg-[#101010] p-5">
+            <Skeleton className="h-3 w-32 mb-4" />
+            <div className="space-y-2">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="flex items-center gap-3 rounded-xl border border-neutral-900 bg-[#0C0C0C] px-4 py-3">
+                  <Skeleton className="h-4 w-24 shrink-0" />
+                  <div className="flex-1 h-2 rounded-full bg-neutral-800">
+                    <Skeleton className="h-2 rounded-full" style={{ width: `${20 + i * 12}%` }} />
+                  </div>
+                  <Skeleton className="h-4 w-10 shrink-0" />
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Alerts */}
+          <div className="rounded-[28px] border border-red-900/40 bg-[#120b0b] p-5 flex-1 overflow-hidden">
+            <Skeleton className="h-3 w-16 mb-4" />
+            <div className="space-y-3">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="rounded-2xl border border-red-950/50 bg-[#190f0f] px-4 py-3 space-y-1.5">
+                  <Skeleton className="h-4 w-40" />
+                  <Skeleton className="h-3 w-32" />
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </div>

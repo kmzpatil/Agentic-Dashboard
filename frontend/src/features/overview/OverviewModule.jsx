@@ -177,69 +177,62 @@ export default function OverviewModule({ onNavigate }) {
   const sparklines = data?.sparklines || {};
 
   return (
-    <div className="h-full overflow-y-auto bg-[#050505] px-6 py-6 space-y-6">
-      <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
-        <KpiCard
-          title="UPLOADED"
-          value={formatNumber(kpis.uploaded_count)}
-          subtitle={formatHours(kpis.uploaded_duration)}
-          description="Total raw video files uploaded into the pipeline"
-          trendData={[12, 18, 15, 22, 20, 28, 25]}
-          onClick={() => handleCoreKpiClick('uploaded_count')}
-        />
-        <KpiCard
-          title="PROCESSED"
-          value={formatNumber(kpis.processed_count)}
-          subtitle="Videos reaching create stage"
-          description="Videos that passed through initial processing and slicing"
-          trendData={[10, 14, 12, 19, 18, 24, 22]}
-          onClick={() => handleCoreKpiClick('processed_count')}
-        />
-        <KpiCard
-          title="CREATED"
-          value={formatNumber(kpis.created_count)}
-          subtitle={formatHours(kpis.created_duration)}
-          description="Individual clip assets generated from all source videos"
-          trendData={[45, 52, 48, 60, 58, 65, 62]}
-          onClick={() => handleCoreKpiClick('created_count')}
-        />
-        <KpiCard
-          title="PUBLISHED"
-          value={formatNumber(kpis.published_count)}
-          subtitle={formatHours(kpis.published_duration)}
-          description="Posts successfully published to one or more platforms"
-          trendData={[20, 25, 22, 30, 28, 35, 32]}
-          onClick={() => handleCoreKpiClick('published_count')}
-        />
-        
-        {visibleExtraKpis.map(kpi => (
-          <KpiCard
-            key={kpi.id}
-            title={kpi.title}
-            value={kpi.getValue(kpis)}
-            subtitle={kpi.getSubtitle(kpis)}
-            trendData={kpi.trendData}
-            onRemove={() => handleRemoveKpi(kpi.id)}
-            onClick={() => setSelectedKpi(kpi)}
-          />
-        ))}
+    <div className="h-full overflow-y-auto hide-scrollbar bg-[#050505] px-6 py-6 space-y-6">
+      {/* KPI row: only the cards scroll, buttons stay fixed on the right */}
+      <section className="flex gap-4 items-stretch">
+        {/* Scrollable cards area — 4 cards fill full width exactly; adding more triggers scroll */}
+        <div className="flex-1 min-w-0 overflow-x-auto hide-scrollbar">
+          {/* Each card: calc(25% - 12px) so 4 cards + 3×16px gaps = 100%. flex-none keeps width fixed. */}
+          <div className="flex gap-4 h-full">
+            {[
+              { title: 'UPLOADED', value: formatNumber(kpis.uploaded_count), subtitle: formatHours(kpis.uploaded_duration), description: 'Total raw video files uploaded into the pipeline', trendData: [12, 18, 15, 22, 20, 28, 25], id: 'uploaded_count' },
+              { title: 'PROCESSED', value: formatNumber(kpis.processed_count), subtitle: 'Videos reaching create stage', description: 'Videos that passed through initial processing and slicing', trendData: [10, 14, 12, 19, 18, 24, 22], id: 'processed_count' },
+              { title: 'CREATED', value: formatNumber(kpis.created_count), subtitle: formatHours(kpis.created_duration), description: 'Individual clip assets generated from all source videos', trendData: [45, 52, 48, 60, 58, 65, 62], id: 'created_count' },
+              { title: 'PUBLISHED', value: formatNumber(kpis.published_count), subtitle: formatHours(kpis.published_duration), description: 'Posts successfully published to one or more platforms', trendData: [20, 25, 22, 30, 28, 35, 32], id: 'published_count' },
+            ].map(card => (
+              <div key={card.id} className="flex-none min-h-[150px]" style={{ width: 'calc(25% - 12px)' }}>
+                <KpiCard
+                  title={card.title}
+                  value={card.value}
+                  subtitle={card.subtitle}
+                  description={card.description}
+                  trendData={card.trendData}
+                  onClick={() => handleCoreKpiClick(card.id)}
+                />
+              </div>
+            ))}
 
-        {/* Custom KPI cards */}
-        {customKpis.map(kpi => (
-          <KpiCard
-            key={kpi.id}
-            title={kpi.title}
-            value={kpi.getValue(kpis)}
-            subtitle={kpi.getSubtitle(kpis)}
-            trendData={kpi.trendData}
-            onEdit={() => handleEditCustomKpi(kpi)}
-            onRemove={() => handleRemoveCustomKpi(kpi)}
-            onClick={() => handleCustomKpiClick(kpi)}
-          />
-        ))}
+            {visibleExtraKpis.map(kpi => (
+              <div key={kpi.id} className="flex-none min-h-[150px]" style={{ width: 'calc(25% - 12px)' }}>
+                <KpiCard
+                  title={kpi.title}
+                  value={kpi.getValue(kpis)}
+                  subtitle={kpi.getSubtitle(kpis)}
+                  trendData={kpi.trendData}
+                  onRemove={() => handleRemoveKpi(kpi.id)}
+                  onClick={() => setSelectedKpi(kpi)}
+                />
+              </div>
+            ))}
 
-        {/* Add More + Create KPI — combined in one grid slot, stacked vertically */}
-        <div className="flex flex-col gap-2 min-h-[140px]">
+            {customKpis.map(kpi => (
+              <div key={kpi.id} className="flex-none min-h-[150px]" style={{ width: 'calc(25% - 12px)' }}>
+                <KpiCard
+                  title={kpi.title}
+                  value={kpi.getValue(kpis)}
+                  subtitle={kpi.getSubtitle(kpis)}
+                  trendData={kpi.trendData}
+                  onEdit={() => handleEditCustomKpi(kpi)}
+                  onRemove={() => handleRemoveCustomKpi(kpi)}
+                  onClick={() => handleCustomKpiClick(kpi)}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Fixed Add/Create buttons — never scrolls */}
+        <div className="shrink-0 w-52 flex flex-col gap-2 min-h-[150px]">
           <button
             onClick={handleAddMore}
             className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-4 border border-dashed transition-colors ${
@@ -253,7 +246,6 @@ export default function OverviewModule({ onNavigate }) {
               {isSelectionPanelOpen ? 'Close' : 'Add More'}
             </span>
           </button>
-
           <button
             onClick={() => setShowKpiCreator(true)}
             className="flex flex-1 items-center justify-center gap-2 rounded-xl px-4 border border-dashed border-purple-800/50 bg-purple-950/10 hover:bg-purple-950/20 hover:border-purple-600 text-purple-400 hover:text-purple-300 transition-colors"
@@ -377,12 +369,14 @@ export default function OverviewModule({ onNavigate }) {
         </section>
       )}
 
-      <section className="grid grid-cols-1 xl:grid-cols-[1.25fr_0.95fr] gap-6 xl:items-start">
-        <div className="rounded-[28px] border border-neutral-800 bg-[#101010] p-5 xl:max-h-[600px] flex flex-col">
+      <section className="grid grid-cols-1 xl:grid-cols-[1.25fr_0.95fr] gap-6 xl:items-stretch">
+        <div className="rounded-[28px] border border-neutral-800 bg-[#101010] p-5 flex flex-col" style={{ height: '580px' }}>
           <div className="mb-4 text-sm font-bold uppercase tracking-[0.2em] text-neutral-500 shrink-0">Frammer AI Insights</div>
-          <div className="grid grid-cols-1 gap-3 overflow-y-auto pr-1 hide-scrollbar min-h-0">
+          <div className="flex flex-col gap-3 flex-1 min-h-0 overflow-y-auto hide-scrollbar">
             {(insights.data?.insights || []).map((insight) => (
-              <InsightCard key={insight.id} insight={insight} onNavigate={onNavigate} />
+              <div key={insight.id} className="flex-1 flex flex-col min-h-0">
+                <InsightCard insight={insight} onNavigate={onNavigate} />
+              </div>
             ))}
             {!insights.loading && !(insights.data?.insights || []).length && (
               <div className="rounded-3xl border border-dashed border-neutral-800 p-6 text-sm text-neutral-500">
@@ -392,12 +386,12 @@ export default function OverviewModule({ onNavigate }) {
           </div>
         </div>
 
-        <div className="space-y-6 xl:max-h-[600px]">
+        <div className="flex flex-col gap-6" style={{ height: '580px' }}>
           <div className="rounded-[28px] border border-neutral-800 bg-[#101010] p-5">
             <div className="mb-4 text-sm font-bold uppercase tracking-[0.2em] text-neutral-500">Top Performers</div>
             <div className="space-y-2">
               {(data.topPerformers || []).map((item) => {
-                const pct = Math.round((item.conversion || 0) * 100);
+                const pct = item.conversion || 0;
                 return (
                   <div key={item.dimension} className="flex items-center gap-3 rounded-xl border border-neutral-900 bg-[#0C0C0C] px-4 py-3">
                     <div className="text-sm font-semibold text-white shrink-0 w-28 truncate">{item.label}</div>
@@ -414,7 +408,7 @@ export default function OverviewModule({ onNavigate }) {
             </div>
           </div>
 
-          <div className="rounded-[28px] border border-red-900/40 bg-[#120b0b] p-5">
+          <div className="rounded-[28px] border border-red-900/40 bg-[#120b0b] p-5 flex-1 overflow-y-auto hide-scrollbar">
             <div className="mb-4 text-sm font-bold uppercase tracking-[0.2em] text-red-300">Alerts</div>
             <div className="space-y-3">
               {(data.alerts || []).map((alert) => (
