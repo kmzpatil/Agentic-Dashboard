@@ -568,7 +568,7 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
           'Content-Type': 'application/json',
           ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         },
-        body: JSON.stringify({ message: text, filters: {}, conversation_id: conversationId, report_mode: reportMode }),
+        body: JSON.stringify({ message: text, filters: {}, conversation_id: conversationId, mode: reportMode ? 'report' : 'normal' }),
       });
 
       if (!res.ok) {
@@ -702,7 +702,7 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
             'Content-Type': 'application/json',
             ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
           },
-          body: JSON.stringify({ message: text, filters: {}, conversation_id: conversationId, report_mode: reportMode }),
+          body: JSON.stringify({ message: text, filters: {}, conversation_id: conversationId, mode: reportMode ? 'report' : 'normal' }),
         });
         const payload = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(payload.detail || payload.error || `Request failed: ${res.status}`);

@@ -313,7 +313,9 @@ You have six tools:
 - You'll receive a summary of results (columns, row counts, sample rows, numeric stats).
 - If the data is sufficient to answer the question, call `answer`.
 - If you need more data (e.g. a follow-up query based on initial results, or a query failed and needs fixing), call `execute_queries` again.
-- You have up to {max_iterations} iterations available. Most questions need 1-3. Use as many as needed.
+- IMPORTANT: After 1-2 rounds of queries, you almost certainly have enough data. Call `answer` with what you have. Do NOT re-query data you already have.
+- Never repeat the same queries. If the data is already in Previous Query Results, use it — do NOT re-fetch.
+- You have up to {max_iterations} iterations as a safety cap. Most questions need 1-2 iterations. Aim to answer as quickly as possible.
 
 **When to use `get_column_values_tool`:**
 - You need to filter by a specific value but aren't sure what values exist.
