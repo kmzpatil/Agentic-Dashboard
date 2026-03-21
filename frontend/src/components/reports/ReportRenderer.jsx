@@ -221,6 +221,17 @@ export default function ReportRenderer({ reportHtml }) {
   const [iframeHeight, setIframeHeight] = useState(600);
   const iframeRef = useRef(null);
 
+  // postMessage listener for sandbox-safe auto-resize (must be before early return for hooks rules)
+  React.useEffect(() => {
+    const handler = (e) => {
+      if (e.data?.type === 'report-iframe-resize' && typeof e.data.height === 'number') {
+        setIframeHeight(Math.min(Math.max(e.data.height + 40, 400), 2000));
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, []);
+
   if (!reportHtml) return null;
 
   const titleMatch = reportHtml.match(/<(?:h1)[^>]*>(.*?)<\/(?:h1)>/si)
@@ -232,19 +243,19 @@ export default function ReportRenderer({ reportHtml }) {
   // Build full document once — used for both preview and PDF export
   const trimmed = reportHtml.trim().toLowerCase();
   const isFullDocument = trimmed.startsWith('<!doctype html') || trimmed.startsWith('<html');
-  const fullDoc = isFullDocument ? reportHtml : buildPdfDocument(reportHtml);
+  const baseDoc = isFullDocument ? reportHtml : buildPdfDocument(reportHtml);
 
-  const handleIframeLoad = () => {
-    try {
-      const iframe = iframeRef.current;
-      if (iframe?.contentDocument?.body) {
-        const height = iframe.contentDocument.body.scrollHeight;
-        setIframeHeight(Math.min(Math.max(height + 40, 400), 2000));
-      }
-    } catch {
-      // srcDoc same-origin — this shouldn't fail, but guard anyway
+  // Inject a postMessage resize script so the sandboxed iframe (no allow-same-origin)
+  // can communicate its content height to the parent for auto-resize.
+  const resizeScript = `<script>
+    function _notifyHeight() {
+      var h = document.documentElement.scrollHeight || document.body.scrollHeight;
+      window.parent.postMessage({ type: 'report-iframe-resize', height: h }, '*');
     }
-  };
+    window.addEventListener('load', function() { setTimeout(_notifyHeight, 200); });
+    new MutationObserver(_notifyHeight).observe(document.body, { childList: true, subtree: true });
+  <\/script>`;
+  const fullDoc = baseDoc.replace(/<\/body>/i, resizeScript + '</body>');
 
   const handleDownloadPdf = async () => {
     setDownloading(true);
@@ -305,9 +316,8 @@ export default function ReportRenderer({ reportHtml }) {
         <iframe
           ref={iframeRef}
           srcDoc={fullDoc}
-          onLoad={handleIframeLoad}
           style={{ width: '100%', height: `${iframeHeight}px`, border: 'none' }}
-          sandbox="allow-scripts allow-same-origin"
+          sandbox="allow-scripts"
           title={reportTitle}
         />
       </div>

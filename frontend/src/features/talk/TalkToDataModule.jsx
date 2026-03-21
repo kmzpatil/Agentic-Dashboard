@@ -863,7 +863,7 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={voice.listening ? 'Listening...' : 'Ask Copilot about your data...'}
+                placeholder={voice.listening ? 'Listening...' : pendingClarification ? 'Reply to clarification...' : 'Ask Copilot about your data...'}
                 disabled={loading}
                 className="flex-1 bg-transparent px-5 py-4 text-[15px] text-white placeholder-neutral-600 focus:outline-none disabled:opacity-50"
               />
