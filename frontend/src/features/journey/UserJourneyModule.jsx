@@ -90,7 +90,7 @@ function StatCard({ title, value, subtitle, trendData }) {
   };
 
   return (
-    <div className="bg-[#111111] rounded-xl p-5 border border-neutral-800 flex justify-between items-start min-h-[120px] overflow-hidden">
+    <div className="bg-[#111111] rounded-xl p-5 border border-neutral-800 flex justify-between items-start h-full overflow-hidden">
       <div className="flex-1 flex flex-col justify-between h-full">
         <div>
           <div className="text-xs font-bold tracking-wider text-neutral-500 mb-1">{title}</div>
@@ -1031,14 +1031,14 @@ export default function UserJourneyModule({ authUser }) {
                 const visible = TOP_KPIS.filter(k => visibleTopKpis.includes(k.id));
                 const cols = Math.min(visible.length, 4);
                 return visible.length > 0 && (
-                  <section className={`grid gap-4`} style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+                  <section className={`grid gap-4`} style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gridAutoRows: '120px' }}>
                     {visible.map(k => {
                       const d = topCardData[k.id];
                       if (!d) return null;
                       const def = kpiDefs[k.id];
                       const front = <StatCard {...d} />;
                       const back = (
-                        <div className="bg-[#111111] rounded-xl p-5 border border-neutral-800 flex flex-col justify-center gap-2 min-h-[120px] h-full overflow-hidden">
+                        <div className="bg-[#111111] rounded-xl p-5 border border-neutral-800 flex flex-col justify-center gap-2 h-full overflow-hidden">
                           <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-neutral-400">{d.title}</div>
                           <div className="text-[12px] leading-relaxed text-neutral-300">
                             {def?.definition || 'No definition available.'}
@@ -1048,7 +1048,7 @@ export default function UserJourneyModule({ authUser }) {
                           </div>
                         </div>
                       );
-                      return <FlipCard key={k.id} front={front} back={back} />;
+                      return <FlipCard key={k.id} front={front} back={back} className="h-full" />;
                     })}
                   </section>
                 );
