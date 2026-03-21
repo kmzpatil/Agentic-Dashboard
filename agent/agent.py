@@ -680,14 +680,22 @@ def _build_cached_system_message(
             f"  {sq['id']}. [{sq['type'].upper()}] {sq['question']}"
             for sq in (report_sub_questions or [])
         ) if report_sub_questions else ""
-        prompt_text += "\n\n## Mode: REPORT"
-        prompt_text += "\nYou are gathering data for a comprehensive analytical report. A separate system will format the final report — you do NOT need to format anything."
-        prompt_text += "\nGather data by executing queries for the sub-questions below. Query multiple angles, breakdowns, and comparisons to ensure thorough coverage."
-        prompt_text += "\nOnce you have data covering the sub-questions, call `answer` with a brief text summary of what you found. Do NOT generate HTML."
-        prompt_text += "\nIf a query fails, fix it and retry. If you need a follow-up query based on results, go ahead."
+        prompt_text += "\n\n## Mode: REPORT — COMPREHENSIVE DATA GATHERING"
+        prompt_text += "\nYou are gathering data for a comprehensive, board-level analytical report. A separate system will format the final report — you do NOT need to format anything."
+        prompt_text += "\n\n**Your goal is to gather as much relevant data as possible.** The report quality depends entirely on how much data you collect."
+        prompt_text += "\n\n### Data Gathering Strategy:"
+        prompt_text += "\n1. **First call**: Execute ALL sub-questions below in a single `execute_queries` batch (they run in parallel)."
+        prompt_text += "\n2. **Review results**: After receiving results, look for gaps:"
+        prompt_text += "\n   - Any failed queries? Fix and retry."
+        prompt_text += "\n   - Any dimension not yet covered (language, format, client, platform, time, asset type)? Add queries."
+        prompt_text += "\n   - Any surprising patterns worth drilling into? Add follow-up queries."
+        prompt_text += "\n   - Any cross-tabulations missing (e.g., format × language, client × platform)? Add them."
+        prompt_text += "\n3. **Go deeper**: Use 2-3 iterations to build a comprehensive data foundation. Do NOT stop after one batch."
+        prompt_text += "\n4. **Only then call `answer`**: Once you have 8+ successful query results covering multiple dimensions."
+        prompt_text += "\n\nDo NOT generate HTML. Call `answer` with a brief text summary of what you found."
         prompt_text += "\nCheck your previous tool results — do not re-run queries whose data is already there."
         if sq_text:
-            prompt_text += f"\n\n## Report Sub-Questions to Investigate\n{sq_text}\nAddress these systematically with your queries."
+            prompt_text += f"\n\n## Report Sub-Questions to Investigate\n{sq_text}\nExecute ALL of these in your first batch, then go deeper based on results."
 
     # Gemini-specific reinforcement
     if _llm_client.provider == "gemini":
@@ -886,14 +894,14 @@ async def _synthesize_report(question: str, all_query_results: List[Dict]) -> st
     Falls back to Anthropic if Gemini is unavailable.
     Returns a complete self-contained HTML document.
     """
-    # Phase 1: Build results_block (30-row samples for Gemini context)
+    # Phase 1: Build results_block (50-row samples for synthesis context)
     results_parts = []
     for i, qr in enumerate(all_query_results):
         desc = qr.get("description", f"Query {i}")
         sq_type = qr.get("type", "breakdown")
 
         if qr.get("status") == "success":
-            sample = qr.get("sample", qr.get("data", []))[:30]
+            sample = qr.get("sample", qr.get("data", []))[:50]
             cols = qr.get("columns", [])
             results_parts.append(
                 f"### Query {i} ({sq_type}): {desc}\n"

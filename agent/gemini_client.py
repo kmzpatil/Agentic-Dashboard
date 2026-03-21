@@ -34,7 +34,7 @@ def _build_report_pool():
     if _report_pool:
         return
 
-    model = os.getenv("GEMINI_REPORT_MODEL", "gemini-3.1-flash-lite-preview").strip().strip('"')
+    model = os.getenv("GEMINI_REPORT_MODEL", "gemini-3-flash-preview").strip().strip('"')
 
     try:
         from langchain_google_genai import ChatGoogleGenerativeAI
@@ -67,7 +67,7 @@ def get_gemini_llm():
     # Support explicit GOOGLE_API_KEY as single-key override
     api_key = os.getenv("GOOGLE_API_KEY", "").strip().strip('"')
     if api_key:
-        model = os.getenv("GEMINI_REPORT_MODEL", "gemini-3.1-flash-lite-preview").strip().strip('"')
+        model = os.getenv("GEMINI_REPORT_MODEL", "gemini-3-flash-preview").strip().strip('"')
         try:
             from langchain_google_genai import ChatGoogleGenerativeAI
             return ChatGoogleGenerativeAI(
