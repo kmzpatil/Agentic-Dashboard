@@ -16,6 +16,7 @@ import pandas as pd
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 import shap
@@ -32,6 +33,15 @@ META_PATH = MODEL_DIR / "publish_predictor_meta.pkl"
 
 _model: RandomForestClassifier | None = None
 _meta: dict[str, Any] | None = None
+
+
+def _unwrap_rf(model):
+    """Return the underlying RandomForestClassifier, unwrapping CalibratedClassifierCV if needed."""
+    if isinstance(model, CalibratedClassifierCV):
+        if hasattr(model, 'calibrated_classifiers_') and model.calibrated_classifiers_:
+            return model.calibrated_classifiers_[0].estimator
+        return model.estimator
+    return model
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -373,7 +383,8 @@ def predictor_predict(req: PredictRequest, auth: AuthContext = Depends(require_a
         )
 
         # 4. Binary Voting Logic
-        tree_predictions = [int(tree.predict(sample_final.values)[0]) for tree in _model.estimators_]
+        rf = _unwrap_rf(_model)
+        tree_predictions = [int(tree.predict(sample_final.values)[0]) for tree in rf.estimators_]
         yes_votes = int(sum(1 for t in tree_predictions if t == 1))
         no_votes = int(sum(1 for t in tree_predictions if t == 0))
         probability = float((yes_votes / len(tree_predictions)) * 100)
@@ -382,7 +393,7 @@ def predictor_predict(req: PredictRequest, auth: AuthContext = Depends(require_a
         # 5. SHAP TreeExplainer for Root Cause Analysis (RCA)
         top_impacts = []
         try:
-            explainer = shap.TreeExplainer(_model)
+            explainer = shap.TreeExplainer(rf)
             shap_values = explainer.shap_values(sample_final)
             
             # Extract impact specifically for class 1 (Is_Published = True)
