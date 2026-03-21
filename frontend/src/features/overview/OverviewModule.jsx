@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, Users, PlaySquare, AlertCircle, Plus, X, Wand2 } from "lucide-react";
+import { TrendingUp, Plus, X, Wand2 } from "lucide-react";
 import { Line } from 'react-chartjs-2';
 import { useApi } from '../../hooks/useApi';
 import { API_BASE } from '../../lib/constants';
@@ -10,6 +10,117 @@ import InsightCard from '../../components/insights/InsightCard';
 import KpiDetailsModal from './KpiDetailsModal';
 import { KPI_DEFINITIONS } from './kpiDefinitions';
 import KPICreator from '../../components/KPICreator';
+
+const STATIC_CORE_KPI_CARDS = [
+  {
+    id: 'uploaded_count',
+    title: 'UPLOADED',
+    value: '10,683',
+    subtitle: '3936.0 hrs',
+    trendData: [8, 14, 10, 18, 15, 24, 21],
+  },
+  {
+    id: 'processed_count',
+    title: 'PROCESSED',
+    value: '10,657',
+    subtitle: 'Videos reaching create stage',
+    trendData: [7, 12, 9, 19, 16, 25, 22],
+  },
+  {
+    id: 'created_count',
+    title: 'CREATED',
+    value: '53,669',
+    subtitle: '16816.2 hrs',
+    trendData: [9, 13, 11, 21, 19, 24, 23],
+  },
+  {
+    id: 'published_count',
+    title: 'PUBLISHED',
+    value: '1,294',
+    subtitle: '424.0 hrs',
+    trendData: [5, 12, 7, 18, 14, 23, 20],
+  },
+];
+
+function MissionRailMetricCard({ title, value, subtitle, trendData, onClick }) {
+  const points = Array.isArray(trendData) && trendData.length ? trendData : [8, 12, 10, 16, 14, 19, 17];
+  const isPositive = points[points.length - 1] >= points[0];
+  const color = isPositive ? '#00d8a0' : '#ef4444';
+  const data = {
+    labels: points.map((_, i) => i.toString()),
+    datasets: [
+      {
+        data: points,
+        borderColor: color,
+        borderWidth: 2.4,
+        tension: 0.42,
+        pointRadius: 0,
+        fill: true,
+        backgroundColor: (ctx) => {
+          const chart = ctx.chart;
+          const gradient = chart.ctx.createLinearGradient(0, 0, 0, chart.height);
+          gradient.addColorStop(0, `${color}3d`);
+          gradient.addColorStop(1, `${color}00`);
+          return gradient;
+        },
+      },
+    ],
+  };
+  const options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false }, tooltip: { enabled: false } },
+    scales: { x: { display: false }, y: { display: false } },
+    interaction: { mode: 'index', intersect: false },
+  };
+
+  const content = (
+    <div className="h-full min-h-[128px] rounded-xl border border-neutral-800 bg-[#0f1218] px-4 py-4 transition-colors hover:border-neutral-600">
+      <div className="flex h-full items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-neutral-500">
+            {title}
+          </div>
+          <div className="mt-1 text-[42px] leading-none font-black tracking-tight text-white">
+            {value}
+          </div>
+          <div className="mt-2 text-[14px] text-neutral-400 leading-snug">
+            {subtitle}
+          </div>
+        </div>
+        <div className="h-[64px] w-[96px] shrink-0 mt-4">
+          <Line data={data} options={options} />
+        </div>
+      </div>
+    </div>
+  );
+
+  if (!onClick) return content;
+  return (
+    <button type="button" onClick={onClick} className="w-full text-left">
+      {content}
+    </button>
+  );
+}
+
+function MissionRailActionCard({ icon, label, onClick, tone = 'neutral' }) {
+  const toneClass = tone === 'brand'
+    ? 'border-violet-700/50 bg-violet-950/20 text-violet-300 hover:border-violet-500/60 hover:bg-violet-950/30'
+    : 'border-neutral-700 bg-[#12151b] text-neutral-200 hover:border-neutral-500 hover:bg-[#171b22]';
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`h-full w-full rounded-xl border px-4 py-4 transition-colors ${toneClass}`}
+    >
+      <div className="flex h-full items-center justify-center gap-2">
+        {icon}
+        <span className="text-[13px] font-bold uppercase tracking-[0.1em]">{label}</span>
+      </div>
+    </button>
+  );
+}
 
 export default function OverviewModule({ onNavigate }) {
   const overview = useApi(`${API_BASE}/overview`, []);
@@ -34,19 +145,10 @@ export default function OverviewModule({ onNavigate }) {
     }
   }, [data?.outputStats, activeOutputTab]);
 
-  if (loading) return <OverviewSkeleton />;
-  if (error) return <div className="p-6 text-red-400">{error}</div>;
-
   const kpis = data.kpis || {};
 
   const handleAddMore = () => {
     setIsSelectionPanelOpen(!isSelectionPanelOpen);
-  };
-
-  const handleAddKpi = (id) => {
-    if (!activeExtraKpis.includes(id) && !stagedKpis.includes(id)) {
-      setStagedKpis([...stagedKpis, id]);
-    }
   };
 
   const handleStageKpi = (id) => {
@@ -175,92 +277,87 @@ export default function OverviewModule({ onNavigate }) {
     }
   };
 
-  const sparklines = data?.sparklines || {};
-
-  const coreKpiCards = [
-    { title: 'UPLOADED', value: formatNumber(kpis.uploaded_count), subtitle: formatHours(kpis.uploaded_duration), trendData: [12, 18, 15, 22, 20, 28, 25], id: 'uploaded_count' },
-    { title: 'PROCESSED', value: formatNumber(kpis.processed_count), subtitle: 'Videos reaching create stage', trendData: [10, 14, 12, 19, 18, 24, 22], id: 'processed_count' },
-    { title: 'CREATED', value: formatNumber(kpis.created_count), subtitle: formatHours(kpis.created_duration), trendData: [45, 52, 48, 60, 58, 65, 62], id: 'created_count' },
-    { title: 'PUBLISHED', value: formatNumber(kpis.published_count), subtitle: formatHours(kpis.published_duration), trendData: [20, 25, 22, 30, 28, 35, 32], id: 'published_count' },
-  ];
+  if (loading) return <OverviewSkeleton />;
+  if (error) return <div className="p-6 text-red-400">{error}</div>;
 
   return (
     <div className="h-full overflow-y-auto hide-scrollbar bg-[#050505] px-6 py-6 space-y-6">
-      {/* KPI grid — added cards appear first, then core 4, then action buttons */}
+      {/* KPI slider rail */}
       <section>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {/* Newly added KPIs — custom first (prepended), then extra */}
-          {customKpis.map(kpi => (
-            <div key={kpi.id} className="min-h-[150px]">
-              <KpiCard
-                title={kpi.title}
-                value={kpi.getValue(kpis)}
-                subtitle={kpi.getSubtitle(kpis)}
-                trendData={kpi.trendData}
-                onEdit={() => handleEditCustomKpi(kpi)}
-                onRemove={() => handleRemoveCustomKpi(kpi)}
-                onClick={() => handleCustomKpiClick(kpi)}
+        <div className="flex items-start gap-4">
+          <div className="min-w-0 flex-1">
+            <div className="relative">
+              <div
+                className="flex gap-4 overflow-x-auto hide-scrollbar snap-x snap-mandatory pb-1 pr-1"
+              >
+                {/* Hardcoded static core cards */}
+                {STATIC_CORE_KPI_CARDS.map((card) => (
+                  <div key={card.id} className="min-w-[280px] sm:min-w-[300px] lg:min-w-[320px] snap-start">
+                    <MissionRailMetricCard
+                      title={card.title}
+                      value={card.value}
+                      subtitle={card.subtitle}
+                      trendData={card.trendData}
+                      onClick={() => handleCoreKpiClick(card.id)}
+                    />
+                  </div>
+                ))}
+
+                {/* Added KPI cards (custom + extra) */}
+                {customKpis.map((kpi) => (
+                  <div key={kpi.id} className="min-w-[280px] sm:min-w-[300px] lg:min-w-[320px] snap-start">
+                    <MissionRailMetricCard
+                      title={kpi.title}
+                      value={kpi.getValue(kpis)}
+                      subtitle={kpi.getSubtitle(kpis)}
+                      trendData={kpi.trendData}
+                      onClick={() => handleCustomKpiClick(kpi)}
+                    />
+                  </div>
+                ))}
+
+                {visibleExtraKpis.map((kpi) => (
+                  <div key={kpi.id} className="min-w-[280px] sm:min-w-[300px] lg:min-w-[320px] snap-start">
+                    <MissionRailMetricCard
+                      title={kpi.title}
+                      value={kpi.getValue(kpis)}
+                      subtitle={kpi.getSubtitle(kpis)}
+                      trendData={kpi.trendData}
+                      onClick={() => setSelectedKpi(kpi)}
+                    />
+                  </div>
+                ))}
+              </div>
+
+            </div>
+
+          </div>
+
+          <div className="w-[280px] sm:w-[300px] lg:w-[320px] shrink-0 h-[128px] grid grid-rows-2 gap-2">
+            <div className="h-full">
+              <MissionRailActionCard
+                icon={isSelectionPanelOpen ? <X size={16} /> : <Plus size={16} />}
+                label={isSelectionPanelOpen ? 'Close' : 'Add More'}
+                onClick={handleAddMore}
               />
             </div>
-          ))}
-
-          {visibleExtraKpis.map(kpi => (
-            <div key={kpi.id} className="min-h-[150px]">
-              <KpiCard
-                title={kpi.title}
-                value={kpi.getValue(kpis)}
-                subtitle={kpi.getSubtitle(kpis)}
-                trendData={kpi.trendData}
-                onRemove={() => handleRemoveKpi(kpi.id)}
-                onClick={() => setSelectedKpi(kpi)}
+            <div className="h-full">
+              <MissionRailActionCard
+                icon={<Wand2 size={16} />}
+                label="Create KPI"
+                onClick={() => setShowKpiCreator(true)}
+                tone="brand"
               />
             </div>
-          ))}
-
-          {/* Core 4 KPIs */}
-          {coreKpiCards.map(card => (
-            <div key={card.id} className="min-h-[150px]">
-              <KpiCard
-                title={card.title}
-                value={card.value}
-                subtitle={card.subtitle}
-                trendData={card.trendData}
-                onClick={() => handleCoreKpiClick(card.id)}
-              />
-            </div>
-          ))}
-
-          {/* Add More button */}
-          <button
-            onClick={handleAddMore}
-            className={`min-h-[150px] flex items-center justify-center gap-2 rounded-xl px-4 border border-dashed transition-colors ${
-              isSelectionPanelOpen
-                ? 'bg-[#161616] border-neutral-500 text-white'
-                : 'bg-[#111111] border-neutral-700 hover:border-neutral-500 hover:bg-[#161616] text-neutral-400 hover:text-white'
-            }`}
-          >
-            <Plus size={18} className={`transition-transform duration-300 ${isSelectionPanelOpen ? 'rotate-45' : ''}`} />
-            <span className="text-sm font-bold uppercase tracking-wider">
-              {isSelectionPanelOpen ? 'Close' : 'Add More'}
-            </span>
-          </button>
-
-          {/* Create KPI button */}
-          <button
-            onClick={() => setShowKpiCreator(true)}
-            className="min-h-[150px] flex items-center justify-center gap-2 rounded-xl px-4 border border-dashed border-purple-800/50 bg-purple-950/10 hover:bg-purple-950/20 hover:border-purple-600 text-purple-400 hover:text-purple-300 transition-colors"
-          >
-            <Wand2 size={18} />
-            <span className="text-sm font-bold uppercase tracking-wider">Create KPI</span>
-          </button>
+          </div>
         </div>
       </section>
 
       {/* Staging Panel */}
       {stagedKpis.length > 0 && (
-        <section className="rounded-[28px] border-2 border-dashed border-primary-500/30 bg-primary-500/5 p-6 space-y-4">
+        <section className="rounded-[24px] border border-emerald-700/40 bg-emerald-950/10 p-6 space-y-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.2em] text-primary-400">
+            <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.14em] text-emerald-300">
               <TrendingUp size={15} />
               Staged for Deployment ({stagedKpis.length})
             </div>
@@ -278,7 +375,7 @@ export default function OverviewModule({ onNavigate }) {
             ))}
             <button 
               onClick={handlePromoteKpis}
-              className="flex flex-col items-center justify-center rounded-xl p-5 border-2 border-primary-500 bg-primary-500/10 hover:bg-primary-500/20 text-primary-400 hover:text-primary-300 transition-all font-black text-lg min-h-[140px]"
+              className="flex flex-col items-center justify-center rounded-xl p-5 border border-emerald-500/70 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 hover:text-emerald-200 transition-all font-black text-lg min-h-[140px]"
             >
               <Plus size={32} className="mb-2" />
               <span>ADD TO DASHBOARD</span>
@@ -289,17 +386,17 @@ export default function OverviewModule({ onNavigate }) {
 
       {/* KPI Selection Panel */}
       {isSelectionPanelOpen && (
-        <section className="rounded-[28px] border border-neutral-800 bg-[#0D0D0D] p-6 animate-in fade-in slide-in-from-top-4 duration-300">
+        <section className="rounded-[24px] border border-neutral-800 bg-[#101216] p-6 animate-in fade-in slide-in-from-top-4 duration-300">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.2em] text-neutral-500">
+            <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.14em] text-neutral-300">
               <Plus size={15} />
               Available KPIs
             </div>
             <button 
               onClick={() => setIsSelectionPanelOpen(false)}
-              className="text-neutral-500 hover:text-white transition-colors"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-neutral-700 bg-[#0f1114] text-neutral-400 hover:text-white hover:border-neutral-500 transition-colors"
             >
-              <X size={20} />
+              <X size={16} />
             </button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 max-h-[400px] overflow-y-auto pr-2 hide-scrollbar">
@@ -362,8 +459,8 @@ export default function OverviewModule({ onNavigate }) {
         };
 
         return (
-          <section className="rounded-[28px] border border-neutral-800 bg-[#0D0D0D] p-5">
-            <div className="mb-5 flex items-center gap-2 text-sm font-bold uppercase tracking-[0.2em] text-neutral-500">
+          <section className="rounded-[24px] border border-neutral-800 bg-[#101216] p-5">
+            <div className="mb-5 flex items-center gap-2 text-sm font-bold uppercase tracking-[0.14em] text-neutral-300">
               <TrendingUp size={15} />
               Output Types Summary
             </div>
@@ -378,20 +475,20 @@ export default function OverviewModule({ onNavigate }) {
                     <button
                       key={stat.label}
                       onClick={() => setActiveOutputTab(stat.label)}
-                      className={`group text-left rounded-xl px-3 py-2.5 transition-all ${
+                      className={`group text-left rounded-xl px-3 py-2.5 transition-all border ${
                         isActive
-                          ? 'bg-[#171717] border border-neutral-700'
-                          : 'border border-transparent hover:bg-[#121212] hover:border-neutral-800'
+                          ? 'bg-[#1a1d22] border-neutral-600'
+                          : 'bg-[#111317] border-neutral-800 hover:bg-[#161a20] hover:border-neutral-700'
                       }`}
                     >
-                      <div className={`text-xs font-bold tracking-wide ${isActive ? 'text-white' : 'text-neutral-400 group-hover:text-neutral-200'}`}>
+                      <div className={`text-xs font-semibold tracking-wide ${isActive ? 'text-white' : 'text-neutral-300 group-hover:text-white'}`}>
                         {stat.label}
                       </div>
                       <div className="mt-1.5 flex items-center gap-2">
-                        <div className="flex-1 h-1 rounded-full bg-neutral-800 overflow-hidden">
-                          <div className="h-full rounded-full bg-red-500/60 transition-all duration-500" style={{ width: `${barW}%` }} />
+                        <div className="flex-1 h-1 rounded-full bg-neutral-800/80 overflow-hidden">
+                          <div className="h-full rounded-full bg-sky-400/70 transition-all duration-500" style={{ width: `${barW}%` }} />
                         </div>
-                        <span className="text-[10px] text-neutral-500 tabular-nums font-bold">{formatNumber(stat.total_created_count || 0)}</span>
+                        <span className="text-[10px] text-neutral-400 tabular-nums font-bold">{formatNumber(stat.total_created_count || 0)}</span>
                       </div>
                     </button>
                   );
@@ -413,25 +510,25 @@ export default function OverviewModule({ onNavigate }) {
                         <button
                           key={s.key}
                           onClick={() => setOutputChartMetric(s.key)}
-                          className={`rounded-xl border bg-[#111] p-4 text-center transition-all ${
+                          className={`rounded-xl border bg-[#121418] p-4 text-center transition-all ${
                             isActive ? `${s.ring} border-opacity-60` : 'border-neutral-800/60 hover:border-neutral-700'
                           }`}
                         >
-                          <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-neutral-500 mb-1.5">{s.label}</div>
+                          <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-neutral-400 mb-1.5">{s.label}</div>
                           <div className={`text-xl font-black ${s.color}`}>{formatNumber(s.count || 0)}</div>
-                          <div className="text-[11px] text-neutral-500 mt-1">{formatHours(s.dur || 0)}</div>
+                          <div className="text-[11px] text-neutral-400 mt-1">{formatHours(s.dur || 0)}</div>
                         </button>
                       );
                     })}
                   </div>
 
                   {/* Time series chart */}
-                  <div className="rounded-xl border border-neutral-800/60 bg-[#111] p-4">
+                  <div className="rounded-xl border border-neutral-800/70 bg-[#121418] p-4">
                     <div className="flex items-center justify-between mb-3">
-                      <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-neutral-500">
+                      <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-neutral-400">
                         {cfg.label} — Monthly Trend
                       </div>
-                      <div className="text-[10px] text-neutral-600">{activeStat.label}</div>
+                      <div className="text-[10px] text-neutral-500">{activeStat.label}</div>
                     </div>
                     <div className="h-44">
                       {tsLabels.length > 0 ? (
@@ -449,11 +546,11 @@ export default function OverviewModule({ onNavigate }) {
       })()}
 
       <section className="grid grid-cols-1 xl:grid-cols-[1.25fr_0.95fr] gap-6 xl:items-stretch">
-        <div className="rounded-[28px] border border-neutral-800 bg-[#101010] p-5 flex flex-col" style={{ height: '580px' }}>
-          <div className="mb-4 text-sm font-bold uppercase tracking-[0.2em] text-neutral-500 shrink-0">Frammer AI Insights</div>
-          <div className="flex flex-col gap-3 flex-1 min-h-0 overflow-y-auto hide-scrollbar">
+        <div className="rounded-[24px] border border-neutral-800 bg-[#101216] p-6 flex flex-col" style={{ height: '580px' }}>
+          <div className="mb-4 text-sm font-bold uppercase tracking-[0.14em] text-neutral-200 shrink-0">Frammer AI Insights</div>
+          <div className="flex flex-col gap-2.5 flex-1 min-h-0 overflow-y-auto hide-scrollbar">
             {insights.loading && [...Array(5)].map((_, i) => (
-              <div key={i} className="flex-1 rounded-2xl border border-neutral-800/60 bg-[#0C0C0C] border-l-[3px] border-l-neutral-700 px-4 py-3.5 flex flex-col justify-between">
+              <div key={i} className="rounded-2xl border border-neutral-700/70 bg-[#111214] px-4 py-3.5 min-h-[108px] flex flex-col justify-between">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
@@ -475,12 +572,12 @@ export default function OverviewModule({ onNavigate }) {
               </div>
             ))}
             {!insights.loading && (insights.data?.insights || []).map((insight) => (
-              <div key={insight.id} className="flex-1 flex flex-col min-h-0">
+              <div key={insight.id} className="flex flex-col min-h-0">
                 <InsightCard insight={insight} onNavigate={onNavigate} />
               </div>
             ))}
             {!insights.loading && !(insights.data?.insights || []).length && (
-              <div className="rounded-3xl border border-dashed border-neutral-800 p-6 text-sm text-neutral-500">
+              <div className="rounded-3xl border border-dashed border-neutral-600 bg-[#121317] p-6 text-sm text-neutral-300">
                 No major issues are active in the current scope.
               </div>
             )}
@@ -488,8 +585,8 @@ export default function OverviewModule({ onNavigate }) {
         </div>
 
         <div className="flex flex-col gap-6" style={{ height: '580px' }}>
-          <div className="rounded-[28px] border border-neutral-800 bg-[#101010] p-5">
-            <div className="mb-4 text-sm font-bold uppercase tracking-[0.2em] text-neutral-500">Top Performers</div>
+          <div className="rounded-[24px] border border-neutral-800 bg-[#101216] p-5">
+            <div className="mb-4 text-sm font-bold uppercase tracking-[0.14em] text-neutral-300">Top Performers</div>
             <div className="space-y-2">
               {(() => {
                 const performers = data.topPerformers || [];
@@ -497,12 +594,12 @@ export default function OverviewModule({ onNavigate }) {
                 return performers.map((item) => {
                   const pct = item.conversion || 0;
                   return (
-                    <div key={item.dimension} className="flex items-center gap-3 rounded-xl border border-neutral-900 bg-[#0C0C0C] px-4 py-3">
+                    <div key={item.dimension} className="flex items-center gap-3 rounded-xl border border-neutral-800 bg-[#111317] px-4 py-3">
                       <div className="text-sm font-semibold text-white shrink-0 w-28 truncate">{item.label}</div>
-                      <div className="flex-1 h-1.5 rounded-full bg-neutral-800 overflow-hidden">
-                        <div className="h-full rounded-full bg-emerald-500/80" style={{ width: `${Math.min(pct, 100)}%` }} />
+                      <div className="flex-1 h-1.5 rounded-full bg-neutral-800/80 overflow-hidden">
+                        <div className="h-full rounded-full bg-emerald-400/80" style={{ width: `${Math.min(pct, 100)}%` }} />
                       </div>
-                      <div className="text-xs font-bold text-neutral-400 tabular-nums shrink-0">{formatPct(pct)}</div>
+                      <div className="text-xs font-bold text-neutral-300 tabular-nums shrink-0">{formatPct(pct)}</div>
                     </div>
                   );
                 });
@@ -510,20 +607,20 @@ export default function OverviewModule({ onNavigate }) {
             </div>
           </div>
 
-          <div className="rounded-[28px] border border-red-900/40 bg-[#120b0b] p-5 flex-1 overflow-y-auto hide-scrollbar">
-            <div className="mb-4 text-sm font-bold uppercase tracking-[0.2em] text-red-300">Alerts</div>
+          <div className="rounded-[24px] border border-amber-700/30 bg-[#15120f] p-5 flex-1 overflow-y-auto hide-scrollbar">
+            <div className="mb-4 text-sm font-bold uppercase tracking-[0.14em] text-amber-300">Alerts</div>
             <div className="space-y-3">
               {(data.alerts || []).map((alert) => (
                 <button
                   key={alert.title}
                   onClick={() => onNavigate?.({ view: 'funnel', breakdown: 'channel', [alert.dimension]: alert.value })}
-                  className="w-full rounded-2xl border border-red-950/50 bg-[#190f0f] px-4 py-3 text-left transition-colors hover:bg-[#201313]"
+                  className="w-full rounded-xl border border-amber-800/30 bg-[#1b1713] px-4 py-3 text-left transition-colors hover:bg-[#231d17] hover:border-amber-700/40"
                 >
                   <div className="text-sm font-semibold text-white">{alert.title}</div>
-                  <div className="mt-1 text-xs text-neutral-400">{alert.subtitle}</div>
+                  <div className="mt-1 text-xs text-neutral-300">{alert.subtitle}</div>
                 </button>
               ))}
-              {!data.alerts?.length && <div className="text-sm text-neutral-500">No active alerts in the current scope.</div>}
+              {!data.alerts?.length && <div className="text-sm text-neutral-400">No active alerts in the current scope.</div>}
             </div>
           </div>
         </div>

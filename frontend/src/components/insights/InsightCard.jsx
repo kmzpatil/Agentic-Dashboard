@@ -1,58 +1,64 @@
 import React from 'react';
-import { ArrowRight, AlertTriangle, Info, Sparkles } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 
 const SEVERITY_STYLES = {
   critical: {
-    badge: 'bg-red-500/10 text-red-300 border-red-500/20',
-    accent: 'border-l-red-500',
-    icon: <AlertTriangle size={12} />,
+    text: 'text-red-300',
+    dot: 'bg-red-400',
   },
   warning: {
-    badge: 'bg-amber-500/10 text-amber-300 border-amber-500/20',
-    accent: 'border-l-amber-400',
-    icon: <Sparkles size={12} />,
+    text: 'text-amber-300',
+    dot: 'bg-amber-300',
   },
   info: {
-    badge: 'bg-sky-500/10 text-sky-300 border-sky-500/20',
-    accent: 'border-l-sky-500',
-    icon: <Info size={12} />,
+    text: 'text-sky-300',
+    dot: 'bg-sky-300',
   },
 };
 
 export default function InsightCard({ insight, onNavigate }) {
   const tone = SEVERITY_STYLES[insight.severity] || SEVERITY_STYLES.info;
+  const confidencePct = Math.round((insight.confidence || 0) * 100);
+  const evidence = Array.isArray(insight.evidence) ? insight.evidence : [];
+  const visibleEvidence = evidence.slice(0, 2);
+  const extraEvidenceCount = Math.max(evidence.length - visibleEvidence.length, 0);
+  const severityLabel = String(insight.severity || 'info');
 
   return (
-    <div className={`rounded-2xl border border-neutral-800/60 bg-[#0C0C0C] border-l-[3px] ${tone.accent} px-4 py-3.5 h-full flex flex-col justify-between transition-colors hover:bg-[#111111]`}>
-      <div>
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.15em] shrink-0 ${tone.badge}`}>
-              {tone.icon}
-              {insight.severity}
-            </div>
-            <h3 className="text-[13px] font-semibold text-white truncate">{insight.title}</h3>
+    <div className="rounded-2xl border border-neutral-700/70 bg-[#111214] px-4 py-3.5 transition-colors hover:border-neutral-500/80 hover:bg-[#15171c]">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="mb-1.5 flex items-center gap-2">
+            <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
+            <span className={`text-[11px] font-semibold tracking-wide uppercase ${tone.text}`}>
+              {severityLabel}
+            </span>
           </div>
-          <span className="text-[10px] tabular-nums text-neutral-600 shrink-0">
-            {Math.round((insight.confidence || 0) * 100)}%
-          </span>
+          <h3 className="text-[14px] font-semibold text-white leading-snug line-clamp-1">
+            {insight.title}
+          </h3>
+          <p className="mt-1.5 text-[13px] leading-[1.55] text-neutral-300 line-clamp-2">
+            {insight.summary}
+          </p>
         </div>
-        <p className="mt-1.5 text-xs leading-[1.6] text-neutral-500 line-clamp-2">{insight.summary}</p>
+        <span className="shrink-0 rounded-full border border-neutral-600 bg-neutral-800/60 px-2 py-0.5 text-[11px] tabular-nums text-neutral-200">
+          {confidencePct}% conf
+        </span>
       </div>
 
-      <div className="mt-2.5 flex items-center justify-between gap-3">
-        {!!insight.evidence?.length ? (
-          <div className="flex flex-wrap gap-1.5 min-w-0">
-            {insight.evidence.map((item) => (
-              <span key={item} className="rounded-md bg-neutral-800/60 px-2 py-0.5 text-[10px] font-medium text-neutral-500 truncate max-w-[120px]">
-                {item}
-              </span>
-            ))}
+      <div className="mt-3 flex items-center justify-between gap-3">
+        {evidence.length > 0 ? (
+          <div className="min-w-0 text-[11px] text-neutral-400 truncate">
+            <span className="text-neutral-500">Evidence:</span>{' '}
+            {visibleEvidence.join(' • ')}
+            {extraEvidenceCount > 0 ? ` +${extraEvidenceCount}` : ''}
           </div>
-        ) : <div />}
+        ) : (
+          <div />
+        )}
         <button
           onClick={() => onNavigate?.(insight.cta?.filter_state || { view: insight.cta?.target })}
-          className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-neutral-700 bg-neutral-800/50 px-3 py-1.5 text-[11px] font-bold text-neutral-300 transition-colors hover:border-neutral-500 hover:text-white hover:bg-neutral-700"
+          className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-neutral-600 bg-neutral-800/50 px-3 py-1.5 text-[11px] font-semibold text-neutral-200 transition-colors hover:border-neutral-400 hover:text-white hover:bg-neutral-700/60"
         >
           {insight.cta?.label || 'Open'}
           <ArrowRight size={12} />

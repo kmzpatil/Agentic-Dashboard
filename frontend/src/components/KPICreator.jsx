@@ -85,23 +85,23 @@ export default function KPICreator({ onCreated, onClose, initialData }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-[2px] p-4"
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl border border-neutral-800 bg-[#0d0d0d] p-8 shadow-2xl"
+        className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl border border-neutral-700/80 bg-[#101216] p-8 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <button
           onClick={onClose}
-          className="absolute right-6 top-6 text-neutral-500 hover:text-white transition-colors bg-black/50 p-2 rounded-full"
+          className="absolute right-6 top-6 text-neutral-400 hover:text-white transition-colors bg-black/45 border border-neutral-700 p-2 rounded-full"
         >
           <X size={20} />
         </button>
 
         <div className="mb-6 border-b border-neutral-800 pb-5">
-          <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-500 mb-1">
+          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-neutral-400 mb-1">
             Custom KPI Builder
           </div>
           <h3 className="text-2xl font-black text-white tracking-tight">Create a New KPI</h3>
@@ -139,7 +139,7 @@ export default function KPICreator({ onCreated, onClose, initialData }) {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. Publish Success Rate"
-                className="w-full rounded-xl bg-[#141414] border border-neutral-700 text-white placeholder-neutral-600 px-4 py-3 text-sm focus:outline-none focus:border-neutral-500 transition-colors"
+                className="w-full rounded-xl bg-[#111317] border border-neutral-700 text-white placeholder-neutral-600 px-4 py-3 text-sm focus:outline-none focus:border-neutral-500 transition-colors"
                 disabled={loading}
               />
             </div>
@@ -154,7 +154,7 @@ export default function KPICreator({ onCreated, onClose, initialData }) {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Brief description of what this KPI measures"
-                className="w-full rounded-xl bg-[#141414] border border-neutral-700 text-white placeholder-neutral-600 px-4 py-3 text-sm focus:outline-none focus:border-neutral-500 transition-colors"
+                className="w-full rounded-xl bg-[#111317] border border-neutral-700 text-white placeholder-neutral-600 px-4 py-3 text-sm focus:outline-none focus:border-neutral-500 transition-colors"
                 disabled={loading}
               />
             </div>
@@ -170,8 +170,8 @@ export default function KPICreator({ onCreated, onClose, initialData }) {
                   onClick={() => { setMode('formula'); setExpression(''); setError(null); }}
                   className={`flex items-center gap-2 flex-1 rounded-xl px-4 py-3 text-sm font-semibold border transition-colors ${
                     mode === 'formula'
-                      ? 'bg-blue-950/40 border-blue-700 text-blue-300'
-                      : 'bg-[#141414] border-neutral-700 text-neutral-400 hover:text-white hover:border-neutral-500'
+                      ? 'bg-sky-950/35 border-sky-700 text-sky-200'
+                      : 'bg-[#111317] border-neutral-700 text-neutral-300 hover:text-white hover:border-neutral-500'
                   }`}
                   disabled={loading}
                 >
@@ -183,8 +183,8 @@ export default function KPICreator({ onCreated, onClose, initialData }) {
                   onClick={() => { setMode('natural_language'); setExpression(''); setError(null); }}
                   className={`flex items-center gap-2 flex-1 rounded-xl px-4 py-3 text-sm font-semibold border transition-colors ${
                     mode === 'natural_language'
-                      ? 'bg-purple-950/40 border-purple-700 text-purple-300'
-                      : 'bg-[#141414] border-neutral-700 text-neutral-400 hover:text-white hover:border-neutral-500'
+                      ? 'bg-violet-950/35 border-violet-700 text-violet-200'
+                      : 'bg-[#111317] border-neutral-700 text-neutral-300 hover:text-white hover:border-neutral-500'
                   }`}
                   disabled={loading}
                 >
@@ -208,7 +208,7 @@ export default function KPICreator({ onCreated, onClose, initialData }) {
                     : 'e.g.  Percentage of clips that get published after creation'
                 }
                 rows={3}
-                className="w-full rounded-xl bg-[#141414] border border-neutral-700 text-white placeholder-neutral-600 px-4 py-3 text-sm font-mono focus:outline-none focus:border-neutral-500 transition-colors resize-none"
+                className="w-full rounded-xl bg-[#111317] border border-neutral-700 text-white placeholder-neutral-600 px-4 py-3 text-sm font-mono focus:outline-none focus:border-neutral-500 transition-colors resize-none"
                 disabled={loading}
               />
 
@@ -221,7 +221,7 @@ export default function KPICreator({ onCreated, onClose, initialData }) {
                       key={hint}
                       type="button"
                       onClick={() => handleHint(hint)}
-                      className="text-[11px] rounded-lg bg-[#1a1a1a] border border-neutral-800 text-neutral-400 hover:text-white hover:border-neutral-600 px-2 py-1 transition-colors font-mono"
+                      className="text-[11px] rounded-lg bg-[#12151a] border border-neutral-700 text-neutral-300 hover:text-white hover:border-neutral-500 px-2 py-1 transition-colors font-mono"
                       disabled={loading}
                     >
                       {hint.length > 40 ? hint.slice(0, 40) + '…' : hint}
@@ -232,8 +232,8 @@ export default function KPICreator({ onCreated, onClose, initialData }) {
 
               {/* Formula atom reference */}
               {mode === 'formula' && (
-                <div className="mt-3 rounded-xl bg-blue-950/10 border border-blue-900/20 p-3">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-blue-400 mb-1">
+                <div className="mt-3 rounded-xl bg-sky-950/10 border border-sky-900/30 p-3">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-sky-300 mb-1">
                     Available Metric Atoms
                   </div>
                   <div className="flex flex-wrap gap-1">
@@ -242,7 +242,7 @@ export default function KPICreator({ onCreated, onClose, initialData }) {
                         key={m}
                         type="button"
                         onClick={() => setExpression((prev) => prev ? `${prev} ${m}` : m)}
-                        className="text-[11px] rounded bg-blue-950/30 border border-blue-900/40 text-blue-300 px-2 py-0.5 hover:bg-blue-900/30 font-mono transition-colors"
+                        className="text-[11px] rounded bg-sky-950/30 border border-sky-900/40 text-sky-200 px-2 py-0.5 hover:bg-sky-900/30 font-mono transition-colors"
                         disabled={loading}
                       >
                         {m}
@@ -258,7 +258,7 @@ export default function KPICreator({ onCreated, onClose, initialData }) {
                         key={m}
                         type="button"
                         onClick={() => setExpression(m)}
-                        className="text-[11px] rounded bg-neutral-800/50 border border-neutral-700 text-neutral-300 px-2 py-0.5 hover:bg-neutral-700 font-mono transition-colors"
+                        className="text-[11px] rounded bg-neutral-800/40 border border-neutral-700 text-neutral-200 px-2 py-0.5 hover:bg-neutral-700 font-mono transition-colors"
                         disabled={loading}
                       >
                         {m}
@@ -282,8 +282,8 @@ export default function KPICreator({ onCreated, onClose, initialData }) {
                     onClick={() => setGranularity(g)}
                     className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold border capitalize transition-colors ${
                       granularity === g
-                        ? 'bg-neutral-700 border-neutral-500 text-white'
-                        : 'bg-[#141414] border-neutral-800 text-neutral-500 hover:text-white hover:border-neutral-600'
+                        ? 'bg-neutral-700/70 border-neutral-500 text-white'
+                        : 'bg-[#111317] border-neutral-700 text-neutral-300 hover:text-white hover:border-neutral-500'
                     }`}
                     disabled={loading}
                   >
