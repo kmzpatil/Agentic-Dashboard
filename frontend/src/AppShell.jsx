@@ -333,7 +333,7 @@ export default function AppShell() {
         {activeView === 'journey' && <UserJourneyModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'explorer' && <ExplorerModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'copilot' && <TalkToDataModule authToken={authToken} routeState={routeState} onNavigate={navigate} />}
-        {activeView === 'quality' && <DataQualityModule />}
+        {activeView === 'quality' && <DataQualityModule authUser={authUser} />}
         {activeView === 'wrapped' && <WrappedModule onNavigate={navigate} />}
       </main>
     </div>

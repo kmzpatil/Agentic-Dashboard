@@ -528,7 +528,11 @@ function IssueRow({ issue }) {
 // ═══════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════
-export default function DataQualityModule() {
+export default function DataQualityModule({ authUser }) {
+  const role = authUser?.role || 'website_admin';
+  const isUser         = role === 'user';
+  const isClientAdmin  = role === 'client_admin';
+  const isAdmin        = role === 'website_admin';
   const [subTab, setSubTab] = useState('overview');
   const [filterTable, setFilterTable] = useState('');
   const [filterCheck, setFilterCheck] = useState('');
@@ -631,7 +635,7 @@ export default function DataQualityModule() {
           <div className="flex gap-1 rounded-full border border-neutral-800 bg-[#0D0D0D] p-1">
             {[
               { id: 'overview', label: 'Overview', icon: <LayoutDashboard size={13} /> },
-              { id: 'issues', label: 'Issue Explorer', icon: <Search size={13} /> },
+              ...(!isUser ? [{ id: 'issues', label: 'Issue Explorer', icon: <Search size={13} /> }] : []),
             ].map(t => (
               <button key={t.id} onClick={() => setSubTab(t.id)} className={`inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-bold transition-all duration-200 ${subTab === t.id ? 'bg-[#1a1a1a] text-white shadow-sm' : 'text-neutral-500 hover:text-neutral-200'}`}>
                 {t.icon}{t.label}
@@ -640,6 +644,18 @@ export default function DataQualityModule() {
           </div>
         </div>
       </div>
+
+      {/* Role-scoped notice */}
+      {isUser && (
+        <div className="border-b border-indigo-900/40 bg-indigo-950/20 px-6 py-2 text-xs text-indigo-400">
+          Showing data quality metrics scoped to your uploads.
+        </div>
+      )}
+      {isClientAdmin && (
+        <div className="border-b border-neutral-900/40 bg-[#080808] px-6 py-2 text-xs text-neutral-500">
+          Showing data quality for your client workspace.
+        </div>
+      )}
 
       {/* Live data error banner */}
       {useLiveData && liveError && (
@@ -759,8 +775,8 @@ export default function DataQualityModule() {
               })}
             </div>
 
-            {/* Heatmap + Orphan flow */}
-            <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.4fr_1fr]">
+            {/* Heatmap + Orphan flow — admin/client_admin only */}
+            {!isUser && <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.4fr_1fr]">
               <Panel>
                 <div className="mb-4 flex items-center justify-between">
                   <h3 className="flex items-center gap-2 text-sm font-bold text-white">
@@ -783,11 +799,11 @@ export default function DataQualityModule() {
                   <OrphanFlowDiagram links={data.orphan_links} />
                 </div>
               </Panel>
-            </div>
+            </div>}
 
             {/* Check breakdown + Dead Ends + Suspicious Users */}
 
-            <div className="grid grid-cols-1 gap-5 xl:h-[500px] xl:grid-cols-[1.2fr_0.9fr_0.9fr]">
+            <div className={`grid grid-cols-1 gap-5 xl:h-[500px] ${isAdmin ? 'xl:grid-cols-[1.2fr_0.9fr_0.9fr]' : 'xl:grid-cols-[1.2fr_0.9fr]'}`}>
 
               {/* Column 1: Quality Score Trends */}
               <Panel className="flex flex-col overflow-hidden">
@@ -827,8 +843,8 @@ export default function DataQualityModule() {
                 </div>
               </Panel>
 
-              {/*Suspicious Users (Matching Height) */}
-              <Panel className="flex flex-col overflow-hidden !border-red-900/20 !bg-[#0d0808]">
+              {/*Suspicious Users — website_admin only */}
+              {isAdmin && <Panel className="flex flex-col overflow-hidden !border-red-900/20 !bg-[#0d0808]">
                 <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-white">
                   <div className="rounded-lg bg-pink-500/10 p-1.5"><UserX className="h-3.5 w-3.5 text-pink-400" /></div>
                   Suspicious Accounts
@@ -852,7 +868,7 @@ export default function DataQualityModule() {
                     );
                   })}
                 </div>
-              </Panel>
+              </Panel>}
             </div>
           </div>
         )}
