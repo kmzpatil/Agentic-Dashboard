@@ -65,8 +65,7 @@ function readRouteState() {
   return Object.fromEntries(params.entries());
 }
 
-function getDefaultViewForRole(authUser) {
-  if (authUser?.role === 'user') return 'wrapped';
+function getDefaultViewForRole() {
   return 'mission-control';
 }
 
@@ -110,12 +109,6 @@ export default function AppShell() {
   }, [routeState.view, authUser]);
 
   useEffect(() => {
-    if (authUser?.role === 'user' && routeState.view === 'mission-control') {
-      navigate({ view: 'wrapped' });
-    }
-  }, [authUser, routeState.view]);
-
-  useEffect(() => {
     const bootstrapSession = async () => {
       if (!authToken) {
         setAuthLoading(false);
@@ -156,10 +149,6 @@ export default function AppShell() {
       { id: 'copilot', label: 'Copilot', icon: <Bot size={16} /> },
       { id: 'quality', label: 'Data Quality', icon: <ShieldCheck size={16} /> },
     ];
-
-    if (authUser?.role === 'user') {
-      return baseItems.filter((item) => item.id !== 'mission-control');
-    }
 
     return baseItems;
   }, [authUser?.role]);
