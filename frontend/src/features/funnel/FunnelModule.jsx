@@ -35,9 +35,9 @@ const BREAKDOWN_SOURCES_LIMITS = {
   language: 8,
 };
 
-const EMPTY_FILTERS = { client: '', input_type: '', language: '', channel: '', user: '', team: '' };
-const FILTER_DIMENSIONS = new Set(['client', 'input_type', 'language', 'channel', 'user', 'team']);
-const FILTER_KEYS = ['client', 'input_type', 'language', 'channel', 'user', 'team'];
+const EMPTY_FILTERS = { client: '', input_type: '', output_type: '', language: '', channel: '', user: '', team: '' };
+const FILTER_DIMENSIONS = new Set(['client', 'input_type', 'output_type', 'language', 'channel', 'user', 'team']);
+const FILTER_KEYS = ['client', 'input_type', 'output_type', 'language', 'channel', 'user', 'team'];
 
 function buildFiltersFromRouteState(routeState = {}) {
   const next = { ...EMPTY_FILTERS };
@@ -54,7 +54,7 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
   const [filters, setFilters] = useState(() => buildFiltersFromRouteState(routeState));
   const [compositionSourceMode, setCompositionSourceMode] = useState('top');
   const [compositionTopN, setCompositionTopN] = useState(() => BREAKDOWN_SOURCES_LIMITS[routeState.breakdown || 'channel'] || MAX_BREAKDOWN_SOURCES);
-  const [analysisTab, setAnalysisTab] = useState('overview');
+  const [analysisTab, setAnalysisTab] = useState(routeState.tab || 'overview');
 
   useEffect(() => {
     const nextBreakdown = routeState.breakdown || 'channel';
@@ -63,7 +63,14 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
     setFilters(next);
     setCompositionTopN(BREAKDOWN_SOURCES_LIMITS[nextBreakdown] || MAX_BREAKDOWN_SOURCES);
   }, [routeState.breakdown, routeState.client, routeState.input_type, routeState.language,
-      routeState.channel, routeState.user, routeState.team]);
+      routeState.channel, routeState.user, routeState.team, routeState.output_type]);
+
+  useEffect(() => {
+    const nextTab = routeState.tab || 'overview';
+    if (ANALYSIS_TABS.some((tab) => tab.id === nextTab)) {
+      setAnalysisTab(nextTab);
+    }
+  }, [routeState.tab]);
 
   const effectiveFilters = useMemo(() => filters, [filters]);
 
