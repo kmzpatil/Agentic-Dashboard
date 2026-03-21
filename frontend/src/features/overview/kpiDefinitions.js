@@ -51,23 +51,6 @@ export const KPI_DEFINITIONS = [
     getSubtitle: (kpis) => formatHours(kpis?.published_duration || 0)
   },
   {
-    id: 'publish_conversion_rate',
-    title: 'PUBLISH CONVERSION RATE',
-    getValue: (kpis) => formatPct(kpis?.publish_conversion_rate || 0.45),
-    getSubtitle: () => 'Avg. conversion rate',
-    trendData: [45, 48, 47, 52, 58, 55, 62],
-    definition: 'The percentage of processed/created clips that actually end up being published.',
-    formula: '(Total Published Clips / Total Created Clips) * 100',
-    significance: 'This measures the direct effectiveness of the creation process. A low conversion rate indicates that a large volume of clips is being generated but discarded, signaling potential inefficiencies in what is being extracted.',
-    detailsData: {
-      users: { labels: MOCK_USERS, data: generateFloatArray(20, 10, 80, 1) },
-      channels: { labels: MOCK_CHANNELS, data: generateFloatArray(20, 20, 90, 1) },
-      timeSeries: { labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'], data: [45, 48, 47, 52, 58, 55, 62] },
-      inputs: { labels: ['Interview', 'Webinar', 'Podcast', 'Tutorial', 'Vlog'], data: [65, 40, 55, 75, 30] },
-      outputs: { labels: ['Reels', 'Shorts', 'TikTok', 'LinkedIn Video', 'Tweet'], data: [70, 68, 80, 45, 35] }
-    }
-  },
-  {
     id: 'month_by_month_use_rate',
     title: 'MONTH BY MONTH USE RATE',
     getValue: () => '+12.5%',
@@ -118,32 +101,6 @@ export const KPI_DEFINITIONS = [
       inputs: { labels: ['Podcast', 'Webinar', 'Interview', 'Keynote', 'Gaming', 'Vlog', 'Tutorial'], data: [5.2, 4.8, 6.1, 3.5, 8.2, 2.1, 4.0] },
       timeSeries: { labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'], data: [3.0, 3.2, 2.8, 3.5, 4.0, 3.8, 4.2] },
       channels: { labels: MOCK_CHANNELS, data: generateFloatArray(20, 1, 10, 1) }
-    }
-  },
-  {
-    id: 'waste_index',
-    title: 'WASTE INDEX',
-    getValue: (kpis) => (kpis?.waste_index !== undefined ? Number(kpis.waste_index).toFixed(2) : '1.42'),
-    getSubtitle: () => 'Logarithmic waste',
-    trendData: [1.8, 1.7, 1.6, 1.5, 1.45, 1.4, 1.42],
-    definition: 'A logarithmic scale measuring the proportion of created duration that does not get published.',
-    formula: '-log10(1 - ((Total Created Duration - Total Published Duration) / Total Created duration) + 0.001)',
-    significance: 'Amplifies the visibility of high-waste scenarios, helping to flag instances where the system or users are generating a massive amount of footage that is ultimately ignored.',
-    detailsData: {
-      channelTreemap: [
-        { name: 'Channel A', value: 2500 }, { name: 'Channel B', value: 1800 }, { name: 'Channel C', value: 1200 },
-        { name: 'Channel D', value: 900 }, { name: 'Channel E', value: 600 }
-      ],
-      teamWaste: {
-        labels: ['Team Alpha', 'Team Beta', 'Team Gamma', 'Team Delta'],
-        datasets: [
-          { label: 'User 1', data: [500, 300, 100, 200] },
-          { label: 'User 2', data: [400, 200, 150, 100] },
-          { label: 'User 3', data: [300, 400, 250, 50] }
-        ]
-      },
-      users: { labels: MOCK_USERS, data: generateFloatArray(20, 0.5, 3.0, 2) },
-      channels: { labels: MOCK_CHANNELS, data: generateFloatArray(20, 0.8, 2.8, 2) }
     }
   },
   {

@@ -12,11 +12,11 @@ import { KPI_DEFINITIONS } from './kpiDefinitions';
 import KPICreator from '../../components/KPICreator';
 
 const CORE_KPI_KEYS = [
-  { id: 'uploaded_count',          title: 'UPLOADED',              trendMetric: 'uploaded_count',          getValue: (k) => formatNumber(k.uploaded_count ?? 0),                                           getSubtitle: (k) => formatHours(k.uploaded_duration ?? 0) },
-  { id: 'created_count',           title: 'CREATED',               trendMetric: 'created_count',           getValue: (k) => formatNumber(k.created_count ?? 0),                                            getSubtitle: (k) => formatHours(k.created_duration ?? 0) },
-  { id: 'published_count',         title: 'PUBLISHED',             trendMetric: 'published_count',         getValue: (k) => formatNumber(k.published_count ?? 0),                                          getSubtitle: (k) => formatHours(k.published_duration ?? 0) },
-  { id: 'publish_conversion_rate', title: 'PUBLISH CONVERSION',    trendMetric: 'publish_conversion_rate', getValue: (k) => formatPct(k.publish_conversion_rate ?? 0),                                      getSubtitle: () => 'Avg. conversion rate' },
-  { id: 'waste_index',             title: 'WASTE INDEX',           trendMetric: 'waste_index',             getValue: (k) => k.waste_index !== undefined ? Number(k.waste_index).toFixed(2) : '—',           getSubtitle: () => 'Logarithmic waste' },
+  { id: 'uploaded_count',          title: 'UPLOADED',                  trendMetric: 'uploaded_count',          getValue: (k) => formatNumber(k.uploaded_count ?? 0),                                           getSubtitle: (k) => formatHours(k.uploaded_duration ?? 0) },
+  { id: 'created_count',           title: 'CREATED',                   trendMetric: 'created_count',           getValue: (k) => formatNumber(k.created_count ?? 0),                                            getSubtitle: (k) => formatHours(k.created_duration ?? 0) },
+  { id: 'published_count',         title: 'PUBLISHED',                 trendMetric: 'published_count',         getValue: (k) => formatNumber(k.published_count ?? 0),                                          getSubtitle: (k) => formatHours(k.published_duration ?? 0) },
+  { id: 'publish_conversion_rate', title: 'PUBLISH CONVERSION RATE',   trendMetric: 'publish_conversion_rate', getValue: (k) => formatPct(k.publish_conversion_rate ?? 0),                                      getSubtitle: () => 'Avg. conversion rate' },
+  { id: 'waste_index',             title: 'WASTE INDEX',               trendMetric: 'waste_index',             getValue: (k) => k.waste_index !== undefined ? Number(k.waste_index).toFixed(2) : '—',           getSubtitle: () => 'Logarithmic waste' },
 ];
 
 function buildCoreKpiCards(kpis, monthlyTrends) {
@@ -476,7 +476,7 @@ export default function OverviewModule({ onNavigate }) {
             </button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 max-h-[400px] overflow-y-auto pr-2 hide-scrollbar">
-            {KPI_DEFINITIONS.filter(k => !['uploaded_count', 'processed_count', 'created_count', 'published_count'].includes(k.id) && !activeExtraKpis.includes(k.id)).map(kpi => {
+            {KPI_DEFINITIONS.filter(k => !['uploaded_count', 'created_count', 'published_count'].includes(k.id) && !activeExtraKpis.includes(k.id)).map(kpi => {
               const isStaged = stagedKpis.includes(kpi.id);
               return (
                 <KpiCard 

@@ -375,6 +375,18 @@ export default function ExplorerModule({ authUser }) {
     }
   }, [multi.data, selectedDim2Values, effectiveTimeGrain]);
 
+  const filteredMeasureTotal = useMemo(() => {
+    const rows = effectiveTimeGrain === 'none'
+      ? (multi.data?.matrixRows || [])
+      : (multi.data?.timeSeriesRows || []);
+
+    const scopedRows = selectedDim2Values.includes('all')
+      ? rows
+      : rows.filter(r => selectedDim2Values.includes(String(r.dim2)));
+
+    return scopedRows.reduce((sum, row) => sum + Number(row.value || 0), 0);
+  }, [multi.data, selectedDim2Values, effectiveTimeGrain]);
+
   // Sorted Dimension Data Analysis Table Data
   const sortedDimensionRows = useMemo(() => {
     let baseRows = [];
@@ -920,7 +932,7 @@ export default function ExplorerModule({ authUser }) {
                   <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-neutral-500 mb-1">Summary</div>
                   {multi.loading ? (
                     <div className="flex flex-col gap-3 animate-pulse">
-                      {[1, 2, 3, 4].map(i => (
+                      {[1, 2, 3, 4, 5].map(i => (
                         <div key={i} className="bg-[#0a0a0a] border border-neutral-800 rounded-xl p-4 h-[72px]">
                           <div className="w-20 h-2 bg-neutral-800 rounded mb-3"></div>
                           <div className="w-16 h-5 bg-neutral-800 rounded"></div>
@@ -933,6 +945,11 @@ export default function ExplorerModule({ authUser }) {
                         <div className="absolute left-0 top-0 h-0.5 w-full bg-red-500 opacity-40" />
                         <div className="text-[9px] uppercase tracking-[0.15em] text-neutral-500 font-bold mb-1">Total Records</div>
                         <div className="text-2xl font-black text-red-400">{filteredTotalRecords}</div>
+                      </div>
+                      <div className="relative bg-[#0a0a0a] border border-neutral-800 rounded-xl p-4 overflow-hidden">
+                        <div className="absolute left-0 top-0 h-0.5 w-full bg-emerald-500 opacity-40" />
+                        <div className="text-[9px] uppercase tracking-[0.15em] text-neutral-500 font-bold mb-1">Measure Total</div>
+                        <div className="text-2xl font-black text-emerald-400">{formatNumber(filteredMeasureTotal)}</div>
                       </div>
                       <div className="relative bg-[#0a0a0a] border border-neutral-800 rounded-xl p-4 overflow-hidden">
                         <div className="absolute left-0 top-0 h-0.5 w-full bg-neutral-500 opacity-40" />
