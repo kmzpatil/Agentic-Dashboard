@@ -64,7 +64,7 @@ function BarChartWidget({ widget, data }) {
                 />
               );
             })}
-            <div className="text-[9px] text-neutral-600 mt-1 truncate w-full text-center" title={String(row[xField])}>
+            <div className="text-[9px] text-neutral-400 mt-1 truncate w-full text-center" title={String(row[xField])}>
               {String(row[xField] ?? '').slice(0, 8)}
             </div>
           </div>
@@ -129,7 +129,7 @@ function LineChartWidget({ widget, data }) {
           );
         })}
       </svg>
-      <div className="flex justify-between mt-2 text-[9px] text-neutral-600">
+      <div className="flex justify-between mt-2 text-[9px] text-neutral-400">
         <span>{String(data[0]?.[xField] ?? '').slice(0, 10)}</span>
         <span>{String(data[data.length - 1]?.[xField] ?? '').slice(0, 10)}</span>
       </div>
@@ -196,7 +196,7 @@ function PieChartWidget({ widget, data }) {
 function EmptyChart({ title }) {
   return (
     <div className="bg-[#111111] border border-neutral-800 rounded-xl p-6 flex flex-col items-center justify-center text-center">
-      <Hash size={20} className="text-neutral-700 mb-2" />
+      <Hash size={20} className="text-neutral-400 mb-2" />
       <div className="text-[12px] text-neutral-500">{title || 'No data to visualize'}</div>
     </div>
   );

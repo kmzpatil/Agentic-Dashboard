@@ -219,7 +219,7 @@ export default function KpiDetailsModal({ kpi, onClose }) {
               {/* DSL info */}
               {data?.dsl_json && (
                 <div className="rounded-xl bg-[#0a0a0a] border border-neutral-800/50 p-3">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-neutral-600 mb-1">DSL Definition</div>
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 mb-1">DSL Definition</div>
                   <pre className="text-[11px] text-neutral-500 font-mono overflow-auto max-h-20">
                     {JSON.stringify(data.dsl_json, null, 2)}
                   </pre>
@@ -355,8 +355,8 @@ export default function KpiDetailsModal({ kpi, onClose }) {
       case 'cdas':
         return (
           <div className="grid grid-cols-1 gap-4">
-            <ChartCard title="CDAS by Input Type">
-              <Bar data={{ labels: data?.inputs?.labels || [], datasets: [{ label: 'CDAS Score', data: data?.inputs?.data || [], backgroundColor: '#10b981' }] }} options={chartOptions} />
+            <ChartCard title="DFS by Input Type">
+              <Bar data={{ labels: data?.inputs?.labels || [], datasets: [{ label: 'DFS Score', data: data?.inputs?.data || [], backgroundColor: '#10b981' }] }} options={chartOptions} />
             </ChartCard>
             <ChartCard title="Avg Created vs Published Duration">
               <Bar data={{

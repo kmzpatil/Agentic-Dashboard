@@ -113,11 +113,17 @@ def render_report_html(
     summary = report.get("executive_summary", "")
     sections = report.get("sections", [])
     recommendations = report.get("recommendations", [])
+    if isinstance(recommendations, str):
+        recommendations = [recommendations]
     metadata = report.get("metadata", {})
     conclusions = report.get("conclusions", [])
+    if isinstance(conclusions, str):
+        conclusions = [conclusions]
 
     generated_at = metadata.get("generated_at", datetime.now().strftime("%Y-%m-%d %H:%M"))
     caveats = metadata.get("caveats", [])
+    if isinstance(caveats, str):
+        caveats = [caveats]
 
     # Build sections HTML and collect chart init data
     sections_html = ""
@@ -333,14 +339,14 @@ def render_report_html(
   .report-page-header .label {{ font-size: 11px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: #9ca3af; }}
 
   /* ── Push content below fixed header ── */
-  .report {{ padding-top: 48px; max-width: 900px; margin: 0 auto; }}
-  .report::after {{ content: ''; display: block; height: 30px; }}
+  .report {{ padding: 48px; max-width: 900px; margin: 0 auto; }}
+  .report::after {{ content: ''; display: block; height: 10px; }}
 
   /* ── Page break control ── */
   .avoid-break {{ page-break-inside: avoid; break-inside: avoid; }}
 
   /* ── Cover ── */
-  .cover-header {{ padding: 12px 0 16px 0; margin-bottom: 20px; }}
+  .cover-header {{ padding: 12px 0 16px 0; margin-bottom: 10px; }}
   .report-badge {{
     display: inline-block; font-size: 11px; font-weight: 700;
     letter-spacing: 0.18em; text-transform: uppercase;
@@ -354,7 +360,7 @@ def render_report_html(
   /* ── Executive Summary ── */
   .executive-summary {{
     background: #f0f7ff; border: 1px solid #dbeafe;
-    border-radius: 8px; padding: 20px 24px; margin-bottom: 28px;
+    border-radius: 8px; padding: 14px 18px; margin-bottom: 16px;
     page-break-inside: avoid;
   }}
   .executive-summary h2 {{
@@ -366,15 +372,15 @@ def render_report_html(
 
   /* ── Sections ── */
   .section {{
-    margin-bottom: 28px; padding-bottom: 24px;
+    margin-bottom: 14px; padding-bottom: 10px;
     border-bottom: 1px solid #e5e7eb;
-    page-break-inside: avoid;
   }}
   .section:last-of-type {{ border-bottom: none; }}
   .section-header {{
     display: flex; align-items: center; gap: 10px;
-    margin-bottom: 12px; padding-bottom: 8px;
+    margin-bottom: 8px; padding-bottom: 6px;
     border-bottom: 2px solid #e5e7eb;
+    page-break-inside: avoid; page-break-after: avoid;
   }}
   .section-type {{
     font-size: 10px; font-weight: 700; letter-spacing: 0.14em;
@@ -382,7 +388,7 @@ def render_report_html(
     padding: 3px 10px; border-radius: 4px;
   }}
   .section-header h3 {{ font-size: 22px; font-weight: 700; color: #111827; margin: 0; }}
-  .narrative {{ font-size: 15px; color: #374151; margin: 0 0 14px 0; line-height: 1.65; }}
+  .narrative {{ font-size: 15px; color: #374151; margin: 0 0 10px 0; line-height: 1.65; }}
   .narrative p {{ margin: 0 0 10px 0; }}
   .narrative p:last-child {{ margin-bottom: 0; }}
   .narrative strong {{ color: #111; font-weight: 600; }}
@@ -408,21 +414,21 @@ def render_report_html(
 
   /* ── Charts (Chart.js canvas) ── */
   .chart-container {{
-    margin: 14px 0; padding: 16px 18px;
+    margin: 10px 0; padding: 12px 14px;
     background: #fafbfc; border: 1px solid #f0f0f0; border-radius: 8px;
     page-break-inside: avoid;
   }}
-  .chart-title {{ font-size: 14px; font-weight: 700; color: #374151; margin-bottom: 10px; }}
+  .chart-title {{ font-size: 14px; font-weight: 700; color: #374151; margin-bottom: 8px; }}
   .chart-canvas-wrapper {{
-    position: relative; width: 100%; max-height: 320px;
+    position: relative; width: 100%; max-height: 260px;
   }}
-  .chart-canvas-wrapper canvas {{ max-height: 320px; }}
+  .chart-canvas-wrapper canvas {{ max-height: 260px; }}
 
   /* ── Findings ── */
-  .findings {{ display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }}
+  .findings {{ display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }}
   .finding {{
     display: flex; align-items: flex-start; gap: 10px;
-    padding: 10px 14px; border-radius: 6px; font-size: 14px;
+    padding: 8px 10px; border-radius: 6px; font-size: 14px;
     page-break-inside: avoid;
   }}
   .finding-badge {{
@@ -442,7 +448,7 @@ def render_report_html(
   .finding-info .finding-badge {{ background: #f3f4f6; color: #6b7280; }}
 
   /* ── Conclusions ── */
-  .conclusions, .recommendations {{ margin-bottom: 28px; page-break-inside: avoid; }}
+  .conclusions, .recommendations {{ margin-bottom: 14px; page-break-inside: avoid; }}
   .conclusions h2, .recommendations h2 {{
     font-size: 20px; font-weight: 700;
     color: #111827; margin: 0 0 12px 0;
@@ -499,7 +505,6 @@ def render_report_html(
 <!-- Screen-only toolbar -->
 <div class="screen-toolbar">
   <span>Frammer AI — Report Preview</span>
-  <button onclick="window.print()">Export PDF</button>
 </div>
 
 <!-- Fixed header (repeats on every printed page) -->

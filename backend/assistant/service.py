@@ -106,18 +106,22 @@ def _suggested_actions(message: str, filters: dict[str, Any] | None, artifacts: 
 
 def _serialize_message(raw_message: dict[str, Any]) -> dict[str, Any]:
     metadata = raw_message.get("metadata") or {}
+    content = raw_message.get("content") or ""
+    intent = metadata.get("intent", "analytics")
+    is_report = intent == "report"
     return {
         "role": raw_message.get("role"),
-        "content": raw_message.get("content") or "",
-        "markdown": raw_message.get("content") or "",
+        "content": content,
+        "markdown": "" if is_report else content,
         "timestamp": raw_message.get("timestamp"),
         "artifacts": metadata.get("artifacts", []),
         "datasets": metadata.get("datasets", []),
         "suggested_actions": metadata.get("suggested_actions", []),
         "actions": metadata.get("actions", []),
-        "intent": metadata.get("intent", "analytics"),
+        "intent": intent,
         "sql": metadata.get("sql", ""),
         "error": metadata.get("error", ""),
+        "report_html": content if is_report else "",
     }
 
 
@@ -159,7 +163,7 @@ async def chat(
     # Handle clarification — store state and return the clarification as the response
     if getattr(result, "clarification", None):
         conversation_api.update_agent_state(conversation_id, getattr(result, "agent_state", None))
-        conversation_api.append_message(conversation_id, "assistant", result.clarification)
+        conversation_api.append_message(conversation_id, "assistant", result.clarification, metadata={"intent": "clarification"})
         assistant_message = AssistantMessage(
             markdown=result.clarification,
             intent="clarification",
@@ -389,14 +393,15 @@ async def chat_stream(
 
             # For reports: report_html is the same as response (the HTML content).
             # Pass it in BOTH fields so the frontend can find it regardless.
-            report_html_content = final_message.get("report_html", "") or raw_response if is_report else ""
+            report_html_content = (final_message.get("report_html", "") or raw_response) if is_report else ""
 
             yield {
                 "type": "complete",
                 "conversation_id": conversation_id,
                 "message": {
                     "markdown": "" if is_report else raw_response,
-                    "response": raw_response,
+                    "response": "" if is_report else raw_response,
+                    "content": "" if is_report else raw_response,
                     "artifacts": [a.model_dump() for a in all_artifacts],
                     "datasets": [d.model_dump(by_alias=True) for d in all_datasets],
                     "suggested_actions": [a.model_dump() for a in _suggested_actions(message, filters, [a.model_dump() for a in all_artifacts])],
@@ -406,7 +411,7 @@ async def chat_stream(
                     "error": "",
                     "report_html": report_html_content,
                 },
-                "response": raw_response,
+                "response": "" if is_report else raw_response,
                 "actions": final_message.get("actions", []),
             }
         elif event.get("type") == "clarification_needed":
@@ -414,7 +419,7 @@ async def chat_stream(
             clarify_q = event.get("question", "Could you clarify?")
             clarify_state = event.get("agent_state")
             conversation_api.update_agent_state(conversation_id, clarify_state)
-            conversation_api.append_message(conversation_id, "assistant", clarify_q)
+            conversation_api.append_message(conversation_id, "assistant", clarify_q, metadata={"intent": "clarification"})
             yield {
                 "type": "clarification_needed",
                 "conversation_id": conversation_id,

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BarChart3,
   Bot,
@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Microscope,
   ShieldCheck,
+  Sparkles,
 } from 'lucide-react';
 import './lib/chartSetup';
 import { API_BASE, customStyles } from './lib/constants';
@@ -18,6 +19,46 @@ import UserJourneyModule from './features/journey/UserJourneyModule';
 import ExplorerModule from './features/explorer/ExplorerModule';
 import TalkToDataModule from './features/talk/TalkToDataModule';
 import DataQualityModule from './features/quality/DataQualityModule';
+import WrappedModule from './features/wrapped/WrappedModule';
+
+function SystemDot({ dotColor, services }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  return (
+    <div
+      ref={ref}
+      className="relative"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <div className="flex cursor-default items-center justify-center rounded-full border border-neutral-800 bg-[#111111]" style={{ width: 32, height: 32 }}>
+        <div className={`h-2.5 w-2.5 rounded-full ${dotColor}`} />
+      </div>
+
+      {open && (
+        <div className="absolute right-0 top-full z-50 mt-2 min-w-[180px] rounded-2xl border border-neutral-800 bg-[#111111] p-3 shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
+          <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-600">
+            System Status
+          </div>
+          <div className="flex flex-col gap-2">
+            {services.map(({ label, ok }) => (
+              <div key={label} className="flex items-center justify-between gap-4">
+                <span className="text-xs text-neutral-400">{label}</span>
+                <div className="flex items-center gap-1.5">
+                  <div className={`h-1.5 w-1.5 rounded-full ${ok ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                  <span className={`text-[11px] font-semibold ${ok ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {ok ? 'Live' : 'Down'}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function readRouteState() {
   const params = new URLSearchParams(window.location.search);
@@ -104,6 +145,8 @@ export default function AppShell() {
     { id: 'quality', label: 'Data Quality', icon: <ShieldCheck size={16} /> },
   ]), []);
 
+  const showWrapped = authUser?.role === 'client_admin' || authUser?.role === 'user';
+
   const handleLogin = async (event) => {
     event.preventDefault();
     setLoginError('');
@@ -122,6 +165,10 @@ export default function AppShell() {
       setAuthToken(payload.token);
       setAuthUser(payload.user);
       setLoginPassword('');
+      const role = payload.user?.role;
+      if (role === 'client_admin' || role === 'user') {
+        navigate({ view: 'wrapped' });
+      }
     } catch (error) {
       setLoginError(error.message || 'Login failed');
     } finally {
@@ -203,16 +250,44 @@ export default function AppShell() {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* DB status — single dot indicator */}
-            {health.data?.services?.database && (() => {
-              const dbOk = Boolean(health.data.services.database.ok);
+            {/* System status — tri-state dot with hover tooltip */}
+            {health.data && (() => {
+              const dbOk      = Boolean(health.data.services?.database?.ok);
+              const agentOk   = Boolean(health.data.services?.mcp?.ok);
+              const backendOk = true; // health endpoint responded → backend is live
+              const liveCount = [dbOk, agentOk, backendOk].filter(Boolean).length;
+              const dotColor  = liveCount === 3
+                ? 'bg-emerald-500 shadow-[0_0_7px_rgba(16,185,129,0.7)]'
+                : liveCount > 0
+                  ? 'bg-yellow-400 shadow-[0_0_7px_rgba(250,204,21,0.7)]'
+                  : 'bg-red-500 shadow-[0_0_7px_rgba(239,68,68,0.7)]';
+
+              const services = [
+                { label: 'Database',  ok: dbOk      },
+                { label: 'MCP Agent', ok: agentOk   },
+                { label: 'Backend',   ok: backendOk },
+              ];
+
               return (
-                <div className="flex items-center gap-2 rounded-full border border-neutral-800 bg-[#111111] px-3 py-1.5">
-                  <div className={`h-2 w-2 rounded-full ${dbOk ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)]' : 'bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.6)]'}`} />
-                  <span className="text-xs font-semibold text-neutral-400">DB</span>
-                </div>
+                <SystemDot dotColor={dotColor} services={services} />
               );
             })()}
+
+            {/* Year Wrapped shortcut — client_admin and user only */}
+            {showWrapped && (
+              <button
+                onClick={() => navigate({ view: 'wrapped' })}
+                title="Year Wrapped"
+                className={`flex items-center justify-center rounded-full border transition-colors ${
+                  activeView === 'wrapped'
+                    ? 'border-indigo-500 bg-indigo-500/10 text-indigo-400'
+                    : 'border-neutral-800 bg-[#111111] text-neutral-500 hover:border-indigo-500/50 hover:text-indigo-400'
+                }`}
+                style={{ width: 32, height: 32 }}
+              >
+                <Sparkles size={14} />
+              </button>
+            )}
 
             <div className="h-4 w-px bg-neutral-800" />
 
@@ -247,13 +322,19 @@ export default function AppShell() {
       </nav>
 
       <main className="flex-1 overflow-hidden">
-        {activeView === 'mission-control' && <OverviewModule routeState={routeState} onNavigate={navigate} />}
+        {/* Mount OverviewModule hidden during wrapped so it prefetches before the user continues */}
+        {(activeView === 'mission-control' || activeView === 'wrapped') && (
+          <div className={activeView !== 'mission-control' ? 'hidden' : 'w-full h-full'}>
+            <OverviewModule routeState={routeState} onNavigate={navigate} />
+          </div>
+        )}
         {activeView === 'trends' && <UsageTrendsModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'funnel' && <FunnelModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'journey' && <UserJourneyModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'explorer' && <ExplorerModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'copilot' && <TalkToDataModule authToken={authToken} routeState={routeState} onNavigate={navigate} />}
-        {activeView === 'quality' && <DataQualityModule />}
+        {activeView === 'quality' && <DataQualityModule authUser={authUser} />}
+        {activeView === 'wrapped' && <WrappedModule onNavigate={navigate} />}
       </main>
     </div>
   );

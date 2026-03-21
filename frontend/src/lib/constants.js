@@ -12,9 +12,9 @@ export const customStyles = `
     --frammer-accent-soft: rgba(239, 68, 68, 0.12);
   }
   @keyframes flowRight {
-    0% { transform: translateX(-10px); opacity: 0; }
+    0% { transform: translateX(-5px); opacity: 0; }
     50% { opacity: 1; }
-    100% { transform: translateX(20px); opacity: 0; }
+    100% { transform: translateX(5px); opacity: 0; }
   }
   .dot-flow { animation: flowRight 1.5s infinite linear; }
   .dot-flow:nth-child(1) { animation-delay: 0s; }

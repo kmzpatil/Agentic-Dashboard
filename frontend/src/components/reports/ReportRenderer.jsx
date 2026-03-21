@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { CheckCircle2, Download, FileText, Loader2 } from 'lucide-react';
 
 /**
@@ -15,7 +15,8 @@ const PDF_CSS = `
     font-size: 11px; line-height: 1.5;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
-    margin: 0; padding: 0;
+    margin: 0 auto; padding: 0;
+    max-width: 178mm;
   }
   @page { size: A4; margin: 18mm 16mm 16mm 16mm; }
 
@@ -218,6 +219,19 @@ ${reportHtml}
 export default function ReportRenderer({ reportHtml }) {
   const [downloading, setDownloading] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
+  const [iframeHeight, setIframeHeight] = useState(600);
+  const iframeRef = useRef(null);
+
+  // postMessage listener for sandbox-safe auto-resize (must be before early return for hooks rules)
+  React.useEffect(() => {
+    const handler = (e) => {
+      if (e.data?.type === 'report-iframe-resize' && typeof e.data.height === 'number') {
+        setIframeHeight(Math.min(Math.max(e.data.height + 40, 400), 2000));
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, []);
 
   if (!reportHtml) return null;
 
@@ -227,17 +241,29 @@ export default function ReportRenderer({ reportHtml }) {
     ? titleMatch[1].replace(/<[^>]+>/g, '').trim()
     : 'Analytical Report';
 
+  // Build full document once — used for both preview and PDF export
+  const trimmed = reportHtml.trim().toLowerCase();
+  const isFullDocument = trimmed.startsWith('<!doctype html') || trimmed.startsWith('<html');
+  const baseDoc = isFullDocument ? reportHtml : buildPdfDocument(reportHtml);
+
+  // Inject a postMessage resize script so the sandboxed iframe (no allow-same-origin)
+  // can communicate its content height to the parent for auto-resize.
+  const resizeScript = `<script>
+    function _notifyHeight() {
+      var h = document.documentElement.scrollHeight || document.body.scrollHeight;
+      window.parent.postMessage({ type: 'report-iframe-resize', height: h }, '*');
+    }
+    window.addEventListener('load', function() { setTimeout(_notifyHeight, 200); });
+    new MutationObserver(_notifyHeight).observe(document.body, { childList: true, subtree: true });
+  <\/script>`;
+  const fullDoc = baseDoc.replace(/<\/body>/i, resizeScript + '</body>');
+
   const handleDownloadPdf = async () => {
     setDownloading(true);
     setDownloaded(false);
     try {
-      // Detect if we received a complete document (from render_report_html) or a legacy fragment
-      const trimmed = reportHtml.trim().toLowerCase();
-      const isFullDocument = trimmed.startsWith('<!doctype html') || trimmed.startsWith('<html');
-      const fullDoc = isFullDocument ? reportHtml : buildPdfDocument(reportHtml);
-
       const iframe = document.createElement('iframe');
-      iframe.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;border:none;visibility:hidden;';
+      iframe.style.cssText = 'position:fixed;left:-9999px;top:0;width:900px;height:1200px;border:none;';
       document.body.appendChild(iframe);
 
       const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
@@ -249,8 +275,22 @@ export default function ReportRenderer({ reportHtml }) {
         if (iframe.contentWindow.document.readyState === 'complete') resolve();
         else iframe.contentWindow.addEventListener('load', resolve);
       });
-      // Full documents need extra time for Chart.js CDN load + canvas rendering
-      await new Promise((r) => setTimeout(r, isFullDocument ? 800 : 300));
+
+      if (isFullDocument) {
+        const start = Date.now();
+        while (Date.now() - start < 5000) {
+          const chartReady = iframe.contentWindow.Chart;
+          const canvases = iframeDoc.querySelectorAll('canvas');
+          if (chartReady && canvases.length === 0) break;
+          if (chartReady && canvases.length > 0) {
+            await new Promise((r) => setTimeout(r, 500));
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 200));
+        }
+      } else {
+        await new Promise((r) => setTimeout(r, 300));
+      }
 
       iframe.contentWindow.focus();
       iframe.contentWindow.print();
@@ -260,10 +300,7 @@ export default function ReportRenderer({ reportHtml }) {
     } catch (err) {
       console.error('PDF generation failed:', err);
       try {
-        const trimmed2 = reportHtml.trim().toLowerCase();
-        const isFullDoc2 = trimmed2.startsWith('<!doctype html') || trimmed2.startsWith('<html');
-        const fallbackDoc = isFullDoc2 ? reportHtml : buildPdfDocument(reportHtml);
-        const blob = new Blob([fallbackDoc], { type: 'text/html' });
+        const blob = new Blob([fullDoc], { type: 'text/html' });
         const url = URL.createObjectURL(blob);
         const win = window.open(url, '_blank');
         if (win) win.addEventListener('load', () => { win.print(); URL.revokeObjectURL(url); });
@@ -275,23 +312,27 @@ export default function ReportRenderer({ reportHtml }) {
 
   return (
     <div className="max-w-[780px]">
-      <div className="rounded-2xl border border-neutral-800 bg-[#0C0C0C] p-5">
-        <div className="flex items-start gap-3 mb-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-500/10 shrink-0">
-            <FileText size={18} className="text-red-400" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-red-400/70 mb-1">Report Generated</div>
-            <div className="text-[15px] font-semibold text-white leading-tight truncate">{reportTitle}</div>
-            <p className="mt-1.5 text-[12px] text-neutral-500 leading-relaxed">
-              Click below to save as PDF. Select &quot;Save as PDF&quot; in the print dialog.
-            </p>
-          </div>
+      {/* Inline report preview */}
+      <div className="rounded-2xl border border-neutral-800 bg-white overflow-hidden mb-4">
+        <iframe
+          ref={iframeRef}
+          srcDoc={fullDoc}
+          style={{ width: '100%', height: `${iframeHeight}px`, border: 'none' }}
+          sandbox="allow-scripts"
+          title={reportTitle}
+        />
+      </div>
+
+      {/* Compact download bar */}
+      <div className="flex items-center justify-between rounded-2xl border border-neutral-800 bg-[#0C0C0C] px-5 py-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <FileText size={14} className="text-red-400 shrink-0" />
+          <span className="text-[13px] font-semibold text-neutral-400 truncate">{reportTitle}</span>
         </div>
         <button
           onClick={handleDownloadPdf}
           disabled={downloading}
-          className={`w-full flex items-center justify-center gap-2.5 rounded-xl px-5 py-3 text-[14px] font-semibold transition-all ${
+          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-[13px] font-semibold transition-all shrink-0 ml-3 ${
             downloaded
               ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
               : downloading
@@ -300,11 +341,11 @@ export default function ReportRenderer({ reportHtml }) {
           }`}
         >
           {downloading ? (
-            <><Loader2 size={16} className="animate-spin" /> Preparing PDF...</>
+            <><Loader2 size={14} className="animate-spin" /> Preparing...</>
           ) : downloaded ? (
-            <><CheckCircle2 size={16} /> Done — Click to save again</>
+            <><CheckCircle2 size={14} /> Save again</>
           ) : (
-            <><Download size={16} /> Save Report as PDF</>
+            <><Download size={14} /> Save as PDF</>
           )}
         </button>
       </div>

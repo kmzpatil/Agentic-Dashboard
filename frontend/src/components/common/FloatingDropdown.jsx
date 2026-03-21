@@ -145,7 +145,7 @@ export default function FloatingDropdown({
                 key={group.label}
                 className={gi > 0 ? "border-t border-neutral-900" : ""}
               >
-                <div className="px-4 py-2 text-[10px] font-black uppercase tracking-[0.2em] text-neutral-600 bg-neutral-900/50">
+                <div className="px-4 py-2 text-[10px] font-black uppercase tracking-[0.2em] text-neutral-400 bg-neutral-900/50">
                   {group.label}
                 </div>
                 <div className="p-1">

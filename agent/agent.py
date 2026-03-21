@@ -28,6 +28,7 @@ import json
 import logging
 import re
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -90,7 +91,40 @@ def _clean(text: str) -> str:
     return _THINK_BLOCK_RE.sub("", text).strip()
 
 
-def _extract_response(text: str) -> str:
+def _extract_chart_specs_from_text(text: str) -> tuple:
+    """Extract chart spec JSON from text that Gemini may dump inline.
+
+    Returns (cleaned_text, chart_specs) where chart_specs is a list of dicts
+    or empty list if none found.
+    """
+    # Look for JSON array of chart specs in the text
+    import re as _re
+    # Match a top-level JSON array that contains chart_type keys
+    pattern = _re.compile(
+        r'\[\s*\{[^}]*"chart_type"[^}]*\}(?:\s*,\s*\{[^}]*"chart_type"[^}]*\})*\s*\]',
+        _re.DOTALL,
+    )
+    match = pattern.search(text)
+    if match:
+        try:
+            specs = json.loads(match.group())
+            if isinstance(specs, list) and all(isinstance(s, dict) and "chart_type" in s for s in specs):
+                cleaned = text[:match.start()].rstrip() + text[match.end():].lstrip()
+                return cleaned, specs
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return text, []
+
+
+def _extract_response(text) -> str:
+    # Gemini returns content as a list of blocks; normalise to string
+    if isinstance(text, list):
+        text = " ".join(
+            part.get("text", "") if isinstance(part, dict) else str(part)
+            for part in text
+        ).strip()
+    if not isinstance(text, str):
+        text = str(text)
     if _THINK_CLOSE in text:
         after = text.split(_THINK_CLOSE, 1)[-1].strip()
         if after:
@@ -140,6 +174,7 @@ MAX_ITERATIONS = 10  # Safety cap — agent finishes naturally via answer/clarif
 
 # ── Schema cache ─────────────────────────────────────────────────────────────
 _schema_cache: Optional[str] = None
+_schema_cache_lock = threading.Lock()
 
 # ── LLM client ───────────────────────────────────────────────────────────────
 _llm_client = LLMClient()
@@ -207,7 +242,7 @@ async def _plan_report_sub_questions(
 # ── Tool definitions (for LangChain bind_tools) ─────────────────────────────
 
 from langchain_core.tools import tool
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 
 @tool
@@ -233,9 +268,13 @@ def answer(
 ) -> str:
     """Provide the final answer to the user's question.
     Args:
-        response: Markdown response (2-3 sentences, business language, bold key numbers).
-                  Never expose SQL, table names, column names, or internal IDs.
-        needs_chart: Whether the answer benefits from a chart visualization.
+        response: Thorough analytical response in markdown. Depth scales with complexity —
+                  brief for simple factual lookups, full data-analyst-style analysis for
+                  analytical questions (findings, breakdowns, trends, patterns, insights).
+                  Bold key numbers. Business language only. Never expose SQL or table names.
+        needs_chart: Whether the data naturally benefits from visualization.
+                     True for trends (line), breakdowns (bar), comparisons, distributions.
+                     False for single-number factual answers with no breakdown.
         chart_intent: If needs_chart, the broad intent: "comparison", "trend", "distribution", "proportion", "correlation".
         charts: If needs_chart, list of chart specs. Each: {
             "chart_type": "bar"|"line"|"pie"|"doughnut"|"scatter"|"horizontal-bar"|"stacked-bar"|"area"|"heatmap"|"treemap"|"box"|"violin"|"radar"|"bubble"|"polar-area",
@@ -308,8 +347,24 @@ def explore_tool(
 # ── Unified System Prompt ────────────────────────────────────────────────────
 
 AGENT_PROMPT = """\
-You are Frammer AI, an analytics agent for a media production platform.
-You answer questions by querying a PostgreSQL database and synthesizing results.
+You are Frammer AI, a data analyst agent for a media production platform.
+You answer questions by querying a PostgreSQL database, analyzing results from multiple angles, and presenting deep, substantive findings.
+
+## CRITICAL: You MUST use tool calls
+
+You are a tool-calling agent. You MUST interact ONLY through tool calls. NEVER write a plain text response.
+
+Every response you produce MUST be exactly ONE tool call. The rules are:
+- To get data → call `execute_queries`
+- To provide your final answer → call `answer`
+- To ask a clarifying question → call `clarify`
+- To look up column values → call `get_column_values_tool`
+- To look up a KPI formula → call `get_kpi_info_tool`
+- To explore data → call `explore_tool`
+
+Do NOT write analysis, charts, or JSON in plain text. ALL analysis text goes inside the `response` parameter of the `answer` tool. ALL chart specs go inside the `charts` parameter of the `answer` tool.
+
+If you write ANY plain text response instead of making a tool call, the system will fail. ALWAYS make a tool call.
 
 ## How to Work
 
@@ -321,18 +376,15 @@ You have six tools:
 5. `get_kpi_info_tool` — Get the definition, formula, and SQL pattern for a business KPI.
 6. `explore_tool` — Run lightweight exploration queries (DISTINCT values, MIN/MAX, sample rows). Max 5 rows each.
 
-**Process:**
-- First, decide if this is conversational (greeting, thanks, small talk) → call `answer` directly with a brief reply.
-- For data questions: call `execute_queries` with the SQL you need. Pack as many queries as you can into each call — they run in parallel.
-- You'll receive a summary of results (columns, row counts, sample rows, numeric stats).
-- If the data is sufficient to answer the question, call `answer`.
-- If you need more data (e.g. a follow-up query based on initial results, or a query failed and needs fixing), call `execute_queries` again.
-- You may iterate up to {max_iterations} times. Make each iteration count.
+## Analysis Strategy
 
-**Efficiency rules:**
-- Check "Previous Query Results" before every iteration. If data is already there, use it — do NOT re-fetch.
-- Never repeat a query whose results already appear in Previous Query Results.
-- For broad questions, gather all the data you need in one or two batches, then call `answer`.
+Think like a data analyst. For every data question, consider what angles would give the user a complete picture:
+
+1. **Plan your queries broadly.** Before executing, ask yourself: what would a thorough analyst investigate? Consider the primary metric, relevant breakdowns (by language, format, channel, time period), comparisons, and trends. Build ALL these queries into a single `execute_queries` call — they run in parallel, so more queries means richer analysis at zero extra time cost.
+
+2. **Evaluate results and go deeper if needed.** After receiving results, check: do they reveal follow-up questions worth investigating? A surprising spike, an underperforming segment, or an incomplete picture? If yes, run another query batch. You have up to {max_iterations} iterations.
+
+3. **Never re-fetch data already in the conversation.** Your prior tool results are visible in the message history.
 
 **When to use `get_column_values_tool`:**
 - You need to filter by a specific value but aren't sure what values exist.
@@ -350,7 +402,28 @@ You have six tools:
 - The question could refer to multiple different metrics, entities, or time periods.
 - A filter value is ambiguous (e.g. "recent" without a clear timeframe).
 - The user's intent is genuinely unclear between two+ interpretations.
-- Do NOT use clarify for simple questions. Most queries (99%+) should proceed without clarification.
+- Use clarify when ambiguity would lead you to guess. A brief clarification is better than an incorrect analysis.
+- Prefer to proceed without clarification when you can make a reasonable default assumption (e.g., "recent" defaults to last 30 days). Mention the assumption in your answer.
+
+## Example Analysis Patterns
+
+These show the expected depth and query strategy:
+
+### Example: "How are uploads trending?" (analytical question)
+**Step 1** → `execute_queries` with 4 queries:
+  - Monthly upload count trend (last 12 months)
+  - Upload count breakdown by language (same period)
+  - Upload count breakdown by content format
+  - Month-over-month growth rate
+**Step 2** → `answer` with `needs_chart: true`, chart_type: "line" for monthly trend
+**Response**: Thorough analysis covering the overall trend direction, which months saw peaks/dips, which languages and formats are driving growth, and what the month-over-month growth rate looks like. Highlights any notable patterns or anomalies.
+
+### Example: "How many uploads do we have?" (simple factual question)
+**Step 1** → `execute_queries` with 2 queries:
+  - Total upload count
+  - Upload count by top languages (for context)
+**Step 2** → `answer` with `needs_chart: false`
+**Response**: The total number with brief context about the top language composition.
 
 ## Database Schema
 {schema_block}
@@ -399,27 +472,34 @@ When specifying charts in `answer`, reference queries by their 0-based index in 
 {auth_block}
 {memory_block}
 
-## Previous Query Results
-{results_context}
+## Before You Call `answer`
+
+Ask yourself these 3 questions:
+1. **Multi-angle**: Did I query from multiple angles (breakdowns, comparisons, trends)? If the question deserves deeper analysis, run another query batch before answering.
+2. **Chart fit**: Does the data naturally lend itself to a chart? Time-series data → line chart. Category breakdowns → bar chart. Single numbers with no breakdown → no chart needed. Let the data shape decide.
+3. **Insight**: Can I point to a specific finding, pattern, or anomaly? A good analysis highlights something non-obvious from the data.
 
 ## Rules for Answering
-- **Extreme brevity**: 2-3 sentences max for simple questions. For broad questions, up to a short paragraph with key findings.
+- **Act as a data analyst presenting findings.** Depth scales with what the data reveals.
+- For simple factual lookups ("how many X total?"): give the number with brief context.
+- For analytical questions ("how is X trending?", "which Y performs best?"): provide thorough analysis — headline finding, breakdowns, comparisons, trends, patterns, and actionable insights.
+- Always lead with the most important finding.
+- **Bold** key numbers and terms. Use markdown.
+- If the data reveals interesting patterns, anomalies, or outliers, call them out.
 - **Data integrity**: ONLY use numbers from the results. Never estimate or hallucinate.
 - **Business language**: uploads (not raw_videos), generated content/assets (not created_assets), published content (not published_posts), content format (not Input_Type), asset type (not Output_Type).
 - **Never expose**: SQL, table names, column names, internal IDs, or schema details.
-- **Bold** key numbers and terms. Use markdown.
-- If results show trends or comparisons, highlight the most important finding.
 - **NEVER generate HTML**. Your response must be plain text with markdown formatting only. No `<div>`, `<style>`, `<html>`, or any HTML tags.
-- If the user asks for a "report", still answer in concise markdown. Full formatted reports are generated separately via report mode.
+- If the user asks for a "report", still answer in markdown. Full formatted reports are generated separately via report mode.
 
 Current System Time: {now_str}
 """
 
 SYNTHESIZER_PROMPT = """\
-You are Frammer AI. Summarize the analysis results below into a clear, concise response.
+You are Frammer AI. Provide a thorough summary of the analysis results below.
 
 ## Rules
-- **Extreme Brevity**: 2-3 sentences max. No fluff.
+- **Thorough analysis**: Summarize the key findings with depth. Bold key numbers. Highlight the most important patterns, comparisons, and insights the data reveals.
 - **Data Integrity**: ONLY use numbers from the results. Never estimate or hallucinate.
 - **Formatting**: **Bold** key numbers and terms. Use markdown.
 - **Privacy**: Never expose SQL, internal IDs, database table names, column names, or any technical schema details.
@@ -575,48 +655,74 @@ async def _generate_charts_from_specs(
 ALL_TOOLS = [execute_queries, answer, clarify, get_column_values_tool, get_kpi_info_tool, explore_tool]
 
 
-def _build_system_prompt(
+def _build_cached_system_message(
     schema: str,
     metrics: str,
     auth: Any,
     working_memory: str,
-    query_results: List[Dict],
-) -> str:
-    """Build the full system prompt with current state."""
-    return AGENT_PROMPT.format(
+    mode: str = "normal",
+    report_sub_questions: Optional[List[Dict]] = None,
+) -> SystemMessage:
+    """Build the static system message with cache_control for prompt caching.
+
+    This message stays constant across all loop iterations. Query results
+    flow through ToolMessage objects, not the system prompt.
+    """
+    prompt_text = AGENT_PROMPT.format(
         schema_block=schema or "",
         metrics_block=metrics or "",
         auth_block=_build_auth_block(auth),
         memory_block=f"\n## Conversation Memory\n{working_memory}" if working_memory else "",
-        results_context=_summarize_query_results(query_results),
         now_str=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         max_iterations=MAX_ITERATIONS,
     )
 
+    # Append report mode instructions (moved out of the loop)
+    if mode == "report":
+        sq_text = "\n".join(
+            f"  {sq['id']}. [{sq['type'].upper()}] {sq['question']}"
+            for sq in (report_sub_questions or [])
+        ) if report_sub_questions else ""
+        prompt_text += "\n\n## Mode: REPORT — COMPREHENSIVE DATA GATHERING"
+        prompt_text += "\nYou are gathering data for a comprehensive, board-level analytical report. A separate system will format the final report — you do NOT need to format anything."
+        prompt_text += "\n\n**Your goal is to gather as much relevant data as possible.** The report quality depends entirely on how much data you collect."
+        prompt_text += "\n\n### Data Gathering Strategy:"
+        prompt_text += "\n1. **First call**: Execute ALL sub-questions below in a single `execute_queries` batch (they run in parallel)."
+        prompt_text += "\n2. **Review results**: After receiving results, look for gaps:"
+        prompt_text += "\n   - Any failed queries? Fix and retry."
+        prompt_text += "\n   - Any dimension not yet covered (language, format, client, platform, time, asset type)? Add queries."
+        prompt_text += "\n   - Any surprising patterns worth drilling into? Add follow-up queries."
+        prompt_text += "\n   - Any cross-tabulations missing (e.g., format × language, client × platform)? Add them."
+        prompt_text += "\n3. **Go deeper**: Use 2-3 iterations to build a comprehensive data foundation. Do NOT stop after one batch."
+        prompt_text += "\n4. **Only then call `answer`**: Once you have 8+ successful query results covering multiple dimensions."
+        prompt_text += "\n\nDo NOT generate HTML. Call `answer` with a brief text summary of what you found."
+        prompt_text += "\nCheck your previous tool results — do not re-run queries whose data is already there."
+        if sq_text:
+            prompt_text += f"\n\n## Report Sub-Questions to Investigate\n{sq_text}\nExecute ALL of these in your first batch, then go deeper based on results."
 
-def _build_messages(
-    system: str,
-    question: str,
-    history: Optional[List[Dict]] = None,
-) -> List:
-    """Build the message list for the LLM call."""
-    messages = [SystemMessage(content=system)]
-    for msg in (history or [])[-4:]:
-        role = msg.get("role", "")
-        content = msg.get("content", "") or ""
-        if role == "user":
-            messages.append(HumanMessage(content=content))
-        elif role == "assistant":
-            messages.append(AIMessage(content=content))
-    messages.append(HumanMessage(content=question))
-    return messages
+    # Gemini-specific reinforcement
+    if _llm_client.provider == "gemini":
+        prompt_text += "\n\n## MANDATORY: Tool Call Protocol"
+        prompt_text += "\nYou MUST respond with a tool call on every turn. NEVER produce a plain text response."
+        prompt_text += "\n- First turn: call `execute_queries` with multiple SQL queries (they run in parallel — more queries = richer analysis at zero extra cost)."
+        prompt_text += "\n- After reviewing results: call `execute_queries` again if you need follow-up data, or call `answer` if you have enough."
+        prompt_text += "\n- Your analysis text goes in the `response` field of `answer`. Your chart specs go in the `charts` field of `answer`."
+        prompt_text += "\n- NEVER write JSON, chart specs, or analysis as plain text. It MUST go through the `answer` tool."
+
+    # Anthropic supports cache_control content blocks; Gemini needs plain string
+    if _llm_client.provider == "gemini":
+        return SystemMessage(content=prompt_text)
+    return SystemMessage(content=[
+        {"type": "text", "text": prompt_text, "cache_control": {"type": "ephemeral"}}
+    ])
 
 
 def _load_schema_and_metrics() -> tuple:
     """Load and cache schema + metrics."""
     global _schema_cache
-    if not _schema_cache:
-        _schema_cache = get_frammer_schema()
+    with _schema_cache_lock:
+        if not _schema_cache:
+            _schema_cache = get_frammer_schema()
     all_metrics = "\n".join(f"- **{k}**: {v}" for k, v in METRIC_DICTIONARY.items())
     all_metrics += "\n\n" + retrieve_metric_definitions("XYZ_FAIL")
     return _schema_cache, all_metrics
@@ -792,14 +898,14 @@ async def _synthesize_report(question: str, all_query_results: List[Dict]) -> st
     Falls back to Anthropic if Gemini is unavailable.
     Returns a complete self-contained HTML document.
     """
-    # Phase 1: Build results_block (30-row samples for Gemini context)
+    # Phase 1: Build results_block (50-row samples for synthesis context)
     results_parts = []
     for i, qr in enumerate(all_query_results):
         desc = qr.get("description", f"Query {i}")
         sq_type = qr.get("type", "breakdown")
 
         if qr.get("status") == "success":
-            sample = qr.get("sample", qr.get("data", []))[:30]
+            sample = qr.get("sample", qr.get("data", []))[:50]
             cols = qr.get("columns", [])
             results_parts.append(
                 f"### Query {i} ({sq_type}): {desc}\n"
@@ -852,6 +958,58 @@ async def _synthesize_report(question: str, all_query_results: List[Dict]) -> st
     return html
 
 
+# ── Conversational Fast-Path ──────────────────────────────────────────────────
+
+_CONVERSATIONAL_RE = re.compile(
+    r"^(hi|hello|hey|thanks|thank you|bye|goodbye|good morning|good evening|"
+    r"how are you|what can you do|who are you|what are you)\s*[?!.]*$",
+    re.IGNORECASE,
+)
+
+
+def _is_conversational(question: str) -> bool:
+    """Quick check if the question is conversational (no data needed)."""
+    return bool(_CONVERSATIONAL_RE.match(question.strip()))
+
+
+# ── Message Serialization (for clarification state persistence) ──────────────
+
+def _serialize_messages(messages: List) -> List[Dict]:
+    """Serialize LangChain messages to JSON-safe dicts for agent_state storage."""
+    serialized = []
+    for msg in messages:
+        entry = {"type": msg.__class__.__name__}
+        # Handle content that may be a list of blocks (cache_control) or a string
+        entry["content"] = msg.content
+        if hasattr(msg, "tool_calls") and msg.tool_calls:
+            entry["tool_calls"] = msg.tool_calls
+        if hasattr(msg, "tool_call_id") and msg.tool_call_id:
+            entry["tool_call_id"] = msg.tool_call_id
+        serialized.append(entry)
+    return serialized
+
+
+def _deserialize_messages(serialized: List[Dict]) -> List:
+    """Restore LangChain messages from serialized dicts."""
+    restored = []
+    for entry in serialized:
+        msg_type = entry.get("type", "")
+        content = entry.get("content", "")
+        if msg_type == "SystemMessage":
+            restored.append(SystemMessage(content=content))
+        elif msg_type == "HumanMessage":
+            restored.append(HumanMessage(content=content))
+        elif msg_type == "AIMessage":
+            tool_calls = entry.get("tool_calls", [])
+            restored.append(AIMessage(content=content, tool_calls=tool_calls))
+        elif msg_type == "ToolMessage":
+            restored.append(ToolMessage(
+                content=content,
+                tool_call_id=entry.get("tool_call_id", ""),
+            ))
+    return restored
+
+
 # ── Main Entry Point ─────────────────────────────────────────────────────────
 
 async def run_agent(
@@ -876,6 +1034,20 @@ async def run_agent(
     """
     if report_mode:
         mode = "report"
+
+    # Conversational fast-path — skip schema/tools/full prompt for greetings
+    if not agent_state and mode == "normal" and _is_conversational(question):
+        logger.info("=== CONVERSATIONAL FAST-PATH ===")
+        fast_llm = _llm_client._pick_gemini() if _llm_client.provider == "gemini" else _llm_client.llm
+        resp = await asyncio.to_thread(
+            fast_llm.invoke,
+            f"You are Frammer AI, a friendly analytics assistant. Respond briefly: {question}",
+        )
+        return AgentResult(
+            intent="conversational",
+            response=_extract_response(resp.content),
+            actions=["Conversational (fast path)"],
+        )
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     logger.info("=== AGENT START (mode=%s) === @ %s", mode, now_str)
@@ -902,8 +1074,9 @@ async def run_agent(
         # 1. Load schema + metrics
         schema, metrics = _load_schema_and_metrics()
 
-        # 2. Build LLM with tools
-        agent_llm = _llm_client.llm.bind_tools(ALL_TOOLS)
+        # 2. Build LLM with tools (pick fresh Gemini client from pool per request)
+        base_llm = _llm_client._pick_gemini() if _llm_client.provider == "gemini" else _llm_client.llm
+        agent_llm = base_llm.bind_tools(ALL_TOOLS)
 
         # 2b. Report planning phase
         report_sub_questions: List[Dict] = []
@@ -916,27 +1089,30 @@ async def run_agent(
             except Exception as plan_err:
                 logger.warning("Report planning failed: %s", plan_err)
 
-        # 3. ReAct loop
+        # 3. Build messages ONCE — static system prompt + history + question
+        #    (replaces per-iteration _build_system_prompt + _build_messages)
+        if agent_state and agent_state.get("messages"):
+            messages = _deserialize_messages(agent_state["messages"])
+            messages.append(HumanMessage(content=question))
+        else:
+            system_msg = _build_cached_system_message(
+                schema, metrics, auth, working_memory, mode, report_sub_questions,
+            )
+            messages = [system_msg]
+            for msg in (history or [])[-4:]:
+                role = msg.get("role", "")
+                content = msg.get("content", "") or ""
+                if role == "user":
+                    messages.append(HumanMessage(content=content))
+                elif role == "assistant":
+                    messages.append(AIMessage(content=content))
+            messages.append(HumanMessage(content=question))
+
+        # 4. ReAct loop — accumulate messages instead of rebuilding
         answer_text = ""
         answer_charts: List[ChartResult] = []
 
         for iteration in range(start_iter, MAX_ITERATIONS):
-            system = _build_system_prompt(schema, metrics, auth, working_memory, all_query_results)
-            if mode == "report":
-                sq_text = "\n".join(
-                    f"  {sq['id']}. [{sq['type'].upper()}] {sq['question']}"
-                    for sq in report_sub_questions
-                ) if report_sub_questions else ""
-                system += "\n\n## Mode: REPORT"
-                system += "\nYou are gathering data for a comprehensive analytical report. A separate system will format the final report — you do NOT need to format anything."
-                system += "\nGather data by executing queries for the sub-questions below. Query multiple angles, breakdowns, and comparisons to ensure thorough coverage."
-                system += "\nOnce you have data covering the sub-questions, call `answer` with a brief text summary of what you found. Do NOT generate HTML."
-                system += "\nIf a query fails, fix it and retry. If you need a follow-up query based on results, go ahead."
-                system += "\nCheck Previous Query Results — do not re-run queries whose data is already there."
-                if sq_text:
-                    system += f"\n\n## Report Sub-Questions to Investigate\n{sq_text}\nAddress these systematically with your queries."
-            messages = _build_messages(system, question, history)
-
             logger.info("=== ITERATION %d: Calling LLM (%d messages) ===", iteration + 1, len(messages))
             actions_log.append(f"Thinking (round {iteration + 1})...")
             start = time.time()
@@ -954,23 +1130,43 @@ async def run_agent(
             # Extract tool call
             tool_calls = getattr(resp, "tool_calls", [])
             if not tool_calls:
+                raw_text = _extract_response(resp.content)
                 if mode == "report":
                     logger.info("=== REPORT MODE: No tool call, treating as answer ===")
-                    answer_text = _extract_response(resp.content)
+                    answer_text = raw_text
                     actions_log.append("Answering (from context)")
                     break
+
+                # Check if Gemini dumped an analytical response without using the answer tool
+                cleaned_text, inline_charts = _extract_chart_specs_from_text(raw_text)
+                has_data = bool(all_query_results)  # We already ran queries
+                is_analytical = has_data or len(raw_text) > 500 or bool(inline_charts)
+
+                if is_analytical:
+                    logger.info("=== NO TOOL CALL but analytical content detected — treating as answer ===")
+                    answer_text = cleaned_text
+                    actions_log.append("Answering (inline — no tool call)")
+                    if inline_charts and mode == "normal":
+                        answer_charts = await _generate_charts_from_specs(inline_charts, all_full_data)
+                        if answer_charts:
+                            actions_log.append(f"Generated {len(answer_charts)} chart(s) from inline specs")
+                    break
                 else:
-                    # No tool call = conversational response
+                    # Truly conversational
                     logger.info("=== AGENT COMPLETE (conversational, %.2fs) ===", time.time() - overall_start)
                     return AgentResult(
                         intent="conversational",
-                        response=_extract_response(resp.content),
+                        response=raw_text,
                         actions=actions_log,
                     )
 
             tc = tool_calls[0]
             tool_name = tc.get("name", "")
             args = tc.get("args", {})
+            tool_call_id = tc.get("id", f"call_{iteration}")
+
+            # Append the AIMessage (with tool_calls) so the LLM sees its prior decisions
+            messages.append(resp)
 
             # ── EXECUTE QUERIES ──
             if tool_name == "execute_queries":
@@ -995,6 +1191,9 @@ async def run_agent(
                             f"SQL Error — {result.get('error', '')[:60]}"
                         )
 
+                # Send results back via ToolMessage (not system prompt)
+                tool_result_text = _summarize_query_results(batch_results)
+                messages.append(ToolMessage(content=tool_result_text, tool_call_id=tool_call_id))
                 continue  # Next iteration
 
             # ── CLARIFY ──
@@ -1016,6 +1215,7 @@ async def run_agent(
                         "actions_log": actions_log,
                         "last_sql": last_sql,
                         "iteration": iteration,
+                        "messages": _serialize_messages(messages),
                     },
                 )
 
@@ -1042,6 +1242,8 @@ async def run_agent(
                 result = await _handle_get_column_values(args)
                 all_query_results.append(result)
                 all_full_data.append(result)
+                tool_result_text = _summarize_query_results([result])
+                messages.append(ToolMessage(content=tool_result_text, tool_call_id=tool_call_id))
                 continue
 
             # ── GET KPI INFO ──
@@ -1051,6 +1253,8 @@ async def run_agent(
                 result = await _handle_get_kpi_info(args)
                 all_query_results.append(result)
                 all_full_data.append(result)
+                tool_result_text = _summarize_query_results([result])
+                messages.append(ToolMessage(content=tool_result_text, tool_call_id=tool_call_id))
                 continue
 
             # ── EXPLORE ──
@@ -1061,6 +1265,8 @@ async def run_agent(
                 result = await _handle_explore(args, auth=auth)
                 all_query_results.append(result)
                 all_full_data.append(result)
+                tool_result_text = _summarize_query_results([result])
+                messages.append(ToolMessage(content=tool_result_text, tool_call_id=tool_call_id))
                 continue
 
         else:
@@ -1126,6 +1332,23 @@ async def run_agent_stream(
     if report_mode:
         mode = "report"
 
+    # Conversational fast-path — skip schema/tools/full prompt for greetings
+    if not agent_state and mode == "normal" and _is_conversational(question):
+        logger.info("=== STREAM CONVERSATIONAL FAST-PATH ===")
+        fast_llm = _llm_client._pick_gemini() if _llm_client.provider == "gemini" else _llm_client.llm
+        resp = await asyncio.to_thread(
+            fast_llm.invoke,
+            f"You are Frammer AI, a friendly analytics assistant. Respond briefly: {question}",
+        )
+        yield {"type": "complete", "message": {
+            "response": _extract_response(resp.content),
+            "intent": "conversational",
+            "actions": ["Conversational (fast path)"],
+            "charts": [],
+            "sql": "",
+        }}
+        return
+
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     logger.info("=== AGENT STREAM START (mode=%s) === @ %s", mode, now_str)
     overall_start = time.time()
@@ -1134,8 +1357,9 @@ async def run_agent_stream(
         # 1. Load schema + metrics
         schema, metrics = _load_schema_and_metrics()
 
-        # 2. Build LLM with tools
-        agent_llm = _llm_client.llm.bind_tools(ALL_TOOLS)
+        # 2. Build LLM with tools (pick fresh Gemini client from pool per request)
+        base_llm = _llm_client._pick_gemini() if _llm_client.provider == "gemini" else _llm_client.llm
+        agent_llm = base_llm.bind_tools(ALL_TOOLS)
 
         # 3. State — restore if resuming from clarification
         if agent_state:
@@ -1171,7 +1395,25 @@ async def run_agent_stream(
             except Exception as plan_err:
                 logger.warning("Report planning failed, continuing without plan: %s", plan_err)
 
-        # 4. ReAct loop
+        # 3c. Build messages ONCE — static system prompt + history + question
+        if agent_state and agent_state.get("messages"):
+            messages = _deserialize_messages(agent_state["messages"])
+            messages.append(HumanMessage(content=question))
+        else:
+            system_msg = _build_cached_system_message(
+                schema, metrics, auth, working_memory, mode, report_sub_questions,
+            )
+            messages = [system_msg]
+            for msg in (history or [])[-4:]:
+                role = msg.get("role", "")
+                content = msg.get("content", "") or ""
+                if role == "user":
+                    messages.append(HumanMessage(content=content))
+                elif role == "assistant":
+                    messages.append(AIMessage(content=content))
+            messages.append(HumanMessage(content=question))
+
+        # 4. ReAct loop — accumulate messages instead of rebuilding
         report_step_idx = 0  # Track which sub-question we're on
         for iteration in range(start_iter, MAX_ITERATIONS):
             # Yield thinking phase
@@ -1180,38 +1422,49 @@ async def run_agent_stream(
                 phase_label = "thinking (continued)"
             yield {"type": "phase", "phase": phase_label}
 
-            system = _build_system_prompt(schema, metrics, auth, working_memory, all_query_results)
-            if mode == "report":
-                sq_text = "\n".join(
-                    f"  {sq['id']}. [{sq['type'].upper()}] {sq['question']}"
-                    for sq in report_sub_questions
-                ) if report_sub_questions else ""
-                system += "\n\n## Mode: REPORT"
-                system += "\nYou are gathering data for a comprehensive analytical report. A separate system will format the final report — you do NOT need to format anything."
-                system += "\nGather data by executing queries for the sub-questions below. Query multiple angles, breakdowns, and comparisons to ensure thorough coverage."
-                system += "\nOnce you have data covering the sub-questions, call `answer` with a brief text summary of what you found. Do NOT generate HTML."
-                system += "\nIf a query fails, fix it and retry. If you need a follow-up query based on results, go ahead."
-                system += "\nCheck Previous Query Results — do not re-run queries whose data is already there."
-                if sq_text:
-                    system += f"\n\n## Report Sub-Questions to Investigate\n{sq_text}\nAddress these systematically with your queries."
-            messages = _build_messages(system, question, history)
-
-            logger.info("=== STREAM ITERATION %d: Calling LLM ===", iteration + 1)
+            logger.info("=== STREAM ITERATION %d: Calling LLM (%d messages) ===", iteration + 1, len(messages))
             actions_log.append(f"Thinking (round {iteration + 1})...")
             resp = await asyncio.to_thread(agent_llm.invoke, messages)
 
             # Extract tool call
             tool_calls = getattr(resp, "tool_calls", [])
             if not tool_calls:
+                raw_text = _extract_response(resp.content)
                 if mode == "report":
                     logger.info("=== REPORT MODE: No tool call, treating as answer ===")
-                    answer_text = _extract_response(resp.content)
+                    answer_text = raw_text
                     actions_log.append("Answering (from context)")
                     break
+
+                # Check if Gemini dumped an analytical response without using the answer tool
+                cleaned_text, inline_charts = _extract_chart_specs_from_text(raw_text)
+                has_data = bool(all_query_results)
+                is_analytical = has_data or len(raw_text) > 500 or bool(inline_charts)
+
+                if is_analytical:
+                    logger.info("=== NO TOOL CALL but analytical content detected — treating as answer ===")
+                    answer_text = cleaned_text
+                    actions_log.append("Answering (inline — no tool call)")
+                    if inline_charts and mode == "normal":
+                        yield {"type": "phase", "phase": "generating charts"}
+                        chart_results = await _generate_charts_from_specs(inline_charts, all_full_data)
+                        for cr in chart_results:
+                            answer_charts_data.append({
+                                "chart_xml": cr.chart_xml,
+                                "chart_type": cr.chart_type,
+                                "data_records": cr.data_records,
+                                "sql": cr.sql,
+                                "title": cr.title,
+                                "size_column": cr.size_column,
+                                "group_column": cr.group_column,
+                            })
+                        if chart_results:
+                            actions_log.append(f"Generated {len(chart_results)} chart(s) from inline specs")
+                    break
                 else:
-                    # Conversational response
+                    # Truly conversational
                     yield {"type": "complete", "message": {
-                        "response": _extract_response(resp.content),
+                        "response": raw_text,
                         "intent": "conversational",
                         "actions": ["Conversational response"],
                         "charts": [],
@@ -1222,6 +1475,10 @@ async def run_agent_stream(
             tc = tool_calls[0]
             tool_name = tc.get("name", "")
             args = tc.get("args", {})
+            tool_call_id = tc.get("id", f"call_{iteration}")
+
+            # Append the AIMessage (with tool_calls) so the LLM sees its prior decisions
+            messages.append(resp)
 
             # ── EXECUTE QUERIES ──
             if tool_name == "execute_queries":
@@ -1282,6 +1539,9 @@ async def run_agent_stream(
                         }
                         report_step_idx += 1
 
+                # Send results back via ToolMessage (not system prompt)
+                tool_result_text = _summarize_query_results(batch_results)
+                messages.append(ToolMessage(content=tool_result_text, tool_call_id=tool_call_id))
                 continue  # Next iteration
 
             # ── CLARIFY ──
@@ -1299,6 +1559,7 @@ async def run_agent_stream(
                         "actions_log": actions_log,
                         "last_sql": last_sql,
                         "iteration": iteration,
+                        "messages": _serialize_messages(messages),
                     },
                 }
                 return  # Stop streaming — wait for user reply
@@ -1339,6 +1600,8 @@ async def run_agent_stream(
                 result = await _handle_get_column_values(args)
                 all_query_results.append(result)
                 all_full_data.append(result)
+                tool_result_text = _summarize_query_results([result])
+                messages.append(ToolMessage(content=tool_result_text, tool_call_id=tool_call_id))
 
                 yield {
                     "type": "step_complete",
@@ -1358,6 +1621,8 @@ async def run_agent_stream(
                 result = await _handle_get_kpi_info(args)
                 all_query_results.append(result)
                 all_full_data.append(result)
+                tool_result_text = _summarize_query_results([result])
+                messages.append(ToolMessage(content=tool_result_text, tool_call_id=tool_call_id))
 
                 yield {
                     "type": "step_complete",
@@ -1378,6 +1643,8 @@ async def run_agent_stream(
                 result = await _handle_explore(args, auth=auth)
                 all_query_results.append(result)
                 all_full_data.append(result)
+                tool_result_text = _summarize_query_results([result])
+                messages.append(ToolMessage(content=tool_result_text, tool_call_id=tool_call_id))
 
                 yield {
                     "type": "step_complete",
