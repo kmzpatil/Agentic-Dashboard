@@ -15,7 +15,8 @@ const PDF_CSS = `
     font-size: 11px; line-height: 1.5;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
-    margin: 0; padding: 0;
+    margin: 0 auto; padding: 0;
+    max-width: 178mm;
   }
   @page { size: A4; margin: 18mm 16mm 16mm 16mm; }
 

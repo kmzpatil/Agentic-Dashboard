@@ -113,11 +113,17 @@ def render_report_html(
     summary = report.get("executive_summary", "")
     sections = report.get("sections", [])
     recommendations = report.get("recommendations", [])
+    if isinstance(recommendations, str):
+        recommendations = [recommendations]
     metadata = report.get("metadata", {})
     conclusions = report.get("conclusions", [])
+    if isinstance(conclusions, str):
+        conclusions = [conclusions]
 
     generated_at = metadata.get("generated_at", datetime.now().strftime("%Y-%m-%d %H:%M"))
     caveats = metadata.get("caveats", [])
+    if isinstance(caveats, str):
+        caveats = [caveats]
 
     # Build sections HTML and collect chart init data
     sections_html = ""
@@ -333,7 +339,7 @@ def render_report_html(
   .report-page-header .label {{ font-size: 11px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: #9ca3af; }}
 
   /* ── Push content below fixed header ── */
-  .report {{ padding-top: 48px; max-width: 900px; margin: 0 auto; }}
+  .report {{ padding: 48px; max-width: 900px; margin: 0 auto; }}
   .report::after {{ content: ''; display: block; height: 10px; }}
 
   /* ── Page break control ── */
@@ -499,7 +505,6 @@ def render_report_html(
 <!-- Screen-only toolbar -->
 <div class="screen-toolbar">
   <span>Frammer AI — Report Preview</span>
-  <button onclick="window.print()">Export PDF</button>
 </div>
 
 <!-- Fixed header (repeats on every printed page) -->

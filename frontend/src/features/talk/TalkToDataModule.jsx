@@ -311,15 +311,15 @@ function StreamingIndicator({ phase, planSteps, completedSteps, reportSubQuestio
         <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-red-500/10">
           <Loader2 size={13} className="animate-spin text-red-400" />
         </div>
-        <span className="text-[12px] font-semibold text-neutral-600">Frammer Copilot</span>
+        <span className="text-[12px] font-semibold text-neutral-500">Frammer Copilot</span>
         {isReportMode && (
           <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-red-400">Report</span>
         )}
       </div>
       <div className="pl-[34px]">
-        <div className="flex items-center gap-2.5 text-sm text-neutral-500 mb-3">
+        <div className="flex items-center gap-2.5 text-sm mb-3">
           <span className="dot-flow" />
-          <span className="transition-all duration-300">{phaseLabel}</span>
+          <span className="transition-all duration-300 text-red-400/60">{phaseLabel}</span>
         </div>
 
         {/* Streaming words animation for report mode */}
