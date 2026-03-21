@@ -11,6 +11,7 @@ from backend.routes.advanced_kpis import router as advanced_kpis_router
 from backend.routes.kpi import router as kpi_router
 from backend.routes.publish_predictor import router as publish_predictor_router
 from backend.routes.wrapped import router as wrapped_router
+from backend.routes.quality import router as quality_router
 
 
 router = APIRouter()
@@ -26,3 +27,4 @@ router.include_router(advanced_kpis_router, prefix="/advanced-kpis")
 router.include_router(kpi_router, prefix="/kpi")
 router.include_router(publish_predictor_router, prefix="/publish-predictor")
 router.include_router(wrapped_router, prefix="/wrapped")
+router.include_router(quality_router, prefix="/data-quality")

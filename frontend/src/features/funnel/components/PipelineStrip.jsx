@@ -3,9 +3,10 @@ import { formatNumber, formatPct } from '../../../lib/formatters';
 
 const FLOW_STYLES = `
 @keyframes pipelineFlowShift {
-  0% { transform: translateX(-16px); opacity: 0; }
-  15% { opacity: 1; }
-  100% { transform: translateX(calc(100% + 16px)); opacity: 0; }
+  0%   { transform: translate(0%, -50%);    opacity: 0; }
+  8%   { opacity: 1; }
+  92%  { opacity: 1; }
+  100% { transform: translate(2000%, -50%); opacity: 0; }
 }
 
 @keyframes pipelineFlowPulse {
@@ -17,10 +18,13 @@ const FLOW_STYLES = `
   width: 100%;
   position: relative;
   height: 12px;
+  overflow: hidden;
 }
 
 .pipeline-flow-line {
-  position: relative;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
   height: 4px;
   width: 100%;
   border-radius: 9999px;
@@ -62,8 +66,7 @@ const FLOW_STYLES = `
   border-radius: 9999px;
   background: rgba(250, 250, 250, 0.95);
   box-shadow: 0 0 12px rgba(250, 250, 250, 0.85), 0 0 18px rgba(180,180,190,0.45);
-  transform: translate(-16px, -50%);
-  animation: pipelineFlowShift 1.8s ease-out infinite;
+  animation: pipelineFlowShift 1.8s ease-in-out infinite;
 }
 
 .pipeline-flow-dot--slow {

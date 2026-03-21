@@ -259,7 +259,7 @@ export default function PublishPredictorGame({ authUser }) {
           ))}
         </div>
         <p className="text-sm font-black uppercase tracking-[0.2em] text-neutral-300">Initialising ML Model</p>
-        <p className="mt-2 text-xs text-neutral-600">Training RandomForest classifier on first load — this is a one-time operation…</p>
+        <p className="mt-2 text-xs text-neutral-400">Training RandomForest classifier on first load — this is a one-time operation…</p>
       </div>
     );
   }
@@ -334,7 +334,7 @@ export default function PublishPredictorGame({ authUser }) {
               </div>
             ))}
           </div>
-          <p className="text-[10px] text-neutral-600">
+          <p className="text-[10px] text-neutral-400">
             Target classes: <span className="text-neutral-400">Never</span> · <span className="text-neutral-400">Within 1 Day</span> ·{' '}
             <span className="text-neutral-400">Within 2 Days</span> · <span className="text-neutral-400">Within 3 Days</span> ·{' '}
             <span className="text-neutral-400">More than 3 Days</span>

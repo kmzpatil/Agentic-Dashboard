@@ -65,7 +65,7 @@ export default function OverviewFlowTab({
               {stageLinksCount > 0 ? (
                 <Chart key={`stage-${breakdown}-${stageSignature}`} type="sankey" data={stageSankeyData} options={stageSankeyOptions} />
               ) : (
-                <div className="flex items-center justify-center h-full text-neutral-600 text-sm">No stage flow data for current filters</div>
+                <div className="flex items-center justify-center h-full text-neutral-400 text-sm">No stage flow data for current filters</div>
               )}
             </div>
 
@@ -121,7 +121,7 @@ export default function OverviewFlowTab({
                   )}
                 </div>
               )}
-              <p className="text-[10.5px] text-neutral-600 mb-1.5 leading-snug">
+              <p className="text-[10.5px] text-neutral-400 mb-1.5 leading-snug">
                 {breakdown === 'client'
                   ? `Showing ${totalBreakdownSources} client sources`
                   : compositionSourceMode === 'all'
@@ -141,7 +141,7 @@ export default function OverviewFlowTab({
                   onHover={handleCompositionChartHover}
                 />
               ) : (
-                <div className="flex items-center justify-center h-full text-neutral-600 text-sm">No composition data for current filters</div>
+                <div className="flex items-center justify-center h-full text-neutral-400 text-sm">No composition data for current filters</div>
               )}
             </div>
           </div>

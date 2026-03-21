@@ -39,7 +39,7 @@ function ActivityBlock({ actions }) {
         <div className="mt-2 space-y-1">
           {actions.map((action, i) => (
             <div key={i} className="text-[11px] text-neutral-500 flex items-start gap-2">
-              <span className="text-neutral-600 shrink-0 w-4 text-right">{i + 1}.</span>
+              <span className="text-neutral-400 shrink-0 w-4 text-right">{i + 1}.</span>
               <span>{action}</span>
             </div>
           ))}

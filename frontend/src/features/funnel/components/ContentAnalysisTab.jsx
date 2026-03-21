@@ -66,7 +66,7 @@ const STYLES = `
   display: flex; align-items: center; justify-content: center;
   background: rgba(255,255,255,0.04);
   border: 1px solid rgba(255,255,255,0.07);
-  border-radius: 3px; color: #6b6b82; cursor: pointer; line-height: 1;
+  border-radius: 3px; color: #9090a0; cursor: pointer; line-height: 1;
 }
 .ca-topn-input {
   -moz-appearance: textfield;
@@ -88,7 +88,7 @@ const fmtLabel = (v) =>
 function heatCellStyle(v, min, max) {
   const val = Number.isFinite(+v) ? +v : 0;
   if (val <= 0.0001)
-    return { bg:'rgba(20,18,28,0.85)', border:'rgba(44,40,58,0.6)', text:'#3a3a52' };
+    return { bg:'rgba(20,18,28,0.85)', border:'rgba(44,40,58,0.6)', text:'#6b6b82' };
   const t   = Math.max(0, Math.min(1, (val - min) / Math.max(max - min, 1e-6)));
   const r0  = { r:176, g:24, b:56 };
   const r1  = { r:20, g:112, b:72 };
@@ -206,7 +206,7 @@ function GradientBar({ chartData, avg, height = 248, horizontal = false }) {
         borderColor: 'rgba(255,255,255,0.09)',
         borderWidth: 1,
         titleColor: '#f0f0f3',
-        bodyColor: '#8b8b9a',
+        bodyColor: '#a0a0b0',
         padding: 11,
         cornerRadius: 10,
         displayColors: false,
@@ -219,24 +219,24 @@ function GradientBar({ chartData, avg, height = 248, horizontal = false }) {
       x: {
         beginAtZero: true,
         max: Math.ceil(maxVal * 1.18),
-        ticks: { color: '#4a4a5a', font: { size: 9 }, callback: (v) => `${v}%` },
+        ticks: { color: '#7a7a8e', font: { size: 9 }, callback: (v) => `${v}%` },
         grid: { color: 'rgba(255,255,255,0.028)' },
         border: { display: false },
       },
       y: {
-        ticks: { color: '#8b8b9a', font: { size: 11.5 }, padding: 4 },
+        ticks: { color: '#a0a0b0', font: { size: 11.5 }, padding: 4 },
         grid: { display: false },
         border: { display: false },
       },
     } : {
       x: {
-        ticks: { color: '#4a4a5a', font: { size: 10 }, maxRotation: 34, minRotation: 0 },
+        ticks: { color: '#7a7a8e', font: { size: 10 }, maxRotation: 34, minRotation: 0 },
         grid: { display: false },
         border: { color: 'rgba(255,255,255,0.04)' },
       },
       y: {
         beginAtZero: true,
-        ticks: { color: '#4a4a5a', font: { size: 9 }, callback: (v) => `${v}%` },
+        ticks: { color: '#7a7a8e', font: { size: 9 }, callback: (v) => `${v}%` },
         grid: { color: 'rgba(255,255,255,0.028)', drawBorder: false },
         border: { display: false },
       },
@@ -323,12 +323,12 @@ function SectionHead({ title, badge, desc, right }) {
           {badge && (
             <span style={{
               fontSize:9.5, fontWeight:700, letterSpacing:'0.07em', textTransform:'uppercase',
-              color:'#4a4a5a', background:'rgba(255,255,255,0.04)',
+              color:'#8b8b9a', background:'rgba(255,255,255,0.04)',
               border:'1px solid rgba(255,255,255,0.07)', borderRadius:6, padding:'2px 7px',
             }}>{badge}</span>
           )}
         </div>
-        {desc && <p style={{ margin:0, fontSize:11.5, color:'#6b6b82', lineHeight:1.6, maxWidth:530 }}>{desc}</p>}
+        {desc && <p style={{ margin:0, fontSize:11.5, color:'#9090a0', lineHeight:1.6, maxWidth:530 }}>{desc}</p>}
       </div>
       {right && <div style={{ flexShrink:0, marginTop:1 }}>{right}</div>}
     </div>
@@ -338,7 +338,7 @@ function SectionHead({ title, badge, desc, right }) {
 function KpiCard({ label, value, sub, tone = 'default' }) {
   return (
     <div className={`ca-kpi ca-kpi--${tone === 'red' ? 'red' : 'default'}`}>
-      <span style={{ fontSize:9.5, fontWeight:700, color:'#3f3f52', letterSpacing:'0.08em', textTransform:'uppercase' }}>{label}</span>
+      <span style={{ fontSize:9.5, fontWeight:700, color:'#8b8b9a', letterSpacing:'0.08em', textTransform:'uppercase' }}>{label}</span>
       <span style={{
         fontSize:22, fontWeight:700, letterSpacing:'-0.04em', lineHeight:1.1,
         fontFamily:"'JetBrains Mono', monospace",
@@ -346,7 +346,7 @@ function KpiCard({ label, value, sub, tone = 'default' }) {
       }}>{value}</span>
       {sub && (
         <span style={{
-          fontSize:11, color:'#3a3a4e', marginTop:2,
+          fontSize:11, color:'#6b6b82', marginTop:2,
           overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
         }} title={sub}>{sub}</span>
       )}
@@ -361,7 +361,7 @@ function TopNSpinner({ value, max, onChange }) {
       background:'rgba(0,0,0,0.45)', border:'1px solid rgba(255,255,255,0.07)',
       borderRadius:10, padding:'5px 11px',
     }}>
-      <span style={{ fontSize:9.5, color:'#4a4a5a', fontWeight:700, letterSpacing:'0.07em', textTransform:'uppercase' }}>Top</span>
+      <span style={{ fontSize:9.5, color:'#8b8b9a', fontWeight:700, letterSpacing:'0.07em', textTransform:'uppercase' }}>Top</span>
       <input
         className="ca-topn-input"
         type="number" min={1} max={max} value={value}
@@ -389,8 +389,8 @@ function PerfRow({ rank, label, value, maxValue, tone }) {
   const color = tone === 'green' ? '#22c55e' : '#ef4444';
   return (
     <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-      <span style={{ fontSize:10, color:'#3a3a52', fontFamily:"'JetBrains Mono',monospace", minWidth:16, textAlign:'right' }}>{rank}</span>
-      <span style={{ fontSize:12.5, color:'#8b8b9a', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{label}</span>
+      <span style={{ fontSize:10, color:'#6b6b82', fontFamily:"'JetBrains Mono',monospace", minWidth:16, textAlign:'right' }}>{rank}</span>
+      <span style={{ fontSize:12.5, color:'#a0a0b0', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{label}</span>
       <div className="ca-perf-bar-track">
         <div style={{ height:'100%', width:`${pct}%`, background:color, borderRadius:99, opacity:0.68 }} />
       </div>
@@ -507,7 +507,7 @@ export default function ContentAnalysisTab({ authUser, data, breakdown = 'channe
                   <th style={{
                     position:'sticky', left:0, zIndex:20, background:'#0c0c10',
                     padding:'5px 18px 5px 0', textAlign:'left',
-                    fontSize:9.5, fontWeight:700, color:'#3a3a52',
+                    fontSize:9.5, fontWeight:700, color:'#8b8b9a',
                     letterSpacing:'0.07em', textTransform:'uppercase',
                   }}>Input type</th>
                   {(data?.heatmapClients || []).map((c) => (
@@ -545,10 +545,10 @@ export default function ContentAnalysisTab({ authUser, data, breakdown = 'channe
           </div>
           {/* Legend */}
           <div style={{ marginTop:16, display:'flex', alignItems:'center', gap:10 }}>
-            <span style={{ fontSize:10.5, color:'#3a3a52' }}>Low</span>
+            <span style={{ fontSize:10.5, color:'#8b8b9a' }}>Low</span>
             <div style={{ height:5, width:130, borderRadius:99, background:'linear-gradient(to right,#631828,#0f4f38)', border:'1px solid rgba(255,255,255,0.04)' }} />
-            <span style={{ fontSize:10.5, color:'#3a3a52' }}>High conversion</span>
-            <span style={{ fontSize:10.5, color:'rgba(255,255,255,0.1)', marginLeft:8 }}>· hover for raw counts</span>
+            <span style={{ fontSize:10.5, color:'#8b8b9a' }}>High conversion</span>
+            <span style={{ fontSize:10.5, color:'rgba(255,255,255,0.35)', marginLeft:8 }}>· hover for raw counts</span>
           </div>
         </div>
       ) : (
@@ -595,7 +595,7 @@ export default function ContentAnalysisTab({ authUser, data, breakdown = 'channe
                     background: dotColor,
                     boxShadow: `0 0 7px ${dotColor}88`,
                   }} />
-                  <span style={{ fontSize:10.5, fontWeight:700, color:'#3a3a52', letterSpacing:'0.07em', textTransform:'uppercase' }}>{title}</span>
+                  <span style={{ fontSize:10.5, fontWeight:700, color:'#8b8b9a', letterSpacing:'0.07em', textTransform:'uppercase' }}>{title}</span>
                 </div>
                 <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
                   {rows.map((r, i) => (

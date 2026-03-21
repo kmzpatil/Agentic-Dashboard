@@ -117,7 +117,7 @@ function MetricGauge({ label, value, max, note }) {
       </div>
       <div className="text-center">
         <div className="text-xs font-bold uppercase tracking-[0.18em] text-neutral-400">{label}</div>
-        {note && <div className="text-[11px] text-neutral-600 mt-0.5">{note}</div>}
+        {note && <div className="text-[11px] text-neutral-400 mt-0.5">{note}</div>}
       </div>
     </div>
   );
@@ -219,7 +219,7 @@ function KpiToggle({ items, active, onToggle, className = '' }) {
           style={{ scrollbarWidth: 'thin', scrollbarColor: '#333 #0d0d0d' }}>
           {groups.map(g => (
             <div key={g.key}>
-              {g.label && <div className="px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.2em] text-neutral-600 bg-neutral-900/50">{g.label}</div>}
+              {g.label && <div className="px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.2em] text-neutral-400 bg-neutral-900/50">{g.label}</div>}
               {g.items.map(item => {
                 const isOn = active.includes(item.id);
                 return (
@@ -282,7 +282,7 @@ function EffectRow({ label, oldVal, newVal, format = 'number', inverse = false }
     <div className="flex items-center justify-between py-3 border-b border-neutral-800/40 last:border-0">
       <div>
         <div className="text-sm font-semibold text-neutral-300">{label}</div>
-        {Math.abs(delta) >= 0.5 && <div className="text-xs text-neutral-600">was {fmt(oldVal)}</div>}
+        {Math.abs(delta) >= 0.5 && <div className="text-xs text-neutral-400">was {fmt(oldVal)}</div>}
       </div>
       <div className="text-right">
         <div className="text-lg font-black text-white">{fmt(newVal)}</div>
@@ -795,7 +795,7 @@ export default function UserJourneyModule({ authUser }) {
                   <SlidersHorizontal size={14} className={activeFilterCount > 0 ? 'text-red-400' : 'text-neutral-500'} />
                   <div className="min-w-0 overflow-hidden">
                     <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-300 leading-none truncate">Filters</div>
-                    <div className={`mt-0.5 text-[10px] font-semibold leading-none ${activeFilterCount > 0 ? 'text-red-400' : 'text-neutral-600'}`}>
+                    <div className={`mt-0.5 text-[10px] font-semibold leading-none ${activeFilterCount > 0 ? 'text-red-400' : 'text-neutral-400'}`}>
                       {activeFilterCount > 0 ? `${activeFilterCount} applied` : 'None applied'}
                     </div>
                   </div>
@@ -813,7 +813,7 @@ export default function UserJourneyModule({ authUser }) {
               <div className="flex flex-col items-center gap-3 pt-4 pb-3">
                 <div className="relative">
                   <div className={`flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${activeFilterCount > 0 ? 'border-red-500/30 bg-red-500/10' : 'border-neutral-800'}`}>
-                    <SlidersHorizontal size={14} className={activeFilterCount > 0 ? 'text-red-400' : 'text-neutral-600'} />
+                    <SlidersHorizontal size={14} className={activeFilterCount > 0 ? 'text-red-400' : 'text-neutral-400'} />
                   </div>
                   {activeFilterCount > 0 && (
                     <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-black text-white leading-none">{activeFilterCount}</span>
@@ -829,32 +829,32 @@ export default function UserJourneyModule({ authUser }) {
                   <div className="space-y-3 p-3">
                     {authUser?.role !== 'client_admin' && authUser?.role !== 'user' && (
                       <div>
-                        <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">Client</label>
+                        <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-400">Client</label>
                         <FloatingDropdown value={filters.company}
                           onChange={(v) => setFilters(p => ({ ...p, company: v, channel: ['All'], user: ['All'], language: ['All'], inputType: ['All'], outputType: ['All'] }))}
                           options={toOptionList(filterOptions.company)} minWidth="100%" multiSelect />
                       </div>
                     )}
                     <div>
-                      <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">Channel</label>
+                      <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-400">Channel</label>
                       <FloatingDropdown value={filters.channel} onChange={(v) => setFilters(p => ({ ...p, channel: v }))} options={toOptionList(filterOptions.channel)} minWidth="100%" multiSelect />
                     </div>
                     {authUser?.role !== 'user' && (
                       <div>
-                        <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">User</label>
+                        <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-400">User</label>
                         <FloatingDropdown value={filters.user} onChange={(v) => setFilters(p => ({ ...p, user: v }))} options={toOptionList(filterOptions.user)} minWidth="100%" multiSelect />
                       </div>
                     )}
                     <div>
-                      <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">Language</label>
+                      <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-400">Language</label>
                       <FloatingDropdown value={filters.language} onChange={(v) => setFilters(p => ({ ...p, language: v }))} options={toOptionList(filterOptions.language)} minWidth="100%" multiSelect />
                     </div>
                     <div>
-                      <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">Input Type</label>
+                      <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-400">Input Type</label>
                       <FloatingDropdown value={filters.inputType} onChange={(v) => setFilters(p => ({ ...p, inputType: v }))} options={toOptionList(filterOptions.input_type)} minWidth="100%" multiSelect />
                     </div>
                     <div>
-                      <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">Output Type</label>
+                      <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-400">Output Type</label>
                       <FloatingDropdown value={filters.outputType} onChange={(v) => setFilters(p => ({ ...p, outputType: v }))} options={toOptionList(filterOptions.output_type)} minWidth="100%" multiSelect />
                     </div>
 
@@ -862,11 +862,11 @@ export default function UserJourneyModule({ authUser }) {
 
                     {/* Validation */}
                     <div className="rounded-xl border border-neutral-800 bg-[#0a0a0a] px-3 py-2 text-[10px]">
-                      {filterOptionsLoading && <span className="text-neutral-600">Loading options...</span>}
+                      {filterOptionsLoading && <span className="text-neutral-400">Loading options...</span>}
                       {filterOptionsError && <span className="text-amber-400">Failed to load options.</span>}
                       {!filterOptionsLoading && workingFiltersQuery && hasDataForFilters === false && <span className="text-red-400">No data for this combination.</span>}
                       {!filterOptionsLoading && workingFiltersQuery && hasDataForFilters === true && <span className="text-emerald-400">Filters validated.</span>}
-                      {!filterOptionsLoading && !workingFiltersQuery && <span className="text-neutral-600">Using full dataset.</span>}
+                      {!filterOptionsLoading && !workingFiltersQuery && <span className="text-neutral-400">Using full dataset.</span>}
                     </div>
                   </div>
                 </div>
@@ -996,7 +996,7 @@ export default function UserJourneyModule({ authUser }) {
                         ].map(({ label, main, sub }) => (
                           <div key={label} className="flex items-center justify-between py-3">
                             <div>
-                              <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-neutral-600">{label}</div>
+                              <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-neutral-400">{label}</div>
                               <div className="mt-0.5 font-semibold text-white">{main}</div>
                             </div>
                             <div className="text-sm text-neutral-500 text-right">{sub}</div>
@@ -1011,7 +1011,7 @@ export default function UserJourneyModule({ authUser }) {
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                       {/* Sliders */}
                       <div className="space-y-5">
-                        <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-600 mb-3">Adjust Inputs</div>
+                        <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-400 mb-3">Adjust Inputs</div>
                         <SensSlider label="Views" value={sens.views} onChange={(v) => updateSens('views', v)}
                           icon={<div className="w-2.5 h-2.5 rounded-full bg-red-500" />} />
                         <SensSlider label="Likes" value={sens.likes} onChange={(v) => updateSens('likes', v)}
@@ -1033,7 +1033,7 @@ export default function UserJourneyModule({ authUser }) {
                       <div className="space-y-4">
                         {Object.entries(visibleSensGrouped).map(([group, kpis]) => (
                           <div key={group}>
-                            <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-600 mb-2">{SENS_GROUPS[group]}</div>
+                            <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-400 mb-2">{SENS_GROUPS[group]}</div>
                             <div className="rounded-xl border border-neutral-800 bg-[#0d0d0d] p-4">
                               {kpis.map(k => {
                                 const v = sensKpiMap[k.id];
@@ -1045,7 +1045,7 @@ export default function UserJourneyModule({ authUser }) {
 
                         {/* Simulated Totals — always shown */}
                         <div>
-                          <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-600 mb-2">Simulated Totals</div>
+                          <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-400 mb-2">Simulated Totals</div>
                           <div className="rounded-xl border border-neutral-800 bg-[#0d0d0d] p-4">
                             <div className="grid grid-cols-2 gap-4">
                               {[
@@ -1186,11 +1186,11 @@ export default function UserJourneyModule({ authUser }) {
                   </div>
                   {platformStats && (
                     <div className="mb-4 rounded-xl border border-neutral-800 bg-[#0d0d0d] px-4 py-3">
-                      <div className="text-[11px] font-bold uppercase tracking-wider text-neutral-600 mb-2">{selectedPlatform}</div>
+                      <div className="text-[11px] font-bold uppercase tracking-wider text-neutral-400 mb-2">{selectedPlatform}</div>
                       <div className="grid grid-cols-3 gap-3 text-center">
-                        <div><div className="text-lg font-black text-white">{formatNumber(platformStats.views)}</div><div className="text-[10px] text-neutral-600 uppercase tracking-wider">Views</div></div>
-                        <div><div className="text-lg font-black text-[#ef4444]">{platformStats.er}%</div><div className="text-[10px] text-neutral-600 uppercase tracking-wider">ER</div></div>
-                        <div><div className="text-lg font-black text-white">{formatNumber(platformStats.shares)}</div><div className="text-[10px] text-neutral-600 uppercase tracking-wider">Shares</div></div>
+                        <div><div className="text-lg font-black text-white">{formatNumber(platformStats.views)}</div><div className="text-[10px] text-neutral-400 uppercase tracking-wider">Views</div></div>
+                        <div><div className="text-lg font-black text-[#ef4444]">{platformStats.er}%</div><div className="text-[10px] text-neutral-400 uppercase tracking-wider">ER</div></div>
+                        <div><div className="text-lg font-black text-white">{formatNumber(platformStats.shares)}</div><div className="text-[10px] text-neutral-400 uppercase tracking-wider">Shares</div></div>
                       </div>
                     </div>
                   )}
@@ -1209,13 +1209,13 @@ export default function UserJourneyModule({ authUser }) {
                           <div key={l} className="text-center">
                             <div className="text-xs font-bold uppercase tracking-wider" style={{ color: c }}>{l}</div>
                             <div className="text-xl font-black text-white mt-1">{formatNumber(v)}</div>
-                            <div className="text-[11px] text-neutral-600">{formatPct((v/totalInteract)*100)}</div>
+                            <div className="text-[11px] text-neutral-400">{formatPct((v/totalInteract)*100)}</div>
                           </div>
                         ))}
                       </div>
                     </>
                   ) : (
-                    <div className="flex flex-1 items-center justify-center text-sm text-neutral-700">No interaction data</div>
+                    <div className="flex flex-1 items-center justify-center text-sm text-neutral-400">No interaction data</div>
                   )}
                 </div>
               </section>
@@ -1230,7 +1230,7 @@ export default function UserJourneyModule({ authUser }) {
                       <div className="transition-opacity duration-200 group-hover:opacity-0">
                         <div className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">{row.output_type}</div>
                         <div className="mt-3 text-2xl font-black text-white">{formatNumber(row.views_per_post)}</div>
-                        <div className="mt-1 text-[11px] text-neutral-600">views per post</div>
+                        <div className="mt-1 text-[11px] text-neutral-400">views per post</div>
                       </div>
                       <div className="absolute inset-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col justify-between">
                         <div className="text-[11px] font-bold uppercase tracking-wider text-[#ef4444]">{row.output_type}</div>

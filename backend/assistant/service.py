@@ -163,7 +163,7 @@ async def chat(
     # Handle clarification — store state and return the clarification as the response
     if getattr(result, "clarification", None):
         conversation_api.update_agent_state(conversation_id, getattr(result, "agent_state", None))
-        conversation_api.append_message(conversation_id, "assistant", result.clarification)
+        conversation_api.append_message(conversation_id, "assistant", result.clarification, metadata={"intent": "clarification"})
         assistant_message = AssistantMessage(
             markdown=result.clarification,
             intent="clarification",
@@ -419,7 +419,7 @@ async def chat_stream(
             clarify_q = event.get("question", "Could you clarify?")
             clarify_state = event.get("agent_state")
             conversation_api.update_agent_state(conversation_id, clarify_state)
-            conversation_api.append_message(conversation_id, "assistant", clarify_q)
+            conversation_api.append_message(conversation_id, "assistant", clarify_q, metadata={"intent": "clarification"})
             yield {
                 "type": "clarification_needed",
                 "conversation_id": conversation_id,
