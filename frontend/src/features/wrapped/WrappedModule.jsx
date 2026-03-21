@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  ChevronLeft, ChevronRight, Share2, Target, Zap,
-  TrendingUp, Users, Star, Award, Flame, X,
+  ChevronLeft, ChevronRight, Share2, Zap,
+  TrendingUp, Star, Award, Flame, X,
 } from 'lucide-react';
 import { API_BASE } from '../../lib/constants';
 
@@ -394,60 +394,6 @@ function TeamSeries({ data }) {
   );
 }
 
-/* Scene C2: The Efficiency Engine */
-function ClientEfficiency({ data }) {
-  const eff   = Math.round(data.processing_efficiency);
-  const dfs  = Math.round(data.dfs_score);
-
-  return (
-    <div className="relative w-full h-full flex items-center justify-center"
-         style={{ background: '#0a0a0a' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 64, maxWidth: 860, width: '90%' }}>
-        {/* Gauge */}
-        <div style={{ flexShrink: 0 }}>
-          <CircularGauge value={eff} color="#6366f1" size={260} label="EFFICIENCY" />
-        </div>
-
-        {/* Text column */}
-        <div style={{ flex: 1 }}>
-          <h2 style={{ fontSize: 36, fontWeight: 900, color: 'white', marginBottom: 20, lineHeight: 1.15 }}>
-            The Efficiency Engine
-          </h2>
-          <p style={{ color: '#888', fontSize: 15, lineHeight: 1.7, marginBottom: 32 }}>
-            Your average published video is significantly shorter than your created
-            videos. You are mastering the art of the hook! Your Clip Duration
-            Alignment shows incredible precision.
-          </p>
-          {/* DFS card */}
-          <div style={{
-            background: '#151515',
-            border: '1px solid #222',
-            borderRadius: 16,
-            padding: '20px 24px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 20,
-          }}>
-            <div style={{
-              width: 48, height: 48, borderRadius: '50%',
-              background: '#1a1a3a',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <Target size={22} style={{ color: '#6366f1' }} />
-            </div>
-            <div>
-              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.2em', color: '#888', marginBottom: 4 }}>
-                DURATION FIT SCORE (DFS)
-              </div>
-              <div style={{ fontSize: 32, fontWeight: 900, color: 'white' }}>{dfs}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* Scene C3: Content DNA — Omnichannel Explorer */
 function ClientContentDNA({ data }) {
   const platforms = data.platforms || [];
@@ -705,52 +651,6 @@ function UserSpark({ data }) {
   );
 }
 
-/* Scene U2: The Efficiency Master */
-function UserEfficiency({ data }) {
-  const conv = Math.round(data.publish_conversion_rate);
-  const dfs = Math.round(data.dfs_score);
-
-  return (
-    <div className="relative w-full h-full flex items-center justify-center"
-         style={{ background: '#0a0a0a' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 64, maxWidth: 860, width: '90%' }}>
-        <div style={{ flexShrink: 0 }}>
-          <CircularGauge value={conv} color="#6366f1" size={260} label="CONVERSION" />
-        </div>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ fontSize: 36, fontWeight: 900, color: 'white', marginBottom: 20, lineHeight: 1.15 }}>
-            The Efficiency Master
-          </h2>
-          <p style={{ color: '#888', fontSize: 15, lineHeight: 1.7, marginBottom: 32 }}>
-            You know exactly what your audience wants. With a personal Publish
-            Conversion Rate of <strong style={{ color: 'white' }}>{conv}%</strong>, your content
-            doesn't just sit in the drafts — it goes live. Your Clip Duration
-            Alignment shows you've mastered the perfect cut.
-          </p>
-          <div style={{
-            background: '#151515', border: '1px solid #222',
-            borderRadius: 16, padding: '20px 24px',
-            display: 'flex', alignItems: 'center', gap: 20,
-          }}>
-            <div style={{
-              width: 48, height: 48, borderRadius: '50%', background: '#1a1a3a',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <Target size={22} style={{ color: '#6366f1' }} />
-            </div>
-            <div>
-              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.2em', color: '#888', marginBottom: 4 }}>
-                DURATION FIT SCORE (DFS)
-              </div>
-              <div style={{ fontSize: 32, fontWeight: 900, color: 'white' }}>{dfs}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* Scene U3: Content DNA (User) */
 function UserContentDNA({ data }) {
   return <ClientContentDNA data={data} />;
@@ -802,62 +702,6 @@ function UserHiddenGem({ data }) {
           Index, you consistently output high-potential content, punching above
           your weight class even when tackling the toughest video formats.
         </p>
-      </div>
-    </div>
-  );
-}
-
-/* Scene U5: The Team Pillar */
-function UserTeamPillar({ data }) {
-  const share  = data.share_pct || 0;
-  const topPct = data.top_pct   || 0;
-
-  return (
-    <div className="relative w-full h-full flex items-center justify-center"
-         style={{ background: '#0a0a0a' }}>
-      <div style={{ maxWidth: 680, width: '90%' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 64 }}>
-          {/* Circular share gauge */}
-          <div style={{ flexShrink: 0 }}>
-            <CircularGauge value={share} color="#6366f1" size={240} label="YOUR SHARE" />
-          </div>
-
-          <div style={{ flex: 1 }}>
-            <h2 style={{ fontSize: 36, fontWeight: 900, color: 'white', marginBottom: 20, lineHeight: 1.15 }}>
-              The Team Pillar
-            </h2>
-            <p style={{ color: '#888', fontSize: 15, lineHeight: 1.7, marginBottom: 28 }}>
-              You are a pillar of your team. You personally drove{' '}
-              <strong style={{ color: 'white' }}>{share.toFixed(1)}%</strong> of your channel's
-              total uploads this year, cementing your status as a top-tier creator
-              and a vital part of the operation.
-            </p>
-
-            {/* Top-n% badge */}
-            {topPct > 0 && (
-              <div style={{
-                background: '#0e0e1e', border: '1px solid #6366f1',
-                borderRadius: 16, padding: '18px 24px',
-                display: 'flex', alignItems: 'center', gap: 16,
-              }}>
-                <div style={{
-                  width: 44, height: 44, borderRadius: '50%', background: '#1a1a3a',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <Users size={20} style={{ color: '#6366f1' }} />
-                </div>
-                <div>
-                  <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.2em', color: '#888', marginBottom: 2 }}>
-                    YOUR POWER RANKING
-                  </div>
-                  <div style={{ fontSize: 20, fontWeight: 900, color: 'white' }}>
-                    Top <span style={{ color: '#6366f1' }}>{topPct.toFixed(0)}%</span> of creators
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
       </div>
     </div>
   );
@@ -918,7 +762,6 @@ export default function WrappedModule({ onNavigate }) {
       ? [
           <ClientMomentum    key="c1" data={data} />,
           <TeamSeries        key="ts" data={data} />,
-          <ClientEfficiency  key="c2" data={data} />,
           <ClientContentDNA  key="c3" data={data} />,
           <ClientFunnel      key="c4" data={data} />,
           <ClientChampions   key="c5" data={data} onShare={() => {}} />,
@@ -926,10 +769,8 @@ export default function WrappedModule({ onNavigate }) {
       : [
           <UserSpark      key="u1" data={data} />,
           <TeamSeries     key="ts" data={data} />,
-          <UserEfficiency key="u2" data={data} />,
           <UserContentDNA key="u3" data={data} />,
           <UserHiddenGem  key="u4" data={data} />,
-          <UserTeamPillar key="u5" data={data} />,
         ]
     : [];
 

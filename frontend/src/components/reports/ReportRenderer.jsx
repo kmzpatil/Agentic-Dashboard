@@ -115,7 +115,7 @@ const PDF_CSS = `
   .bar-chart-label {
     width: 110px; font-size: 8.5px; color: #6b7280; text-align: right;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0;
-  }
+  } 
   .bar-chart-bar { height: 14px; border-radius: 3px; min-width: 3px; transition: width 0.3s; }
   .bar-chart-value { font-size: 8.5px; color: #374151; font-weight: 600; min-width: 40px; }
 
