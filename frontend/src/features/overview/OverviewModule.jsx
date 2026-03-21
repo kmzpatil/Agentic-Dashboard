@@ -81,7 +81,7 @@ function MissionRailMetricCard({ title, value, subtitle, trendData, onClick }) {
           <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-neutral-500">
             {title}
           </div>
-          <div className="mt-1 text-[42px] leading-none font-black tracking-tight text-white">
+          <div className="mt-1 text-[36px] leading-none font-black tracking-tight text-white">
             {value}
           </div>
           <div className="mt-2 text-[14px] text-neutral-400 leading-snug">
@@ -112,11 +112,11 @@ function MissionRailActionCard({ icon, label, onClick, tone = 'neutral' }) {
     <button
       type="button"
       onClick={onClick}
-      className={`h-full w-full rounded-xl border px-4 py-4 transition-colors ${toneClass}`}
+      className={`h-full w-full rounded-xl border px-3 py-2 transition-colors ${toneClass}`}
     >
-      <div className="flex h-full items-center justify-center gap-2">
+      <div className="flex h-full items-center justify-center gap-1.5">
         {icon}
-        <span className="text-[13px] font-bold uppercase tracking-[0.1em]">{label}</span>
+        <span className="text-[11px] font-bold uppercase tracking-[0.08em]">{label}</span>
       </div>
     </button>
   );
@@ -292,7 +292,7 @@ export default function OverviewModule({ onNavigate }) {
               >
                 {/* Hardcoded static core cards */}
                 {STATIC_CORE_KPI_CARDS.map((card) => (
-                  <div key={card.id} className="min-w-[280px] sm:min-w-[300px] lg:min-w-[320px] snap-start">
+                  <div key={card.id} className="w-[220px] sm:w-[240px] lg:w-[260px] shrink-0 snap-start">
                     <MissionRailMetricCard
                       title={card.title}
                       value={card.value}
@@ -305,7 +305,7 @@ export default function OverviewModule({ onNavigate }) {
 
                 {/* Added KPI cards (custom + extra) */}
                 {customKpis.map((kpi) => (
-                  <div key={kpi.id} className="min-w-[280px] sm:min-w-[300px] lg:min-w-[320px] snap-start">
+                  <div key={kpi.id} className="w-[220px] sm:w-[240px] lg:w-[260px] shrink-0 snap-start">
                     <MissionRailMetricCard
                       title={kpi.title}
                       value={kpi.getValue(kpis)}
@@ -317,7 +317,7 @@ export default function OverviewModule({ onNavigate }) {
                 ))}
 
                 {visibleExtraKpis.map((kpi) => (
-                  <div key={kpi.id} className="min-w-[280px] sm:min-w-[300px] lg:min-w-[320px] snap-start">
+                  <div key={kpi.id} className="w-[220px] sm:w-[240px] lg:w-[260px] shrink-0 snap-start">
                     <MissionRailMetricCard
                       title={kpi.title}
                       value={kpi.getValue(kpis)}
@@ -333,7 +333,7 @@ export default function OverviewModule({ onNavigate }) {
 
           </div>
 
-          <div className="w-[280px] sm:w-[300px] lg:w-[320px] shrink-0 h-[128px] grid grid-rows-2 gap-2">
+          <div className="w-[140px] sm:w-[150px] lg:w-[160px] shrink-0 h-[128px] grid grid-rows-2 gap-2">
             <div className="h-full">
               <MissionRailActionCard
                 icon={isSelectionPanelOpen ? <X size={16} /> : <Plus size={16} />}
@@ -572,7 +572,7 @@ export default function OverviewModule({ onNavigate }) {
               </div>
             ))}
             {!insights.loading && (insights.data?.insights || []).map((insight) => (
-              <div key={insight.id} className="flex flex-col min-h-0">
+              <div key={insight.id} className="shrink-0">
                 <InsightCard insight={insight} onNavigate={onNavigate} />
               </div>
             ))}
