@@ -64,7 +64,7 @@ def get_kpi_query(access_filter: dict) -> str:
       CASE WHEN c.duration = 0 THEN 0 ELSE (pb.duration / c.duration) * 100 END AS processing_efficiency,
       CASE WHEN u.count = 0 THEN 0 ELSE (c.count::float8 / u.count) * 100 END AS creation_rate,
       (c.avg_duration - pb.avg_duration) AS waste_index,
-      CASE WHEN c.avg_duration = 0 THEN 0 ELSE 1 - (ABS(c.avg_duration - pb.avg_duration) / c.avg_duration) END AS cdas,
+      CASE WHEN c.avg_duration = 0 THEN 0 ELSE 1 - (ABS(c.avg_duration - pb.avg_duration) / c.avg_duration) END AS dfs,
       COALESCE(f.rate, 0) AS upload_failure_rate
     FROM uploaded u, processed p, created c, published pb, failures f;
   '''

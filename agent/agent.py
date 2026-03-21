@@ -323,7 +323,7 @@ def get_kpi_info_tool(
         kpi_id: The KPI identifier. Available: uploaded_count, processed_count,
                 created_count, published_count, publish_conversion,
                 month_by_month_use_rate, processing_efficiency, creation_rate,
-                waste_index, upload_failure_rate, roi, cdas, interaction_lift,
+                waste_index, upload_failure_rate, roi, dfs, interaction_lift,
                 cross_dimension_entropy, publish_dependency_index, point_biserial,
                 multidimensional_waste, ctas, rei.
     """
@@ -454,7 +454,7 @@ The dataset tracks a media content pipeline:
 
 ## Custom KPIs
 The following specialized business KPIs are available. Use `get_kpi_info_tool` to get the exact formula and SQL pattern.
-Available IDs: uploaded_count, processed_count, created_count, published_count, publish_conversion, month_by_month_use_rate, processing_efficiency, creation_rate, waste_index, upload_failure_rate, roi, cdas, interaction_lift, cross_dimension_entropy, publish_dependency_index, point_biserial, multidimensional_waste, ctas, rei
+Available IDs: uploaded_count, processed_count, created_count, published_count, publish_conversion, month_by_month_use_rate, processing_efficiency, creation_rate, waste_index, upload_failure_rate, roi, dfs, interaction_lift, cross_dimension_entropy, publish_dependency_index, point_biserial, multidimensional_waste, ctas, rei
 
 ## Chart Type Selection Guide
 

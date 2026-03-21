@@ -352,7 +352,7 @@ export default function KpiDetailsModal({ kpi, onClose }) {
           </>
         );
 
-      case 'cdas':
+      case 'dfs':
         return (
           <div className="grid grid-cols-1 gap-4">
             <ChartCard title="DFS by Input Type">

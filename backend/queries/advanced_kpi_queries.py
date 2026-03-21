@@ -257,7 +257,7 @@ def get_cross_dimension_entropy_query(access_filter: dict) -> str:
         (SELECT COALESCE(json_agg(row_to_json(team_shares)), '[]'::json) FROM team_shares) as team_shares;
     '''
 
-def get_cdas_query(access_filter: dict) -> str:
+def get_dfs_query(access_filter: dict) -> str:
     return f'''{get_scoped_advanced_ctes(access_filter)}
     , input_durations AS (
         SELECT sv."Input_Type" as label,
