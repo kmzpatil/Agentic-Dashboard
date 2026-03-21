@@ -1038,9 +1038,8 @@ async def run_agent(
     # Conversational fast-path — skip schema/tools/full prompt for greetings
     if not agent_state and mode == "normal" and _is_conversational(question):
         logger.info("=== CONVERSATIONAL FAST-PATH ===")
-        fast_llm = _llm_client._pick_gemini() if _llm_client.provider == "gemini" else _llm_client.llm
         resp = await asyncio.to_thread(
-            fast_llm.invoke,
+            _llm_client.llm.invoke,
             f"You are Frammer AI, a friendly analytics assistant. Respond briefly: {question}",
         )
         return AgentResult(
@@ -1074,9 +1073,8 @@ async def run_agent(
         # 1. Load schema + metrics
         schema, metrics = _load_schema_and_metrics()
 
-        # 2. Build LLM with tools (pick fresh Gemini client from pool per request)
-        base_llm = _llm_client._pick_gemini() if _llm_client.provider == "gemini" else _llm_client.llm
-        agent_llm = base_llm.bind_tools(ALL_TOOLS)
+        # 2. Build LLM with tools
+        agent_llm = _llm_client.llm.bind_tools(ALL_TOOLS)
 
         # 2b. Report planning phase
         report_sub_questions: List[Dict] = []
@@ -1335,9 +1333,8 @@ async def run_agent_stream(
     # Conversational fast-path — skip schema/tools/full prompt for greetings
     if not agent_state and mode == "normal" and _is_conversational(question):
         logger.info("=== STREAM CONVERSATIONAL FAST-PATH ===")
-        fast_llm = _llm_client._pick_gemini() if _llm_client.provider == "gemini" else _llm_client.llm
         resp = await asyncio.to_thread(
-            fast_llm.invoke,
+            _llm_client.llm.invoke,
             f"You are Frammer AI, a friendly analytics assistant. Respond briefly: {question}",
         )
         yield {"type": "complete", "message": {
@@ -1357,9 +1354,8 @@ async def run_agent_stream(
         # 1. Load schema + metrics
         schema, metrics = _load_schema_and_metrics()
 
-        # 2. Build LLM with tools (pick fresh Gemini client from pool per request)
-        base_llm = _llm_client._pick_gemini() if _llm_client.provider == "gemini" else _llm_client.llm
-        agent_llm = base_llm.bind_tools(ALL_TOOLS)
+        # 2. Build LLM with tools
+        agent_llm = _llm_client.llm.bind_tools(ALL_TOOLS)
 
         # 3. State — restore if resuming from clarification
         if agent_state:

@@ -1,14 +1,12 @@
 """
 gemini_client.py
 ────────────────
-Gemini LLM client used exclusively for report synthesis.
-Pre-builds a pool of clients (one per API key) and picks randomly each call.
+Gemini LLM client used for report synthesis.
+Uses google-genai SDK directly with a single GOOGLE_API_KEY.
 """
 
 import logging
 import os
-import random
-import threading
 
 from dotenv import load_dotenv
 from pathlib import Path
@@ -20,73 +18,73 @@ load_dotenv(override=True)
 
 logger = logging.getLogger("frammer.gemini_client")
 
-# Parse keys once at module level
-_GEMINI_KEYS = [
-    k.strip() for k in os.getenv("GEMINI_KEYS", "").split(",") if k.strip()
-]
+_GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "").strip().strip('"')
 
-# Lazy-built pool of report LLM clients
-_report_pool = []
-_report_pool_lock = threading.Lock()
+_client = None
 
 
-def _build_report_pool():
-    """Build one ChatGoogleGenerativeAI client per API key."""
-    global _report_pool
-    with _report_pool_lock:
-        if _report_pool:
-            return
+def _get_client():
+    """Lazy-init the google-genai client."""
+    global _client
+    if _client is None:
+        from google import genai
+        _client = genai.Client(api_key=_GOOGLE_API_KEY)
+    return _client
 
-        model = os.getenv("GEMINI_REPORT_MODEL", "gemini-3-flash-preview").strip().strip('"')
 
-        try:
-            from langchain_google_genai import ChatGoogleGenerativeAI
-        except ImportError:
-            logger.error("langchain-google-genai not installed")
-            return
+class _GeminiReportLLM:
+    """
+    Thin wrapper around google-genai that matches the interface agent.py
+    expects: .invoke(prompt) returning an object with .content and .usage_metadata.
+    """
 
-        for key in _GEMINI_KEYS:
-            try:
-                _report_pool.append(ChatGoogleGenerativeAI(
-                    model=model,
-                    google_api_key=key,
-                    temperature=0.2,
-                    max_output_tokens=16384,
-                ))
-            except Exception as exc:
-                logger.warning("Failed to create Gemini client for key ...%s: %s", key[-4:], exc)
+    def __init__(self, model: str, temperature: float = 0.2, max_output_tokens: int = 16384):
+        self.model = model
+        self.temperature = temperature
+        self.max_output_tokens = max_output_tokens
 
-        if _report_pool:
-            logger.info("Gemini report pool created: model=%s, %d clients", model, len(_report_pool))
-        else:
-            logger.warning("No Gemini report clients could be created")
+    def invoke(self, prompt):
+        from google.genai import types
+        client = _get_client()
+        config = types.GenerateContentConfig(
+            temperature=self.temperature,
+            max_output_tokens=self.max_output_tokens,
+        )
+        response = client.models.generate_content(
+            model=self.model,
+            contents=prompt,
+            config=config,
+        )
+
+        # Return an object matching what agent.py expects
+        class _Response:
+            pass
+
+        resp = _Response()
+        resp.content = response.text or ""
+        resp.usage_metadata = {}
+        if response.usage_metadata:
+            resp.usage_metadata = {
+                "input_tokens": response.usage_metadata.prompt_token_count,
+                "output_tokens": response.usage_metadata.candidates_token_count,
+                "total_tokens": response.usage_metadata.total_token_count,
+            }
+        return resp
 
 
 def get_gemini_llm():
     """
-    Return a random Gemini LLM from the pre-built pool.
-    Each call picks a different client to spread rate-limit load.
+    Return a Gemini LLM for report synthesis.
+    Uses google-genai SDK directly with GOOGLE_API_KEY.
     """
-    # Support explicit GOOGLE_API_KEY as single-key override
-    api_key = os.getenv("GOOGLE_API_KEY", "").strip().strip('"')
-    if api_key:
-        model = os.getenv("GEMINI_REPORT_MODEL", "gemini-3-flash-preview").strip().strip('"')
-        try:
-            from langchain_google_genai import ChatGoogleGenerativeAI
-            return ChatGoogleGenerativeAI(
-                model=model,
-                google_api_key=api_key,
-                temperature=0.2,
-                max_output_tokens=16384,
-            )
-        except Exception as exc:
-            logger.error("Failed to create Gemini LLM with GOOGLE_API_KEY: %s", exc)
-            return None
-
-    _build_report_pool()
-    if not _report_pool:
+    if not _GOOGLE_API_KEY:
+        logger.warning("No GOOGLE_API_KEY found in environment")
         return None
 
-    client = random.choice(_report_pool)
-    logger.info("Gemini report: picked random client from pool of %d", len(_report_pool))
-    return client
+    model = os.getenv("GEMINI_REPORT_MODEL", "gemini-3-flash-preview").strip().strip('"')
+
+    try:
+        return _GeminiReportLLM(model=model, temperature=0.2, max_output_tokens=16384)
+    except Exception as exc:
+        logger.error("Failed to create Gemini report LLM: %s", exc)
+        return None
