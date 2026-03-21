@@ -178,7 +178,7 @@ export const KPI_DEFINITIONS = [
   },
   {
     id: 'cdas',
-    title: 'CLIP ALIGNMENT (CDAS)',
+    title: 'DURATION FIT SCORE (DFS)',
     getValue: (kpis) => (kpis?.cdas !== undefined ? Number(kpis.cdas).toFixed(2) : '0.85'),
     getSubtitle: () => 'Target: 1.0',
     trendData: [0.65, 0.70, 0.75, 0.78, 0.82, 0.84, 0.85],
