@@ -36,6 +36,36 @@ _meta: dict[str, Any] | None = None
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
+def _build_option_scope_maps(df: pd.DataFrame, clients: list[str]) -> dict[str, dict[str, Any]]:
+    """Build per-client option maps used to scope non-admin responses."""
+    scope_maps: dict[str, dict[str, Any]] = {
+        "input_types_by_client": {},
+        "languages_by_client": {},
+        "output_types_by_client": {},
+        "max_uploaded_duration_by_client": {},
+        "max_created_duration_by_client": {},
+    }
+
+    for client in clients:
+        client_df = df.loc[df["Client_Name"] == client]
+        scope_maps["input_types_by_client"][client] = sorted(
+            client_df["Input_Type"].dropna().unique().tolist()
+        )
+        scope_maps["languages_by_client"][client] = sorted(
+            client_df["Language"].dropna().unique().tolist()
+        )
+        scope_maps["output_types_by_client"][client] = sorted(
+            client_df["Output_Type"].dropna().unique().tolist()
+        )
+        scope_maps["max_uploaded_duration_by_client"][client] = int(
+            client_df["Uploaded_Duration"].dropna().max() or 15000
+        )
+        scope_maps["max_created_duration_by_client"][client] = int(
+            client_df["Created_Duration"].dropna().max() or 10000
+        )
+
+    return scope_maps
+
 def _load_training_data() -> pd.DataFrame:
     """Replicate the notebook's master-df from the live database."""
     result = query("""
@@ -109,6 +139,7 @@ def _train_and_save() -> None:
             df.loc[df["Client_Name"] == client, "Assigned_Channel"]
             .dropna().unique().tolist()
         )
+    options.update(_build_option_scope_maps(df, options["clients"]))
 
     # ── features / target ─────────────────────────────────────────────────
     drop = [
@@ -171,6 +202,17 @@ def _ensure_model(auth: AuthContext | None = None) -> str | None:
         logger.info("publish_predictor: loading cached model from disk")
         _model = joblib.load(MODEL_PATH)
         _meta = joblib.load(META_PATH)
+        # Backfill newer scoped option metadata for older cached models.
+        options = _meta.get("options", {})
+        if "input_types_by_client" not in options:
+            try:
+                df = _load_training_data()
+                clients = options.get("clients", [])
+                options.update(_build_option_scope_maps(df, clients))
+                _meta["options"] = options
+                joblib.dump(_meta, META_PATH)
+            except Exception:
+                logger.exception("publish_predictor: failed to backfill scoped option metadata")
         return None
     # Model not on disk — only website_admin may trigger first-time training
     if auth is None or auth.role != "website_admin":
@@ -216,6 +258,27 @@ def _scope_options(opts: dict, auth: AuthContext) -> dict:
     scoped["channels"] = sorted(
         ch for c in allowed for ch in cbc.get(c, [])
     )
+    input_types_by_client = opts.get("input_types_by_client", {})
+    languages_by_client = opts.get("languages_by_client", {})
+    output_types_by_client = opts.get("output_types_by_client", {})
+    max_uploaded_by_client = opts.get("max_uploaded_duration_by_client", {})
+    max_created_by_client = opts.get("max_created_duration_by_client", {})
+
+    scoped["input_types"] = sorted(
+        it for c in allowed for it in input_types_by_client.get(c, [])
+    ) or []
+    scoped["languages"] = sorted(
+        lang for c in allowed for lang in languages_by_client.get(c, [])
+    ) or []
+    scoped["output_types"] = sorted(
+        ot for c in allowed for ot in output_types_by_client.get(c, [])
+    ) or []
+    scoped["max_uploaded_duration"] = max(
+        [int(max_uploaded_by_client.get(c, 0) or 0) for c in allowed] or [0]
+    ) or int(opts.get("max_uploaded_duration") or 15000)
+    scoped["max_created_duration"] = max(
+        [int(max_created_by_client.get(c, 0) or 0) for c in allowed] or [0]
+    ) or int(opts.get("max_created_duration") or 10000)
     return scoped
 
 
@@ -224,8 +287,18 @@ def _validate_client(auth: AuthContext, requested_client: str) -> str | None:
     allowed = _allowed_clients(auth)
     if allowed is None:
         return None
+    if not allowed:
+        return "Access denied: no client scope found for your account"
     if requested_client not in allowed:
         return f"Access denied: you may only use client(s) {', '.join(allowed)}"
+    return None
+
+
+def _validate_channel(requested_client: str, requested_channel: str) -> str | None:
+    channel_map = (_meta or {}).get("options", {}).get("channel_by_client", {})
+    allowed_channels = set(channel_map.get(requested_client, []))
+    if requested_channel not in allowed_channels:
+        return f"Access denied: channel '{requested_channel}' is not available for client '{requested_client}'"
     return None
 
 
@@ -238,12 +311,14 @@ def predictor_options(auth: AuthContext = Depends(require_auth)):
         if model_err:
             return JSONResponse({"error": model_err}, status_code=503)
         scoped = _scope_options(_meta["options"], auth)
-        return {
-            **scoped,
-            "accuracy": _meta["accuracy"],
-            "classes": _meta["classes"],
-            "total_samples": _meta.get("total_samples", 0),
-        }
+        payload = {**scoped}
+        if auth.role == "website_admin":
+            payload.update({
+                "accuracy": _meta["accuracy"],
+                "classes": _meta["classes"],
+                "total_samples": _meta.get("total_samples", 0),
+            })
+        return payload
     except Exception as exc:
         logger.exception("predictor options failed")
         return JSONResponse({"error": str(exc)}, status_code=500)
@@ -260,6 +335,11 @@ def predictor_predict(req: PredictRequest, auth: AuthContext = Depends(require_a
         model_err = _ensure_model(auth)
         if model_err:
             return JSONResponse({"error": model_err}, status_code=503)
+
+        if auth.role != "website_admin":
+            channel_err = _validate_channel(req.client_name, req.assigned_channel)
+            if channel_err:
+                return JSONResponse({"error": channel_err}, status_code=403)
 
         sample = pd.DataFrame([{
             "Client_Name":           req.client_name,

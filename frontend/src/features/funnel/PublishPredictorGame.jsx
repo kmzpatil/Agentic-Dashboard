@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
-import { Target, Info, ChevronDown, RefreshCw } from 'lucide-react';
+import { Target, Info, ChevronDown } from 'lucide-react';
 import { API_BASE } from '../../lib/constants';
 
 // ── SVG Gauge ────────────────────────────────────────────────────────────────
@@ -125,6 +125,10 @@ function DurationSlider({ label, value, onChange, max, unit = 's' }) {
 // ── Main Component ───────────────────────────────────────────────────────────
 
 export default function PublishPredictorGame({ authUser }) {
+  const role = authUser?.role || 'user';
+  const isAdmin = role === 'website_admin';
+  const lockedClient = !isAdmin ? (authUser?.clientName || '') : '';
+
   const [options, setOptions] = useState(null);
   const [loading, setLoading] = useState(true);
   const [result, setResult] = useState(null);
@@ -166,7 +170,11 @@ export default function PublishPredictorGame({ authUser }) {
         const data = await res.json();
         if (cancelled) return;
         setOptions(data);
-        if (data.clients?.length)      setClient(data.clients[0]);
+        if (isAdmin) {
+          if (data.clients?.length) setClient(data.clients[0]);
+        } else {
+          setClient(lockedClient || data.clients?.[0] || '');
+        }
         if (data.input_types?.length)  setInputType(data.input_types[0]);
         if (data.languages?.length)    setLanguage(data.languages[0]);
         if (data.output_types?.length) setOutputType(data.output_types[0]);
@@ -184,13 +192,20 @@ export default function PublishPredictorGame({ authUser }) {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [headers, isAdmin, lockedClient]);
+
+  useEffect(() => {
+    if (!isAdmin && lockedClient && client !== lockedClient) {
+      setClient(lockedClient);
+    }
+  }, [isAdmin, lockedClient, client]);
 
   // auto-set channel when client changes
+  const selectedClient = isAdmin ? client : (lockedClient || client);
   const availableChannels = useMemo(() => {
-    if (!options?.channel_by_client || !client) return [];
-    return options.channel_by_client[client] || [];
-  }, [options, client]);
+    if (!options?.channel_by_client || !selectedClient) return [];
+    return options.channel_by_client[selectedClient] || [];
+  }, [options, selectedClient]);
 
   useEffect(() => {
     if (availableChannels.length > 0 && !availableChannels.includes(channel)) {
@@ -200,13 +215,13 @@ export default function PublishPredictorGame({ authUser }) {
 
   // ── predict (debounced) ────────────────────────────────────────────────
   const predict = useCallback(async () => {
-    if (!client || !channel || !inputType || !language || !outputType) return;
+    if (!selectedClient || !channel || !inputType || !language || !outputType) return;
     try {
       const res = await fetch(`${API_BASE}/publish-predictor/predict`, {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          client_name: client,
+          client_name: selectedClient,
           assigned_channel: channel,
           input_type: inputType,
           language,
@@ -221,14 +236,14 @@ export default function PublishPredictorGame({ authUser }) {
     } catch (err) {
       console.error('predict:', err);
     }
-  }, [client, channel, inputType, language, outputType, uploadedDuration, createdDuration, uploadToCreateDays, headers]);
+  }, [selectedClient, channel, inputType, language, outputType, uploadedDuration, createdDuration, uploadToCreateDays, headers]);
 
   useEffect(() => {
     if (!options || loading) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(predict, 350);
     return () => clearTimeout(debounceRef.current);
-  }, [client, channel, inputType, language, outputType, uploadedDuration, createdDuration, uploadToCreateDays, options, loading]);
+  }, [selectedClient, channel, inputType, language, outputType, uploadedDuration, createdDuration, uploadToCreateDays, options, loading]);
 
   // ── loading / error ────────────────────────────────────────────────────
   if (loading) {
@@ -274,28 +289,30 @@ export default function PublishPredictorGame({ authUser }) {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {options?.accuracy != null && (
-            <div className="rounded-lg border border-neutral-800 bg-[#111] px-3 py-1.5 text-[10px] font-bold text-neutral-400 tracking-wider">
-              ACCURACY <span className="text-emerald-400 ml-1">{(options.accuracy * 100).toFixed(1)}%</span>
-            </div>
-          )}
-          {options?.total_samples > 0 && (
-            <div className="rounded-lg border border-neutral-800 bg-[#111] px-3 py-1.5 text-[10px] font-bold text-neutral-400 tracking-wider">
-              {(options.total_samples / 1000).toFixed(0)}K <span className="text-neutral-500">SAMPLES</span>
-            </div>
-          )}
-          <button
-            onClick={() => setShowInfo(v => !v)}
-            className={`p-2 rounded-lg border transition-colors ${showInfo ? 'border-red-500/40 bg-red-500/10 text-red-400' : 'border-neutral-800 text-neutral-500 hover:text-white'}`}
-          >
-            <Info size={14} />
-          </button>
-        </div>
+        {isAdmin && (
+          <div className="flex items-center gap-2">
+            {options?.accuracy != null && (
+              <div className="rounded-lg border border-neutral-800 bg-[#111] px-3 py-1.5 text-[10px] font-bold text-neutral-400 tracking-wider">
+                ACCURACY <span className="text-emerald-400 ml-1">{(options.accuracy * 100).toFixed(1)}%</span>
+              </div>
+            )}
+            {options?.total_samples > 0 && (
+              <div className="rounded-lg border border-neutral-800 bg-[#111] px-3 py-1.5 text-[10px] font-bold text-neutral-400 tracking-wider">
+                {(options.total_samples / 1000).toFixed(0)}K <span className="text-neutral-500">SAMPLES</span>
+              </div>
+            )}
+            <button
+              onClick={() => setShowInfo(v => !v)}
+              className={`p-2 rounded-lg border transition-colors ${showInfo ? 'border-red-500/40 bg-red-500/10 text-red-400' : 'border-neutral-800 text-neutral-500 hover:text-white'}`}
+            >
+              <Info size={14} />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Info panel */}
-      {showInfo && (
+      {isAdmin && showInfo && (
         <div className="rounded-xl border border-neutral-800 bg-[#0d0d0d] p-5 space-y-4">
           <h4 className="text-[10px] font-bold uppercase tracking-wider text-red-400">How it works</h4>
           <p className="text-xs text-neutral-400 leading-relaxed">
@@ -331,7 +348,16 @@ export default function PublishPredictorGame({ authUser }) {
         <div className="lg:col-span-2 rounded-2xl border border-neutral-800 bg-[#0a0a0a] p-6 space-y-5">
           <h4 className="text-[10px] font-bold uppercase tracking-[0.15em] text-neutral-500">Configure Asset</h4>
 
-          <Select label="Client" value={client} onChange={setClient} options={options?.clients || []} />
+          {isAdmin ? (
+            <Select label="Client" value={client} onChange={setClient} options={options?.clients || []} />
+          ) : (
+            <div>
+              <label className="block mb-1.5 text-[10px] font-bold uppercase tracking-[0.15em] text-neutral-500">Client</label>
+              <div className="w-full rounded-xl border border-neutral-800 bg-[#0a0a0a] px-4 py-3 text-sm text-neutral-300 font-semibold">
+                {selectedClient || 'N/A'}
+              </div>
+            </div>
+          )}
           <Select label="Channel" value={channel} onChange={setChannel} options={availableChannels} />
 
           <div className="grid grid-cols-2 gap-4">

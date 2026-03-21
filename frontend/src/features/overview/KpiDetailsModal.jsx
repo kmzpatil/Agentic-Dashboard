@@ -16,8 +16,8 @@ ChartJS.register(
 );
 
 const ChartCard = ({ title, children }) => (
-  <div className="rounded-2xl border border-neutral-800 bg-[#111111] p-5">
-    <h4 className="mb-4 text-xs font-bold uppercase tracking-wider text-neutral-500">{title}</h4>
+  <div className="rounded-2xl border border-neutral-700/80 bg-[#121418] p-5">
+    <h4 className="mb-4 text-xs font-bold uppercase tracking-[0.12em] text-neutral-400">{title}</h4>
     <div className="h-64 w-full">
       {children}
     </div>
@@ -581,36 +581,36 @@ export default function KpiDetailsModal({ kpi, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80" onClick={onClose}>
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/75 backdrop-blur-[2px]" onClick={onClose}>
       <div className="flex min-h-full items-start justify-center p-6 py-10">
       <div
-        className="relative w-full max-w-5xl rounded-3xl border border-neutral-800 bg-[#0d0d0d] p-8 shadow-2xl"
+        className="relative w-full max-w-5xl rounded-3xl border border-neutral-700/80 bg-[#101216] p-8 shadow-2xl"
         onClick={e => e.stopPropagation()}
       >
         <button
           onClick={onClose}
-          className="absolute right-6 top-6 text-neutral-500 hover:text-white transition-colors z-10 bg-black/50 p-2 rounded-full backdrop-blur-md"
+          className="absolute right-6 top-6 text-neutral-400 hover:text-white transition-colors z-10 bg-black/45 p-2 rounded-full border border-neutral-700 backdrop-blur-md"
         >
           <X size={24} />
         </button>
         
         <div className="mb-8 border-b border-neutral-800 pb-6 pr-12">
-          <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-500 mb-2">KPI Deep Dive</div>
+          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-neutral-400 mb-2">KPI Deep Dive</div>
           <h3 className="text-3xl font-black text-white tracking-tight leading-tight">{kpi.title}</h3>
           
           <div className="mt-6 flex flex-col gap-4">
-            <div className="rounded-xl bg-[#141414] p-4 border border-neutral-800/50">
-              <div className="text-xs font-bold uppercase tracking-wider text-neutral-500 mb-1">Definition</div>
+            <div className="rounded-xl bg-[#14171d] p-4 border border-neutral-700/70">
+              <div className="text-xs font-bold uppercase tracking-[0.12em] text-neutral-400 mb-1">Definition</div>
               <p className="text-sm text-neutral-300 leading-relaxed">{kpi.definition}</p>
             </div>
             
-            <div className="rounded-xl bg-blue-950/20 p-4 border border-blue-900/30">
-              <div className="text-xs font-bold uppercase tracking-wider text-blue-400 mb-1">Formula Calculation</div>
+            <div className="rounded-xl bg-sky-950/20 p-4 border border-sky-800/35">
+              <div className="text-xs font-bold uppercase tracking-[0.12em] text-sky-300 mb-1">Formula Calculation</div>
               <code className="text-sm text-blue-200 font-mono break-all">{kpi.formula}</code>
             </div>
 
-            <div className="rounded-xl bg-[#141414] p-4 border border-neutral-800/50">
-              <div className="text-xs font-bold uppercase tracking-wider text-neutral-500 mb-1">Significance</div>
+            <div className="rounded-xl bg-[#14171d] p-4 border border-neutral-700/70">
+              <div className="text-xs font-bold uppercase tracking-[0.12em] text-neutral-400 mb-1">Significance</div>
               <p className="text-sm text-neutral-300 leading-relaxed">{kpi.significance}</p>
             </div>
           </div>

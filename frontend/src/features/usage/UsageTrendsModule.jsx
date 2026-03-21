@@ -289,8 +289,8 @@ function GranularityPills({ value, onChange }) {
             onClick={() => onChange(opt.value)}
             className={`w-9 h-10 rounded-lg text-sm font-semibold transition-all cursor-pointer border flex items-center justify-center ${
               active
-                ? "bg-neutral-800 border-neutral-600 text-white shadow-md"
-                : "bg-transparent border-neutral-800 text-neutral-500 hover:border-neutral-700 hover:text-neutral-300"
+                ? "bg-neutral-200/15 border-neutral-400 text-white shadow-[0_0_0_1px_rgba(255,255,255,0.12)]"
+                : "bg-[#111214] border-neutral-700 text-neutral-300 hover:border-neutral-500 hover:text-white"
             }`}
           >
             {opt.label}
@@ -1532,12 +1532,12 @@ export default function UsageTrendsModule({
       {!isMaximized && (
         <>
           {/* ── Controls bar ──────────────────────────────────────────────── */}
-          <section className="relative z-[60] rounded-[24px] border border-neutral-800/80 bg-[#101010]/80 backdrop-blur-md p-6 shadow-xl transition-all duration-300 hover:border-neutral-700/80">
+          <section className="relative z-[60] rounded-[24px] border border-neutral-700/90 bg-[#0d0e11]/95 backdrop-blur-md p-6 shadow-[0_18px_48px_rgba(0,0,0,0.4)] transition-all duration-300 hover:border-neutral-500/90">
             <div className="flex flex-wrap lg:flex-nowrap items-start gap-5">
               {/* Metric */}
               <div className="group shrink-0">
                 <div className="h-5 mb-2 flex items-end">
-                  <label className="text-[10px] font-bold uppercase tracking-[0.2em] leading-none text-neutral-500 group-hover:text-neutral-300 transition-colors">
+                  <label className="text-[11px] font-bold uppercase tracking-[0.16em] leading-none text-neutral-300 group-hover:text-white transition-colors">
                     Metric Selection
                   </label>
                 </div>
@@ -1555,7 +1555,7 @@ export default function UsageTrendsModule({
               {/* Granularity */}
               <div className="group shrink-0">
                 <div className="h-5 mb-2 flex items-end">
-                  <label className="text-[10px] font-bold uppercase tracking-[0.2em] leading-none text-neutral-500 group-hover:text-neutral-300 transition-colors">
+                  <label className="text-[11px] font-bold uppercase tracking-[0.16em] leading-none text-neutral-300 group-hover:text-white transition-colors">
                     Granularity
                   </label>
                 </div>
@@ -1568,7 +1568,7 @@ export default function UsageTrendsModule({
               {/* Forecast toggle + controls */}
               <div className="group shrink-0">
                 <div className="h-5 mb-2 flex items-center gap-3">
-                  <label className="text-[10px] font-bold uppercase tracking-[0.2em] leading-none text-neutral-500 group-hover:text-neutral-300 transition-colors">
+                  <label className="text-[11px] font-bold uppercase tracking-[0.16em] leading-none text-neutral-300 group-hover:text-white transition-colors">
                     Forecast
                   </label>
                   <button
@@ -1583,8 +1583,8 @@ export default function UsageTrendsModule({
                     }}
                     className={`relative inline-flex h-5 w-9 items-center rounded-full border transition-all ${
                       isPredicting
-                        ? "border-red-500/60 bg-red-500/20"
-                        : "border-neutral-700 bg-[#0a0a0a]/90"
+                        ? "border-red-400/80 bg-red-500/25"
+                        : "border-neutral-600 bg-[#111214]"
                     }`}
                   >
                     <span
@@ -1623,8 +1623,8 @@ export default function UsageTrendsModule({
                 {/* Cutoff hint */}
                 {isPredicting && (
                   <div className="mt-1.5 flex items-center gap-1.5">
-                    <CalendarDays size={11} className="text-sky-500/60" />
-                    <span className="text-[10px] text-sky-500/60">
+                    <CalendarDays size={11} className="text-sky-400/80" />
+                    <span className="text-[10px] text-sky-300/90">
                       {cutoffDate
                         ? `Forecast starts after ${cutoffDate}`
                         : resolvedCutoff
@@ -1637,8 +1637,8 @@ export default function UsageTrendsModule({
                 {/* Skipped-clients warning */}
                 {isPredicting && skippedClientsCount > 0 && (
                   <div className="mt-1.5 flex items-center gap-1.5">
-                    <AlertTriangle size={11} className="text-amber-500/70" />
-                    <span className="text-[10px] text-amber-500/70">
+                    <AlertTriangle size={11} className="text-amber-400/90" />
+                    <span className="text-[10px] text-amber-300/90">
                       {skippedClientsCount} client
                       {skippedClientsCount > 1 ? "s" : ""} skipped — no data
                       before cutoff date
@@ -1647,19 +1647,19 @@ export default function UsageTrendsModule({
                 )}
               </div>
 
-              <div className="hidden lg:block self-stretch w-px bg-neutral-800/70" />
+              <div className="hidden lg:block self-stretch w-px bg-neutral-600/80" />
 
               {/* KPI strip */}
               <section className="w-full xl:w-auto xl:flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 xl:gap-0 items-end">
                 {/* KPI 1: This Period */}
-                <div className="rounded-xl border border-neutral-800/50 bg-neutral-900/20 px-4 py-3 xl:px-3 xl:py-2 xl:bg-transparent xl:border-neutral-900/70">
-                  <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-neutral-500">
+                <div className="rounded-xl border border-neutral-700/90 bg-[#111214] px-4 py-3 xl:px-3 xl:py-2">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-neutral-300">
                     This Period
                   </div>
                   <div className="mt-1 text-xl xl:text-lg font-bold leading-tight text-white">
                     {formatMetricValue(resolvedMetric, summary.latestValue)}
                   </div>
-                  <div className="mt-0.5 text-[11px] text-neutral-500">
+                  <div className="mt-0.5 text-[11px] text-neutral-300">
                     {summary.latestPeriod
                       ? formatLongPeriod(summary.latestPeriod)
                       : "No data"}
@@ -1667,13 +1667,13 @@ export default function UsageTrendsModule({
                 </div>
 
                 {/* KPI 2: vs Last Period */}
-                <div className="rounded-xl border border-neutral-800/50 bg-neutral-900/20 px-4 py-3 xl:px-3 xl:py-2 xl:ml-4 xl:pl-4 xl:bg-transparent xl:border-neutral-900/70 xl:border-l xl:border-l-neutral-800/70">
+                <div className="rounded-xl border border-neutral-700/90 bg-[#111214] px-4 py-3 xl:px-3 xl:py-2 xl:ml-4 xl:pl-4">
                   {(() => {
                     const deltaNum = summary.deltaVsPreviousPct;
                     const deltaUp = deltaNum !== null && deltaNum > 0;
                     return (
                       <>
-                        <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-neutral-500">
+                        <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-neutral-300">
                           VS Last Period
                         </div>
                         <div className="mt-1 text-lg font-bold leading-tight text-white">
@@ -1681,7 +1681,7 @@ export default function UsageTrendsModule({
                             "—"
                           ) : (
                             <span
-                              className={`inline-flex items-center gap-1 ${deltaUp ? "text-emerald-400" : "text-red-400"}`}
+                              className={`inline-flex items-center gap-1 ${deltaUp ? "text-emerald-300" : "text-red-300"}`}
                             >
                               {deltaUp ? (
                                 <TrendingUp size={14} />
@@ -1692,7 +1692,7 @@ export default function UsageTrendsModule({
                             </span>
                           )}
                         </div>
-                        <div className="mt-0.5 text-[11px] text-neutral-500">
+                        <div className="mt-0.5 text-[11px] text-neutral-300">
                           {deltaNum === null
                             ? "—"
                             : deltaUp
@@ -1707,14 +1707,14 @@ export default function UsageTrendsModule({
                 </div>
 
                 {/* KPI 3: Date Range */}
-                <div className="rounded-lg border border-neutral-900/70 bg-transparent px-3 py-2 md:ml-4 md:pl-4 md:border-l md:border-l-neutral-800/70">
-                  <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-neutral-500">
+                <div className="rounded-xl border border-neutral-700/90 bg-[#111214] px-3 py-2 md:ml-4 md:pl-4">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-neutral-300">
                     Date Range
                   </div>
                   <div className="mt-1 text-lg font-bold leading-tight text-white">
                     {`${historySeries.length} ${granularity}s`}
                   </div>
-                  <div className="mt-0.5 text-[11px] text-neutral-500">
+                  <div className="mt-0.5 text-[11px] text-neutral-300">
                     {historySeries.length > 0
                       ? `${historySeries[0].period.slice(0, 10)} – ${historySeries.at(-1).period.slice(0, 10)}`
                       : "—"}

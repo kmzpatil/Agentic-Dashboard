@@ -64,60 +64,88 @@ export default function KpiCard({ title, value, subtitle, trendData, onRemove, o
     },
   };
 
+  const actions = [];
+  if (onAdd) {
+    actions.push({
+      key: 'add',
+      label: 'Add KPI',
+      icon: <Plus size={14} />,
+      onClick: onAdd,
+      tone: 'hover:text-emerald-300 hover:border-emerald-500/40 hover:bg-emerald-500/10',
+    });
+  }
+  if (onEdit) {
+    actions.push({
+      key: 'edit',
+      label: 'Edit KPI',
+      icon: <Pencil size={13} />,
+      onClick: onEdit,
+      tone: 'hover:text-sky-300 hover:border-sky-500/40 hover:bg-sky-500/10',
+    });
+  }
+  if (onRemove) {
+    actions.push({
+      key: 'remove',
+      label: 'Remove KPI',
+      icon: <X size={14} />,
+      onClick: onRemove,
+      tone: 'hover:text-red-300 hover:border-red-500/40 hover:bg-red-500/10',
+    });
+  }
+
+  const isInteractive = Boolean(onClick);
+
   return (
     <div 
-      className={`relative bg-[#111111] rounded-xl p-5 border border-neutral-800 transition-colors flex flex-col justify-between h-full ${onClick ? 'cursor-pointer hover:border-neutral-500' : 'hover:border-neutral-600'}`}
+      className={[
+        'relative rounded-xl border bg-[#111317] p-4 transition-colors flex flex-col justify-between h-full',
+        isInteractive
+          ? 'cursor-pointer border-neutral-800 hover:border-neutral-600'
+          : 'border-neutral-800 hover:border-neutral-700',
+      ].join(' ')}
       onClick={onClick}
     >
-      {onRemove && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove();
-          }}
-          className="absolute top-3 right-3 text-neutral-500 hover:text-red-400 transition-colors"
-        >
-          <X size={16} />
-        </button>
-      )}
-      {onEdit && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onEdit();
-          }}
-          className={`absolute top-3 transition-colors text-neutral-500 hover:text-blue-400 ${onRemove ? 'right-8' : 'right-3'}`}
-        >
-          <Pencil size={14} />
-        </button>
-      )}
-      {onAdd && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onAdd();
-          }}
-          className="absolute top-3 right-3 text-neutral-500 hover:text-white transition-colors"
-        >
-          <Plus size={16} />
-        </button>
-      )}
-      
-      <div className="flex justify-between items-start h-full">
-        <div className="flex-1 flex flex-col justify-between h-full">
-          <div>
-            <div className="text-xs font-bold tracking-wider text-neutral-500 mb-1">{title}</div>
-            <div className="text-3xl font-black text-white tracking-tight">{value}</div>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-neutral-400 mb-1.5">
+            {title}
           </div>
-          <div className="text-sm text-neutral-400 mt-2">{subtitle}</div>
+          <div className="text-[30px] font-black leading-none tracking-tight text-white">
+            {value}
+          </div>
+          <div className="mt-2.5 text-[12.5px] leading-snug text-neutral-400">
+            {subtitle}
+          </div>
         </div>
-        
         {trendData && (
-          <div className="w-24 h-16 ml-4 mt-2 shrink-0">
+          <div className="w-[92px] h-[64px] shrink-0">
             <Line data={chartData} options={chartOptions} />
           </div>
         )}
       </div>
+
+      {actions.length > 0 && (
+        <div className="mt-3.5 flex items-center justify-end gap-1.5">
+          {actions.map((action) => (
+            <button
+              key={action.key}
+              title={action.label}
+              aria-label={action.label}
+              onClick={(event) => {
+                event.stopPropagation();
+                action.onClick?.();
+              }}
+              className={[
+                'inline-flex h-7 w-7 items-center justify-center rounded-full border',
+                'border-neutral-700 bg-[#0f1012] text-neutral-400 transition-colors',
+                action.tone,
+              ].join(' ')}
+            >
+              {action.icon}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

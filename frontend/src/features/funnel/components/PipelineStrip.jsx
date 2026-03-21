@@ -104,7 +104,7 @@ function FlowConnector({ text, note, compact = false, alignToValue = false }) {
         <span className="pipeline-flow-dot pipeline-flow-dot--third" />
       </div>
       {note && (
-        <span className="text-[10px] uppercase tracking-[0.08em] text-neutral-600 mt-1 whitespace-nowrap">
+        <span className="text-[11px] uppercase tracking-[0.08em] text-neutral-300 mt-1 whitespace-nowrap">
           {note}
         </span>
       )}
@@ -219,12 +219,12 @@ export default function PipelineStrip({ data }) {
 
       {/* ── Pipeline overview ── */}
       <div>
-        <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-neutral-500 mb-3 text-center">Pipeline overview</div>
+        <div className="text-[12px] font-bold uppercase tracking-[0.16em] text-neutral-300 mb-3 text-center">Pipeline overview</div>
         <div className="mx-auto grid max-w-[1260px] grid-cols-1 gap-y-3 sm:grid-cols-2 lg:grid-cols-[1fr_132px_1fr_132px_1fr_132px_1fr] lg:items-center lg:gap-x-2">
           {stages.map((s, i) => (
             <React.Fragment key={s.label}>
               <div className="text-center py-0.5 lg:min-h-[92px] flex flex-col justify-end">
-                <div className="text-[12px] font-medium text-neutral-400 mb-1">{s.label}</div>
+                <div className="text-[13px] font-medium text-neutral-300 mb-1">{s.label}</div>
                 <div className="text-[46px] font-semibold leading-none font-mono tracking-tight text-neutral-200">
                   {formatNumber(s.value)}
                 </div>
@@ -240,15 +240,15 @@ export default function PipelineStrip({ data }) {
 
       {/* ── KPIs ── */}
       <div>
-        <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-neutral-500 mb-3 text-center">Key performance indicators</div>
-        <div className="mx-auto grid max-w-[1220px] grid-cols-1 gap-y-3 sm:grid-cols-2 xl:grid-cols-5 xl:gap-x-5">
+        <div className="text-[12px] font-bold uppercase tracking-[0.16em] text-neutral-300 mb-3 text-center">Key performance indicators</div>
+        <div className="mx-auto grid max-w-[1220px] grid-cols-1 gap-y-4 sm:grid-cols-2 xl:grid-cols-5 xl:gap-x-5">
           {kpis.map((kpi) => (
-            <div key={kpi.label} className="text-center">
-              <div className="text-[13px] font-medium text-neutral-400 mb-1">{kpi.label}</div>
+            <div key={kpi.label} className="text-center rounded-xl border border-neutral-800/70 bg-[#101114] px-3 py-3.5">
+              <div className="text-[14px] font-medium leading-snug text-neutral-200 mb-2.5">{kpi.label}</div>
               <div className="text-[28px] font-bold leading-none font-mono text-neutral-300">
                 {kpi.value}
               </div>
-              <div className="text-[12px] text-neutral-500 mt-1.5">{kpi.sub}</div>
+              <div className="text-[13px] text-neutral-300 mt-2">{kpi.sub}</div>
             </div>
           ))}
         </div>
