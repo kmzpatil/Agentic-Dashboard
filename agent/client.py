@@ -3,13 +3,9 @@ client.py
 ---------
 LLM client abstraction supporting Anthropic and Gemini providers.
 
-Gemini uses the google-genai SDK directly (single GOOGLE_API_KEY).
-A langchain-compatible wrapper is exposed via .langchain_llm for
-agent.py's tool-calling loop (bind_tools).
-
 Features:
   - Dual provider support (Anthropic Claude / Google Gemini)
-  - Single Gemini client via google-genai SDK
+  - Single Gemini client via GOOGLE_API_KEY (langchain-google-genai)
   - Exponential backoff retry on 429 rate-limit errors
   - Factory modes: fast(), thinking(), creative()
 """
@@ -48,13 +44,6 @@ try:
 except ImportError:
     ChatGoogleGenerativeAI = None
 
-try:
-    from google import genai
-    from google.genai import types as genai_types
-except ImportError:
-    genai = None
-    genai_types = None
-
 
 class LLMResponse:
     """Structured response from an LLM call."""
@@ -69,9 +58,7 @@ class LLMClient:
     """
     Unified LLM client supporting Anthropic and Gemini providers.
     Provider is selected via AI_PROVIDER env var (default: anthropic).
-
-    Gemini calls go through google-genai SDK directly.
-    For langchain tool-calling compatibility (bind_tools), use .langchain_llm.
+    Single GOOGLE_API_KEY for Gemini via langchain-google-genai.
     """
 
     def __init__(
@@ -93,12 +80,16 @@ class LLMClient:
             self._init_anthropic()
 
     def _init_gemini(self):
-        if genai is None:
-            raise ImportError("google-genai is not installed.")
+        if ChatGoogleGenerativeAI is None:
+            raise ImportError("langchain-google-genai is not installed.")
         if not _GOOGLE_API_KEY:
             raise ValueError("No GOOGLE_API_KEY found in environment")
-        self._genai_client = genai.Client(api_key=_GOOGLE_API_KEY)
-        self._langchain_llm = None  # lazy
+        self.llm = ChatGoogleGenerativeAI(
+            model=self.model,
+            google_api_key=_GOOGLE_API_KEY,
+            temperature=self.temperature,
+            max_output_tokens=8192,
+        )
         logger.info("Gemini client created: model=%s, temp=%.1f", self.model, self.temperature)
 
     def _init_anthropic(self):
@@ -107,33 +98,12 @@ class LLMClient:
         api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
         if not api_key:
             logger.warning("No ANTHROPIC_API_KEY found in environment!")
-        self._anthropic_llm = ChatAnthropic(
+        self.llm = ChatAnthropic(
             model_name=self.model,
             temperature=self.temperature,
             api_key=api_key,
             max_tokens=4096,
         )
-
-    @property
-    def llm(self):
-        """
-        Return a langchain-compatible LLM object.
-        For Gemini: lazily creates a ChatGoogleGenerativeAI wrapper.
-        For Anthropic: returns the ChatAnthropic instance.
-        Used by agent.py for bind_tools() and direct .invoke() calls.
-        """
-        if self.provider == "gemini":
-            if self._langchain_llm is None:
-                if ChatGoogleGenerativeAI is None:
-                    raise ImportError("langchain-google-genai is not installed.")
-                self._langchain_llm = ChatGoogleGenerativeAI(
-                    model=self.model,
-                    google_api_key=_GOOGLE_API_KEY,
-                    temperature=self.temperature,
-                    max_output_tokens=8192,
-                )
-            return self._langchain_llm
-        return self._anthropic_llm
 
     # ── Factory helpers ──────────────────────────────────────────────────────
 
@@ -157,7 +127,6 @@ class LLMClient:
     def invoke(self, prompt: str, *, label: str = "llm") -> LLMResponse:
         """
         Call the LLM with exponential backoff on 429 rate-limit errors.
-        Gemini calls use google-genai SDK directly.
         """
         max_attempts = 5
         start_time = time.time()
@@ -166,18 +135,15 @@ class LLMClient:
             logger.info("[%s] Calling %s (model: %s, attempt %d)...", label, self.provider, self.model, attempt + 1)
 
             try:
-                if self.provider == "gemini":
-                    result = self._invoke_gemini(prompt)
-                else:
-                    result = self._invoke_anthropic(prompt)
-
+                result = self.llm.invoke(prompt)
                 duration = time.time() - start_time
+                usage = getattr(result, "usage_metadata", {})
+
                 logger.info(
                     "[%s] %s responded in %.2fs. Usage: %s",
-                    label, self.provider, duration,
-                    json.dumps(result.usage) if result.usage else "N/A",
+                    label, self.provider, duration, json.dumps(usage) if usage else "N/A"
                 )
-                return result
+                return self._parse(result.content, usage=usage)
 
             except Exception as exc:
                 if self._is_rate_limit(exc) and attempt < max_attempts - 1:
@@ -198,35 +164,10 @@ class LLMClient:
 
         raise RuntimeError(f"[{label}] Max LLM retries exceeded")
 
-    def _invoke_gemini(self, prompt: str) -> LLMResponse:
-        """Call Gemini via google-genai SDK."""
-        config = genai_types.GenerateContentConfig(
-            temperature=self.temperature,
-            max_output_tokens=8192,
-        )
-        response = self._genai_client.models.generate_content(
-            model=self.model,
-            contents=prompt,
-            config=config,
-        )
-        usage = {}
-        if response.usage_metadata:
-            usage = {
-                "input_tokens": response.usage_metadata.prompt_token_count,
-                "output_tokens": response.usage_metadata.candidates_token_count,
-                "total_tokens": response.usage_metadata.total_token_count,
-            }
-        return self._parse(response.text or "", usage=usage)
-
-    def _invoke_anthropic(self, prompt: str) -> LLMResponse:
-        """Call Anthropic via langchain."""
-        result = self._anthropic_llm.invoke(prompt)
-        usage = getattr(result, "usage_metadata", {})
-        return self._parse(result.content, usage=usage)
-
     # ── Internal helpers ─────────────────────────────────────────────────────
 
     def _parse(self, raw, *, usage: Optional[dict] = None) -> LLMResponse:
+        # Gemini returns content as a list of blocks; normalise to string
         if isinstance(raw, list):
             raw = " ".join(
                 part.get("text", "") if isinstance(part, dict) else str(part)
