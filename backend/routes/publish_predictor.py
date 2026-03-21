@@ -16,9 +16,9 @@ import pandas as pd
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
+import shap
 
 from backend.db.pool import query
 from backend.middleware.auth import AuthContext, require_auth
@@ -66,6 +66,7 @@ def _build_option_scope_maps(df: pd.DataFrame, clients: list[str]) -> dict[str, 
 
     return scope_maps
 
+
 def _load_training_data() -> pd.DataFrame:
     """Replicate the notebook's master-df from the live database."""
     result = query("""
@@ -79,7 +80,7 @@ def _load_training_data() -> pd.DataFrame:
             ca."Output_Type",
             ca."Created_Duration",
             ca."Create_Date",
-            pp."Publish_Date"
+            pd."Published_URL"
         FROM raw_videos rv
         LEFT JOIN users             u   ON rv."User_ID"  = u."User_ID"
         LEFT JOIN raw_video_channel rvc ON rv."Video_ID" = rvc."Video_ID"
@@ -96,34 +97,30 @@ def _train_and_save() -> None:
     logger.info("publish_predictor: training model from DB …")
     df = _load_training_data()
 
-    # ── feature engineering (mirrors the notebook exactly) ────────────────
-    for col in ("Upload_Date", "Create_Date", "Publish_Date"):
+    # ── Feature engineering (mirrors the updated local script exactly) ──
+    for col in ("Upload_Date", "Create_Date"):
         df[col] = pd.to_datetime(df[col], errors="coerce")
 
+    # Target variable: binary flag — was this asset published?
+    df["Is_Published"] = df["Published_URL"].notna().astype(int)
+
+    # Derived temporal features
     df["Upload_to_Create_Days"] = (
         (df["Create_Date"] - df["Upload_Date"]).dt.total_seconds() / 86400
     )
-    df["Days_to_Publish"] = (
-        (df["Publish_Date"] - df["Create_Date"]).dt.total_seconds() / 86400
-    )
-    df["Is_Published"] = df["Publish_Date"].notna()
 
-    # target
-    def _timeframe(row):
-        if not row["Is_Published"]:
-            return "0_Never"
-        d = row["Days_to_Publish"]
-        if d <= 1:
-            return "1_Within_1_Day"
-        if d <= 2:
-            return "2_Within_2_Days"
-        if d <= 3:
-            return "3_Within_3_Days"
-        return "4_More_than_3_Days"
+    # Filter to asset-level records (must have been through editing stage)
+    df = df.dropna(subset=['Created_Duration']).copy()
 
-    df["Publish_Timeframe"] = df.apply(_timeframe, axis=1)
+    # Handle missing values
+    df['Upload_to_Create_Days'] = df['Upload_to_Create_Days'].fillna(0)
+    df['Output_Type'] = df['Output_Type'].fillna('None')
 
-    # dropdown options (before dropping columns)
+    # Drop identifier and leakage columns
+    drop_cols = ["Published_URL", "Create_Date", "Upload_Date"]
+    df = df.drop(columns=[c for c in drop_cols if c in df.columns])
+
+    # Extract dynamic frontend options before dummying
     options: dict[str, Any] = {
         "clients":      sorted(df["Client_Name"].dropna().unique().tolist()),
         "channels":     sorted(df["Assigned_Channel"].dropna().unique().tolist()),
@@ -141,50 +138,63 @@ def _train_and_save() -> None:
         )
     options.update(_build_option_scope_maps(df, options["clients"]))
 
-    # ── features / target ─────────────────────────────────────────────────
-    drop = [
-        "Publish_Timeframe", "Is_Published", "Publish_Date",
-        "Days_to_Publish", "Create_Date", "Upload_Date",
-    ]
-    X = df.drop(columns=[c for c in drop if c in df.columns])
+    # ── Prepare X and y ───────────────────────────────────────────────────
+    y = df["Is_Published"]
+    X = df.drop(columns=["Is_Published"])
 
-    # fill NaN in numeric cols
+    # Fallback to fill NaN in remaining numeric cols
     X["Uploaded_Duration"] = X["Uploaded_Duration"].fillna(0)
     X["Created_Duration"] = X["Created_Duration"].fillna(0)
-    X["Upload_to_Create_Days"] = X["Upload_to_Create_Days"].fillna(0)
 
-    # fill NaN in string cols before one-hot encoding
+    # Strip and clean string cols before one-hot encoding
     for col in X.select_dtypes(include="object").columns:
+        X[col] = X[col].apply(lambda x: x.strip() if isinstance(x, str) else x)
         X[col] = X[col].fillna("Unknown")
 
+    # Polynomial Features
+    max_up_dur = float(X['Uploaded_Duration'].max() or 15000)
+    max_cr_dur = float(X['Created_Duration'].max() or 10000)
+    
+    X['up_dur_norm'] = X['Uploaded_Duration'] / max_up_dur
+    X['cr_dur_norm'] = X['Created_Duration'] / max_cr_dur
+
+    for p in [2, 3, 7, 9, 11]:
+        X[f'Up_Duration_P{p}'] = X['up_dur_norm'] ** p
+        X[f'Cr_Duration_P{p}'] = X['cr_dur_norm'] ** p
+
+    X = X.drop(columns=['up_dur_norm', 'cr_dur_norm'])
+
+    # Convert to dummies
     X = pd.get_dummies(X, drop_first=True)
-    y = df["Publish_Timeframe"]
 
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
+        X, y, test_size=0.2, random_state=42, stratify=y
     )
 
-    base_rf = RandomForestClassifier(
+    model = RandomForestClassifier(
         n_estimators=100,
+        max_depth=None,
+        min_samples_split=2,
         class_weight="balanced",
         random_state=42,
         n_jobs=-1,
     )
-    # Wrap with isotonic calibration → continuous probabilities (not 1/100 steps)
-    model = CalibratedClassifierCV(base_rf, method="isotonic", cv=3)
+    
     model.fit(X_train, y_train)
     accuracy = float(model.score(X_test, y_test))
     logger.info("publish_predictor: accuracy=%.4f  classes=%s", accuracy, model.classes_)
 
-    sample_counts = df["Publish_Timeframe"].value_counts().to_dict()
+    sample_counts = df["Is_Published"].value_counts().to_dict()
 
     meta = {
         "training_columns": list(X_train.columns),
         "options": options,
         "accuracy": round(accuracy, 4),
-        "classes": list(model.classes_),
+        "classes": [int(c) for c in model.classes_],
         "sample_counts": sample_counts,
         "total_samples": len(df),
+        "max_up_dur": max_up_dur,
+        "max_cr_dur": max_cr_dur
     }
 
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
@@ -202,19 +212,8 @@ def _ensure_model(auth: AuthContext | None = None) -> str | None:
         logger.info("publish_predictor: loading cached model from disk")
         _model = joblib.load(MODEL_PATH)
         _meta = joblib.load(META_PATH)
-        # Backfill newer scoped option metadata for older cached models.
-        options = _meta.get("options", {})
-        if "input_types_by_client" not in options:
-            try:
-                df = _load_training_data()
-                clients = options.get("clients", [])
-                options.update(_build_option_scope_maps(df, clients))
-                _meta["options"] = options
-                joblib.dump(_meta, META_PATH)
-            except Exception:
-                logger.exception("publish_predictor: failed to backfill scoped option metadata")
         return None
-    # Model not on disk — only website_admin may trigger first-time training
+    
     if auth is None or auth.role != "website_admin":
         return "Model not trained yet. Please ask a Frammer admin to log in first to initialize the model."
     _train_and_save()
@@ -237,53 +236,49 @@ class PredictRequest(BaseModel):
 # ── auth helpers ──────────────────────────────────────────────────────────────
 
 def _allowed_clients(auth: AuthContext) -> list[str] | None:
-    """Return the list of clients the user may access, or None for admins."""
     if auth.role == "website_admin":
-        return None  # no restriction
-    # client_admin and user are scoped to their own client
+        return None  
     return [auth.client_name] if auth.client_name else []
 
 
 def _scope_options(opts: dict, auth: AuthContext) -> dict:
-    """Filter dropdown options to only what the user is allowed to see."""
     allowed = _allowed_clients(auth)
     if allowed is None:
-        return opts  # admin sees everything
+        return opts  
 
     scoped = {**opts}
     scoped["clients"] = [c for c in opts.get("clients", []) if c in allowed]
-    # Only keep channels belonging to allowed clients
+    
     cbc = opts.get("channel_by_client", {})
     scoped["channel_by_client"] = {c: cbc[c] for c in allowed if c in cbc}
-    scoped["channels"] = sorted(
-        ch for c in allowed for ch in cbc.get(c, [])
-    )
+    scoped["channels"] = sorted(ch for c in allowed for ch in cbc.get(c, []))
+    
     input_types_by_client = opts.get("input_types_by_client", {})
     languages_by_client = opts.get("languages_by_client", {})
     output_types_by_client = opts.get("output_types_by_client", {})
     max_uploaded_by_client = opts.get("max_uploaded_duration_by_client", {})
     max_created_by_client = opts.get("max_created_duration_by_client", {})
 
-    scoped["input_types"] = sorted(
+    scoped["input_types"] = sorted(list(set(
         it for c in allowed for it in input_types_by_client.get(c, [])
-    ) or []
-    scoped["languages"] = sorted(
+    ))) or []
+    scoped["languages"] = sorted(list(set(
         lang for c in allowed for lang in languages_by_client.get(c, [])
-    ) or []
-    scoped["output_types"] = sorted(
+    ))) or []
+    scoped["output_types"] = sorted(list(set(
         ot for c in allowed for ot in output_types_by_client.get(c, [])
-    ) or []
+    ))) or []
     scoped["max_uploaded_duration"] = max(
         [int(max_uploaded_by_client.get(c, 0) or 0) for c in allowed] or [0]
     ) or int(opts.get("max_uploaded_duration") or 15000)
     scoped["max_created_duration"] = max(
         [int(max_created_by_client.get(c, 0) or 0) for c in allowed] or [0]
     ) or int(opts.get("max_created_duration") or 10000)
+    
     return scoped
 
 
 def _validate_client(auth: AuthContext, requested_client: str) -> str | None:
-    """Return an error message if the user is not allowed to use this client."""
     allowed = _allowed_clients(auth)
     if allowed is None:
         return None
@@ -327,7 +322,6 @@ def predictor_options(auth: AuthContext = Depends(require_auth)):
 @router.post("/predict")
 def predictor_predict(req: PredictRequest, auth: AuthContext = Depends(require_auth)):
     try:
-        # Enforce client scope
         err = _validate_client(auth, req.client_name)
         if err:
             return JSONResponse({"error": err}, status_code=403)
@@ -341,43 +335,80 @@ def predictor_predict(req: PredictRequest, auth: AuthContext = Depends(require_a
             if channel_err:
                 return JSONResponse({"error": channel_err}, status_code=403)
 
+        # 1. Create Dataframe exactly matching training variables
+        max_up_dur = float((_meta or {}).get("max_up_dur", 15000) or 15000)
+        max_cr_dur = float((_meta or {}).get("max_cr_dur", 10000) or 10000)
+        uploaded_duration = max(0.0, min(float(req.uploaded_duration), max_up_dur))
+        created_duration = max(0.0, min(float(req.created_duration), max_cr_dur))
+        upload_to_create_days = max(0.0, float(req.upload_to_create_days))
+
         sample = pd.DataFrame([{
             "Client_Name":           req.client_name,
             "Assigned_Channel":      req.assigned_channel,
             "Input_Type":            req.input_type,
             "Language":              req.language,
             "Output_Type":           req.output_type,
-            "Uploaded_Duration":     req.uploaded_duration,
-            "Created_Duration":      req.created_duration,
-            "Upload_to_Create_Days": req.upload_to_create_days,
+            "Uploaded_Duration":     uploaded_duration,
+            "Created_Duration":      created_duration,
+            "Upload_to_Create_Days": upload_to_create_days,
         }])
+        
+        # 2. Re-apply Polynomial Feature Math
+        max_up_dur = (_meta or {}).get("max_up_dur", 15000)
+        max_cr_dur = (_meta or {}).get("max_cr_dur", 10000)
+        
+        sample['up_dur_norm'] = sample['Uploaded_Duration'] / max_up_dur
+        sample['cr_dur_norm'] = sample['Created_Duration'] / max_cr_dur
 
+        for p in [2, 3, 7, 9, 11]:
+            sample[f'Up_Duration_P{p}'] = sample['up_dur_norm'] ** p
+            sample[f'Cr_Duration_P{p}'] = sample['cr_dur_norm'] ** p
+
+        sample = sample.drop(columns=['up_dur_norm', 'cr_dur_norm'])
+
+        # 3. Dummy encoding and feature alignment
         sample_enc = pd.get_dummies(sample)
         sample_final = sample_enc.reindex(
             columns=_meta["training_columns"], fill_value=0
         )
 
-        probs = _model.predict_proba(sample_final)[0]
-        classes = _model.classes_
-        prob_map = {str(c): round(float(p) * 100, 2) for c, p in zip(classes, probs)}
+        # 4. Binary Voting Logic
+        tree_predictions = [int(tree.predict(sample_final.values)[0]) for tree in _model.estimators_]
+        yes_votes = int(sum(1 for t in tree_predictions if t == 1))
+        no_votes = int(sum(1 for t in tree_predictions if t == 0))
+        probability = float((yes_votes / len(tree_predictions)) * 100)
+        predicted_class = "1" if probability >= 50 else "0"
 
-        never = prob_map.get("0_Never", 0)
-        p1 = prob_map.get("1_Within_1_Day", 0)
-        p2 = prob_map.get("2_Within_2_Days", 0)
-        p3 = prob_map.get("3_Within_3_Days", 0)
-        p4 = prob_map.get("4_More_than_3_Days", 0)
+        # 5. SHAP TreeExplainer for Root Cause Analysis (RCA)
+        top_impacts = []
+        try:
+            explainer = shap.TreeExplainer(_model)
+            shap_values = explainer.shap_values(sample_final)
+            
+            # Extract impact specifically for class 1 (Is_Published = True)
+            if isinstance(shap_values, list):
+                vals = shap_values[1][0]
+            elif len(shap_values.shape) == 3:
+                vals = shap_values[0, :, 1]
+            else:
+                vals = shap_values[0]
+                
+            features = list(sample_final.columns)
+            impacts = [{"feature": str(f), "impact": float(v)} for f, v in zip(features, vals)]
+            
+            # Filter zero-impacts and grab top 10 absolute drivers
+            impacts = [i for i in impacts if abs(i["impact"]) > 0]
+            impacts.sort(key=lambda x: abs(x["impact"]), reverse=True)
+            top_impacts = impacts[:10]
+        except Exception as e:
+            logger.warning(f"SHAP RCA failed: {e}")
 
         return {
-            "publish_probability": round(100 - never, 2),
-            "class_probabilities": prob_map,
-            "cumulative": {
-                "within_1_day":  round(p1, 2),
-                "within_2_days": round(p1 + p2, 2),
-                "within_3_days": round(p1 + p2 + p3, 2),
-                "eventually":    round(p1 + p2 + p3 + p4, 2),
-            },
-            "never": round(never, 2),
-            "predicted_class": str(_model.predict(sample_final)[0]),
+            "publish_probability": float(round(probability, 2)),
+            "yes_votes": int(yes_votes),
+            "no_votes": int(no_votes),
+            "predicted_class": str(predicted_class),
+            "shap_impacts": top_impacts,
         }
     except Exception as exc:
         logger.exception("prediction failed")
@@ -386,7 +417,6 @@ def predictor_predict(req: PredictRequest, auth: AuthContext = Depends(require_a
 
 @router.post("/retrain")
 def predictor_retrain(auth: AuthContext = Depends(require_auth)):
-    """Force retrain from current DB data. Admin only."""
     if auth.role != "website_admin":
         return JSONResponse({"error": "Admin access required"}, status_code=403)
     global _model, _meta
