@@ -372,7 +372,7 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
                         'relative px-3 py-1.5 rounded-full text-[12.5px] font-semibold transition-all duration-150',
                         analysisTab === tab.id
                           ? 'text-white'
-                          : 'text-neutral-600 hover:text-neutral-300',
+                          : 'text-neutral-400 hover:text-neutral-300',
                       ].join(' ')}
                     >
                       {analysisTab === tab.id && (

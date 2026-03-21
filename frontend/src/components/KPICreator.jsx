@@ -147,7 +147,7 @@ export default function KPICreator({ onCreated, onClose, initialData }) {
             {/* Description (optional) */}
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-neutral-500 mb-2">
-                Description <span className="text-neutral-600 normal-case font-normal">(optional)</span>
+                Description <span className="text-neutral-400 normal-case font-normal">(optional)</span>
               </label>
               <input
                 type="text"
@@ -214,7 +214,7 @@ export default function KPICreator({ onCreated, onClose, initialData }) {
 
               {/* Quick Hints */}
               <div className="mt-2">
-                <div className="text-[10px] text-neutral-600 mb-1 uppercase tracking-wider">Quick examples:</div>
+                <div className="text-[10px] text-neutral-400 mb-1 uppercase tracking-wider">Quick examples:</div>
                 <div className="flex flex-wrap gap-2">
                   {(mode === 'formula' ? FORMULA_HINTS : NL_HINTS).map((hint) => (
                     <button
@@ -318,7 +318,7 @@ export default function KPICreator({ onCreated, onClose, initialData }) {
             </button>
 
             {mode === 'natural_language' && (
-              <p className="text-center text-[11px] text-neutral-600">
+              <p className="text-center text-[11px] text-neutral-400">
                 AI is used only during creation to interpret your description.
                 Execution is fully deterministic.
               </p>

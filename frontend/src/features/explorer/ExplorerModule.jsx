@@ -832,7 +832,7 @@ export default function ExplorerModule({ authUser }) {
                     {/* Scrollable Chart Area or Empty State */}
                     {(effectiveTimeGrain === 'none' ? matrixChartData.labels.length === 0 : timeSeriesChartData.labels.length === 0) ? (
                       <div className="flex flex-col items-center justify-center h-[360px] w-full text-neutral-500 bg-[#0A0A0A] border-2 border-dashed border-neutral-800 rounded-xl">
-                        <Table size={24} className="mb-2 text-neutral-600" />
+                        <Table size={24} className="mb-2 text-neutral-400" />
                         <span className="text-xs">No data available for the selected filters</span>
                       </div>
                     ) : (

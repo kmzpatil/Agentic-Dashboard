@@ -42,7 +42,7 @@ const STATIC_CORE_KPI_CARDS = [
   },
 ];
 
-function MissionRailMetricCard({ title, value, subtitle, trendData, onClick }) {
+function MissionRailMetricCard({ title, value, subtitle, trendData, onClick, onRemove }) {
   const points = Array.isArray(trendData) && trendData.length ? trendData : [8, 12, 10, 16, 14, 19, 17];
   const isPositive = points[points.length - 1] >= points[0];
   const color = isPositive ? '#00d8a0' : '#ef4444';
@@ -74,30 +74,55 @@ function MissionRailMetricCard({ title, value, subtitle, trendData, onClick }) {
     interaction: { mode: 'index', intersect: false },
   };
 
-  const content = (
-    <div className="h-full min-h-[128px] rounded-xl border border-neutral-800 bg-[#0f1218] px-4 py-4 transition-colors hover:border-neutral-600">
-      <div className="flex h-full items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-neutral-500">
-            {title}
-          </div>
-          <div className="mt-1 text-[36px] leading-none font-black tracking-tight text-white">
-            {value}
-          </div>
-          <div className="mt-2 text-[14px] text-neutral-400 leading-snug">
-            {subtitle}
-          </div>
+  const inner = (
+    <div className="flex h-full items-start justify-between gap-3">
+      <div className="min-w-0">
+        <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-neutral-500">
+          {title}
         </div>
-        <div className="h-[64px] w-[96px] shrink-0 mt-4">
-          <Line data={data} options={options} />
+        <div className="mt-1 text-[36px] leading-none font-black tracking-tight text-white">
+          {value}
+        </div>
+        <div className="mt-2 text-[14px] text-neutral-400 leading-snug">
+          {subtitle}
         </div>
       </div>
+      <div className="h-[64px] w-[96px] shrink-0 mt-4">
+        <Line data={data} options={options} />
+      </div>
+    </div>
+  );
+
+  if (onRemove) {
+    return (
+      <div className="group relative h-full">
+        <button
+          type="button"
+          onClick={onClick}
+          className="h-full w-full min-h-[128px] rounded-xl border border-neutral-800 bg-[#0f1218] px-4 py-4 text-left transition-colors hover:border-neutral-600"
+        >
+          {inner}
+        </button>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          className="absolute top-2 right-2 flex h-5 w-5 items-center justify-center rounded-full bg-neutral-800 text-neutral-400 opacity-0 transition-opacity hover:bg-neutral-700 hover:text-white group-hover:opacity-100"
+        >
+          <X size={11} />
+        </button>
+      </div>
+    );
+  }
+
+  const content = (
+    <div className="h-full min-h-[128px] rounded-xl border border-neutral-800 bg-[#0f1218] px-4 py-4 transition-colors hover:border-neutral-600">
+      {inner}
     </div>
   );
 
   if (!onClick) return content;
   return (
-    <button type="button" onClick={onClick} className="w-full text-left">
+    <button type="button" onClick={onClick} className="w-full h-full text-left">
       {content}
     </button>
   );
@@ -129,7 +154,9 @@ export default function OverviewModule({ onNavigate }) {
   const loading = overview.loading;
   const error = overview.error || insights.error;
   const data = overview.data || {};
-  const [activeExtraKpis, setActiveExtraKpis] = useState([]);
+  const [activeExtraKpis, setActiveExtraKpis] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('mc_extra_kpis')) || []; } catch { return []; }
+  });
   const [stagedKpis, setStagedKpis] = useState([]);
   const [isSelectionPanelOpen, setIsSelectionPanelOpen] = useState(false);
   const [selectedKpi, setSelectedKpi] = useState(null);
@@ -145,37 +172,12 @@ export default function OverviewModule({ onNavigate }) {
     }
   }, [data?.outputStats, activeOutputTab]);
 
+  // Persist extra KPIs to localStorage
+  useEffect(() => {
+    localStorage.setItem('mc_extra_kpis', JSON.stringify(activeExtraKpis));
+  }, [activeExtraKpis]);
+
   const kpis = data.kpis || {};
-
-  const handleAddMore = () => {
-    setIsSelectionPanelOpen(!isSelectionPanelOpen);
-  };
-
-  const handleStageKpi = (id) => {
-    if (!activeExtraKpis.includes(id) && !stagedKpis.includes(id)) {
-      setStagedKpis([...stagedKpis, id]);
-    }
-  };
-
-  const handleUnstageKpi = (id) => {
-    setStagedKpis(prev => prev.filter(k => k !== id));
-  };
-
-  const handlePromoteKpis = () => {
-    setActiveExtraKpis([...stagedKpis, ...activeExtraKpis]);
-    setStagedKpis([]);
-  };
-
-  const handleRemoveKpi = (id) => {
-    setActiveExtraKpis(prev => prev.filter(k => k !== id));
-  };
-
-  const visibleExtraKpis = KPI_DEFINITIONS.filter(kpi => activeExtraKpis.includes(kpi.id));
-
-  const handleCoreKpiClick = (id) => {
-    const kpi = KPI_DEFINITIONS.find(k => k.id === id);
-    if (kpi) setSelectedKpi(kpi);
-  };
 
   const _formatKpiValue = (value, dsl) => {
     if (value === null || value === undefined) return '—';
@@ -241,6 +243,55 @@ export default function OverviewModule({ onNavigate }) {
     }
   };
 
+  // Persist custom KPI records to localStorage (store serializable data only)
+  useEffect(() => {
+    const serializable = customKpis.map(k => ({
+      id: k.kpi_db_id, name: k.name, description: k.description, dsl_json: k.dsl_json,
+    }));
+    localStorage.setItem('mc_custom_kpis', JSON.stringify(serializable));
+  }, [customKpis]);
+
+  // Restore custom KPIs from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('mc_custom_kpis'));
+      if (!Array.isArray(saved) || saved.length === 0) return;
+      const restored = saved.map(r => buildCustomKpiObj(r, null));
+      setCustomKpis(restored);
+      saved.forEach(r => _fetchAndPatchKpi(r, `custom_${r.id}`));
+    } catch { /* ignore corrupted data */ }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleAddMore = () => {
+    setIsSelectionPanelOpen(!isSelectionPanelOpen);
+  };
+
+  const handleStageKpi = (id) => {
+    if (!activeExtraKpis.includes(id) && !stagedKpis.includes(id)) {
+      setStagedKpis([...stagedKpis, id]);
+    }
+  };
+
+  const handleUnstageKpi = (id) => {
+    setStagedKpis(prev => prev.filter(k => k !== id));
+  };
+
+  const handlePromoteKpis = () => {
+    setActiveExtraKpis([...stagedKpis, ...activeExtraKpis]);
+    setStagedKpis([]);
+  };
+
+  const handleRemoveKpi = (id) => {
+    setActiveExtraKpis(prev => prev.filter(k => k !== id));
+  };
+
+  const visibleExtraKpis = KPI_DEFINITIONS.filter(kpi => activeExtraKpis.includes(kpi.id));
+
+  const handleCoreKpiClick = (id) => {
+    const kpi = KPI_DEFINITIONS.find(k => k.id === id);
+    if (kpi) setSelectedKpi(kpi);
+  };
+
   const handleCustomKpiCreated = (record) => {
     const customKpi = buildCustomKpiObj(record, null);
     if (editingKpi) {
@@ -290,40 +341,42 @@ export default function OverviewModule({ onNavigate }) {
               <div
                 className="flex gap-4 overflow-x-auto hide-scrollbar snap-x snap-mandatory pb-1 pr-1"
               >
-                {/* Hardcoded static core cards */}
-                {STATIC_CORE_KPI_CARDS.map((card) => (
-                  <div key={card.id} className="w-[220px] sm:w-[240px] lg:w-[260px] shrink-0 snap-start">
-                    <MissionRailMetricCard
-                      title={card.title}
-                      value={card.value}
-                      subtitle={card.subtitle}
-                      trendData={card.trendData}
-                      onClick={() => handleCoreKpiClick(card.id)}
-                    />
-                  </div>
-                ))}
-
-                {/* Added KPI cards (custom + extra) */}
+                {/* Added KPI cards (custom + extra) — shown first */}
                 {customKpis.map((kpi) => (
-                  <div key={kpi.id} className="w-[220px] sm:w-[240px] lg:w-[260px] shrink-0 snap-start">
+                  <div key={kpi.id} className="w-[220px] sm:w-[240px] lg:w-[260px] h-[128px] shrink-0 snap-start">
                     <MissionRailMetricCard
                       title={kpi.title}
                       value={kpi.getValue(kpis)}
                       subtitle={kpi.getSubtitle(kpis)}
                       trendData={kpi.trendData}
                       onClick={() => handleCustomKpiClick(kpi)}
+                      onRemove={() => handleRemoveCustomKpi(kpi)}
                     />
                   </div>
                 ))}
 
                 {visibleExtraKpis.map((kpi) => (
-                  <div key={kpi.id} className="w-[220px] sm:w-[240px] lg:w-[260px] shrink-0 snap-start">
+                  <div key={kpi.id} className="w-[220px] sm:w-[240px] lg:w-[260px] h-[128px] shrink-0 snap-start">
                     <MissionRailMetricCard
                       title={kpi.title}
                       value={kpi.getValue(kpis)}
                       subtitle={kpi.getSubtitle(kpis)}
                       trendData={kpi.trendData}
                       onClick={() => setSelectedKpi(kpi)}
+                      onRemove={() => handleRemoveKpi(kpi.id)}
+                    />
+                  </div>
+                ))}
+
+                {/* Hardcoded static core cards */}
+                {STATIC_CORE_KPI_CARDS.map((card) => (
+                  <div key={card.id} className="w-[220px] sm:w-[240px] lg:w-[260px] h-[128px] shrink-0 snap-start">
+                    <MissionRailMetricCard
+                      title={card.title}
+                      value={card.value}
+                      subtitle={card.subtitle}
+                      trendData={card.trendData}
+                      onClick={() => handleCoreKpiClick(card.id)}
                     />
                   </div>
                 ))}
@@ -534,7 +587,7 @@ export default function OverviewModule({ onNavigate }) {
                       {tsLabels.length > 0 ? (
                         <Line data={tsData} options={tsOpts} />
                       ) : (
-                        <div className="flex items-center justify-center h-full text-xs text-neutral-600">No time series data</div>
+                        <div className="flex items-center justify-center h-full text-xs text-neutral-400">No time series data</div>
                       )}
                     </div>
                   </div>
@@ -546,7 +599,7 @@ export default function OverviewModule({ onNavigate }) {
       })()}
 
       <section className="grid grid-cols-1 xl:grid-cols-[1.25fr_0.95fr] gap-6 xl:items-stretch">
-        <div className="rounded-[24px] border border-neutral-800 bg-[#101216] p-6 flex flex-col" style={{ height: '580px' }}>
+        <div className="rounded-[24px] border border-neutral-800 bg-[#101216] p-6 flex flex-col" style={{ height: '680px' }}>
           <div className="mb-4 text-sm font-bold uppercase tracking-[0.14em] text-neutral-200 shrink-0">Frammer AI Insights</div>
           <div className="flex flex-col gap-2.5 flex-1 min-h-0 overflow-y-auto hide-scrollbar">
             {insights.loading && [...Array(5)].map((_, i) => (
@@ -584,7 +637,7 @@ export default function OverviewModule({ onNavigate }) {
           </div>
         </div>
 
-        <div className="flex flex-col gap-6" style={{ height: '580px' }}>
+        <div className="grid grid-rows-2 gap-6" style={{ height: '680px' }}>
           <div className="rounded-[24px] border border-neutral-800 bg-[#101216] p-5">
             <div className="mb-4 text-sm font-bold uppercase tracking-[0.14em] text-neutral-300">Top Performers</div>
             <div className="space-y-2">
@@ -607,7 +660,7 @@ export default function OverviewModule({ onNavigate }) {
             </div>
           </div>
 
-          <div className="rounded-[24px] border border-amber-700/30 bg-[#15120f] p-5 flex-1 overflow-y-auto hide-scrollbar">
+          <div className="rounded-[24px] border border-amber-700/30 bg-[#15120f] p-5 overflow-y-auto hide-scrollbar">
             <div className="mb-4 text-sm font-bold uppercase tracking-[0.14em] text-amber-300">Alerts</div>
             <div className="space-y-3">
               {(data.alerts || []).map((alert) => (

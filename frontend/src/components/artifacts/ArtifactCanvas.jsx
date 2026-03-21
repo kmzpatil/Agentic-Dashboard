@@ -597,7 +597,7 @@ function ChartTypeSelector({ current, available, onChange }) {
         <div className="absolute top-full left-0 mt-1.5 z-50 w-[220px] rounded-xl border border-neutral-800 bg-[#0D0D0D] shadow-2xl overflow-hidden">
           {Object.entries(groups).map(([group, items]) => (
             <div key={group}>
-              <div className="px-3 pt-2.5 pb-1 text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">
+              <div className="px-3 pt-2.5 pb-1 text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-400">
                 {group}
               </div>
               {items.map(({ type, label, icon: Icon }) => (
@@ -645,13 +645,13 @@ function ChartSummaryStrip({ dataset }) {
   const fmt = (v) => v.toLocaleString(undefined, { maximumFractionDigits: 1 });
 
   return (
-    <div className="flex items-center gap-4 px-1 py-1.5 text-[11px] text-neutral-600 shrink-0">
+    <div className="flex items-center gap-4 px-1 py-1.5 text-[11px] text-neutral-400 shrink-0">
       <span>{stats.count} data points</span>
-      <span className="text-neutral-800">·</span>
+      <span className="text-neutral-500">·</span>
       <span>Max: <span className="text-neutral-400">{fmt(stats.max)}</span></span>
-      <span className="text-neutral-800">·</span>
+      <span className="text-neutral-500">·</span>
       <span>Min: <span className="text-neutral-400">{fmt(stats.min)}</span></span>
-      <span className="text-neutral-800">·</span>
+      <span className="text-neutral-500">·</span>
       <span>Avg: <span className="text-neutral-400">{fmt(stats.avg)}</span></span>
     </div>
   );
@@ -928,7 +928,7 @@ function QueryTab({ sql }) {
             if (token.type === 'keyword') return <span key={i} className="text-sky-400 font-semibold">{token.text}</span>;
             if (token.type === 'string') return <span key={i} className="text-amber-300">{token.text}</span>;
             if (token.type === 'number') return <span key={i} className="text-emerald-400">{token.text}</span>;
-            if (token.type === 'comment') return <span key={i} className="text-neutral-600 italic">{token.text}</span>;
+            if (token.type === 'comment') return <span key={i} className="text-neutral-400 italic">{token.text}</span>;
             if (token.type === 'identifier') return <span key={i} className="text-violet-300">{token.text}</span>;
             return <span key={i} className="text-neutral-300">{token.text}</span>;
           })}
@@ -971,11 +971,11 @@ export default function ArtifactCanvas({ artifacts = [], datasets = [], sql = ''
     <div className="flex flex-col h-full bg-[#0B0B0B]">
       <div className="flex items-center justify-between border-b border-neutral-800/50 px-5 py-3.5 shrink-0">
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-neutral-600">Data Workbench</div>
+          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-neutral-400">Data Workbench</div>
           <div className="mt-0.5 text-[13px] font-semibold text-neutral-300 truncate max-w-[260px]">{panelTitle}</div>
         </div>
         {onClose && (
-          <button onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-lg text-neutral-600 transition-colors hover:bg-[#1A1A1A] hover:text-neutral-300">
+          <button onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-lg text-neutral-400 transition-colors hover:bg-[#1A1A1A] hover:text-neutral-300">
             <X size={15} />
           </button>
         )}

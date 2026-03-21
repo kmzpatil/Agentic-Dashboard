@@ -181,7 +181,7 @@ function FloatingDropdown({
                 key={group.label}
                 className={gi > 0 ? "border-t border-neutral-900" : ""}
               >
-                <div className="px-4 py-2 text-[10px] font-black uppercase tracking-[0.2em] text-neutral-600 bg-neutral-900/50">
+                <div className="px-4 py-2 text-[10px] font-black uppercase tracking-[0.2em] text-neutral-400 bg-neutral-900/50">
                   {group.label}
                 </div>
                 <div className="p-1">
@@ -1746,7 +1746,7 @@ export default function UsageTrendsModule({
                     <SlidersHorizontal size={14} className={`flex-shrink-0 ${activeFilterCount > 0 ? "text-red-400" : "text-neutral-500"}`} />
                     <div className="min-w-0 overflow-hidden">
                       <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-300 leading-none truncate">Filters</div>
-                      <div className={`mt-0.5 text-[10px] font-semibold leading-none ${activeFilterCount > 0 ? "text-red-400" : "text-neutral-600"}`}>
+                      <div className={`mt-0.5 text-[10px] font-semibold leading-none ${activeFilterCount > 0 ? "text-red-400" : "text-neutral-400"}`}>
                         {activeFilterCount > 0 ? `${activeFilterCount} applied` : "None applied"}
                       </div>
                     </div>
@@ -1781,7 +1781,7 @@ export default function UsageTrendsModule({
                 <div className="relative hidden lg:block">
                   <div className={`flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${activeFilterCount > 0 ? "border-red-500/30 bg-red-500/10" : "border-neutral-800 bg-transparent"
                     }`}>
-                    <SlidersHorizontal size={14} className={activeFilterCount > 0 ? "text-red-400" : "text-neutral-600"} />
+                    <SlidersHorizontal size={14} className={activeFilterCount > 0 ? "text-red-400" : "text-neutral-400"} />
                   </div>
                   {activeFilterCount > 0 && (
                     <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-black text-white leading-none">
@@ -1802,7 +1802,7 @@ export default function UsageTrendsModule({
                     {authUser?.role !== "client_admin" &&
                       authUser?.role !== "user" && (
                         <div className="group">
-                          <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">
+                          <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-400">
                             Client
                           </label>
                           <FloatingDropdown
@@ -1825,7 +1825,7 @@ export default function UsageTrendsModule({
                         </div>
                       )}
                     <div className="group">
-                      <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">
+                      <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-400">
                         Channel
                       </label>
                       <FloatingDropdown
@@ -1841,7 +1841,7 @@ export default function UsageTrendsModule({
                     {/* HIDE User filter for user role */}
                     {authUser?.role !== "user" && (
                       <div className="group">
-                        <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">
+                        <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-400">
                           User
                         </label>
                         <FloatingDropdown
@@ -1856,7 +1856,7 @@ export default function UsageTrendsModule({
                       </div>
                     )}
                     <div className="group">
-                      <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">
+                      <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-400">
                         Language
                       </label>
                       <FloatingDropdown
@@ -1870,7 +1870,7 @@ export default function UsageTrendsModule({
                       />
                     </div>
                     <div className="group">
-                      <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">
+                      <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-400">
                         Input Type
                       </label>
                       <FloatingDropdown
@@ -1884,7 +1884,7 @@ export default function UsageTrendsModule({
                       />
                     </div>
                     <div className="group">
-                      <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-600">
+                      <label className="mb-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-neutral-400">
                         Output Type
                       </label>
                       <FloatingDropdown
@@ -1908,7 +1908,7 @@ export default function UsageTrendsModule({
                     {/* Validation status */}
                     <div className="rounded-xl border border-neutral-800 bg-[#0a0a0a] px-3 py-2 text-[10px]">
                       {filterOptionsLoading && (
-                        <span className="text-neutral-600">
+                        <span className="text-neutral-400">
                           Loading options…
                         </span>
                       )}
@@ -1932,7 +1932,7 @@ export default function UsageTrendsModule({
                           </span>
                         )}
                       {!filterOptionsLoading && !workingFiltersQuery && (
-                        <span className="text-neutral-600">
+                        <span className="text-neutral-400">
                           Using full dataset.
                         </span>
                       )}

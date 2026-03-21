@@ -39,7 +39,7 @@ function FilterSelect({ label, value, options, onChange, disabled }) {
 
   return (
     <div ref={ref} className={`relative w-[100px] xl:w-[108px] 2xl:w-[116px] shrink-0 ${disabled ? 'opacity-45' : ''}`}>
-      <span className="mb-0.5 block text-[9px] font-semibold uppercase tracking-[0.1em] text-neutral-600 select-none">{label}</span>
+      <span className="mb-0.5 block text-[9px] font-semibold uppercase tracking-[0.1em] text-neutral-400 select-none">{label}</span>
       <button
         type="button"
         onClick={() => { if (!disabled) setOpen((prev) => !prev); }}
@@ -49,7 +49,7 @@ function FilterSelect({ label, value, options, onChange, disabled }) {
           'flex items-center justify-between gap-2',
           'text-[12px] font-medium transition-colors',
           disabled
-            ? 'border-neutral-800 bg-[#0b0b0b] text-neutral-600 cursor-not-allowed'
+            ? 'border-neutral-800 bg-[#0b0b0b] text-neutral-400 cursor-not-allowed'
             : 'border-neutral-800 bg-[#0b0b0b] text-neutral-200 hover:border-neutral-700 hover:bg-[#111111]',
         ].join(' ')}
       >
@@ -219,7 +219,7 @@ export default function FunnelFilterBar({ authUser, breakdown, filters, onBreakd
 
         </div>
 
-        <span className="text-[11px] font-semibold tracking-wide text-neutral-600 uppercase shrink-0 self-center whitespace-nowrap">
+        <span className="text-[11px] font-semibold tracking-wide text-neutral-400 uppercase shrink-0 self-center whitespace-nowrap">
           {role.replace(/_/g, ' ')}
         </span>
 
@@ -241,9 +241,9 @@ export default function FunnelFilterBar({ authUser, breakdown, filters, onBreakd
         <div className="flex flex-wrap gap-1.5">
           {active.map(([key, value]) => (
             <span key={key} className="inline-flex items-center gap-1 rounded-full bg-white/5 border border-white/[0.08] px-2.5 py-0.5 text-[10.5px] font-medium text-neutral-400">
-              <span className="text-neutral-600">{key.replace('_', ' ')}:</span>
+              <span className="text-neutral-400">{key.replace('_', ' ')}:</span>
               {value}
-              <button onClick={() => clear(key)} className="ml-0.5 text-neutral-600 hover:text-neutral-300 transition-colors">
+              <button onClick={() => clear(key)} className="ml-0.5 text-neutral-400 hover:text-neutral-300 transition-colors">
                 <X size={9} />
               </button>
             </span>

@@ -1,11 +1,12 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Line } from 'react-chartjs-2';
 import '../../lib/chartSetup';
 import {
   ShieldCheck, AlertTriangle, Copy, Unlink, MinusCircle, CalendarX,
   HelpCircle, UserX, RouteOff, Search, ChevronDown, ChevronRight,
-  LayoutDashboard, TrendingUp, Link2Off, Gauge
+  LayoutDashboard, TrendingUp, Link2Off, Gauge, Loader2
 } from 'lucide-react';
+import { API_BASE } from '../../lib/constants';
 
 // ── Hardcoded realistic quality data (matches live DB checks) ──
 const QUALITY_OVERVIEW = {
@@ -403,14 +404,14 @@ function HealthRing({ score, tableScores }) {
 // ── Orphan flow diagram ──
 function OrphanFlowDiagram({ links }) {
   const nodes = [
-    { id: 'clients', x: 20, y: 50 },
-    { id: 'users', x: 20, y: 150 },
-    { id: 'channels', x: 20, y: 250 },
-    { id: 'raw_videos', x: 180, y: 100 },
-    { id: 'raw_video_channel', x: 180, y: 250 },
-    { id: 'created_assets', x: 340, y: 100 },
-    { id: 'published_posts', x: 500, y: 100 },
-    { id: 'post_distribution', x: 500, y: 200 },
+    { id: 'clients', x: 20, y: 35 },
+    { id: 'users', x: 20, y: 135 },
+    { id: 'channels', x: 20, y: 235 },
+    { id: 'raw_videos', x: 180, y: 85 },
+    { id: 'raw_video_channel', x: 180, y: 235 },
+    { id: 'created_assets', x: 340, y: 85 },
+    { id: 'published_posts', x: 500, y: 85 },
+    { id: 'post_distribution', x: 500, y: 185 },
   ];
 
   const linkData = (links || []).map(l => ({
@@ -456,7 +457,7 @@ function OrphanFlowDiagram({ links }) {
 function ContaminationHeatmap({ rows }) {
   const cols = ['Input_Type', 'Language', 'Team_Name', 'Channel_Name', 'Platform', 'Source'];
   const cellColor = (val) => {
-    if (val === null || val === undefined) return 'bg-neutral-900/20 text-neutral-700';
+    if (val === null || val === undefined) return 'bg-neutral-900/20 text-neutral-400';
     if (val === 0) return 'bg-emerald-900/25 text-emerald-400';
     if (val < 10) return 'bg-amber-900/25 text-amber-400';
     return 'bg-red-900/30 text-red-400 font-bold';
@@ -467,8 +468,8 @@ function ContaminationHeatmap({ rows }) {
       <table className="w-full text-sm">
         <thead>
           <tr>
-            <th className="p-2 text-left text-[10px] font-bold uppercase tracking-wider text-neutral-600">Table \ Column</th>
-            {cols.map(c => <th key={c} className="p-2 text-center text-[10px] font-bold uppercase tracking-wider text-neutral-600">{c}</th>)}
+            <th className="p-2 text-left text-[10px] font-bold uppercase tracking-wider text-neutral-400">Table \ Column</th>
+            {cols.map(c => <th key={c} className="p-2 text-center text-[10px] font-bold uppercase tracking-wider text-neutral-400">{c}</th>)}
           </tr>
         </thead>
         <tbody>
@@ -505,7 +506,7 @@ function IssueRow({ issue }) {
   return (
     <>
       <tr className={`cursor-pointer border-b border-neutral-900/60 transition-all duration-150 hover:bg-neutral-800/30 ${open ? 'bg-neutral-800/40' : ''}`} onClick={() => setOpen(!open)}>
-        <td className="p-3"><ChevronRight className={`h-4 w-4 text-neutral-600 transition-transform duration-200 ${open ? 'rotate-90' : ''}`} /></td>
+        <td className="p-3"><ChevronRight className={`h-4 w-4 text-neutral-400 transition-transform duration-200 ${open ? 'rotate-90' : ''}`} /></td>
         <td className="p-3"><Badge className={`${conf.color} ${conf.bg}`}>{issue.table}</Badge></td>
         <td className="p-3"><div className="flex items-center gap-2"><Icon className={`h-4 w-4 ${conf.color}`} /><span className={`text-sm font-medium ${conf.color}`}>{conf.label}</span></div></td>
         <td className="p-3 font-mono text-sm text-neutral-400">{issue.column}</td>
@@ -532,11 +533,36 @@ export default function DataQualityModule() {
   const [filterTable, setFilterTable] = useState('');
   const [filterCheck, setFilterCheck] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [useLiveData, setUseLiveData] = useState(false);
+  const [liveOverview, setLiveOverview] = useState(null);
+  const [liveIssues, setLiveIssues] = useState(null);
+  const [liveLoading, setLiveLoading] = useState(false);
+  const [liveError, setLiveError] = useState(null);
 
-  const data = QUALITY_OVERVIEW;
+  useEffect(() => {
+    if (!useLiveData) return;
+    setLiveLoading(true);
+    setLiveError(null);
+    const token = localStorage.getItem('frammer_auth_token');
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    Promise.all([
+      fetch(`${API_BASE}/data-quality`, { headers }).then(r => r.json()),
+      fetch(`${API_BASE}/data-quality/issues?limit=200`, { headers }).then(r => r.json()),
+    ])
+      .then(([overview, issues]) => {
+        setLiveOverview(overview);
+        setLiveIssues(issues);
+      })
+      .catch(err => setLiveError(err.message || 'Failed to load live data'))
+      .finally(() => setLiveLoading(false));
+  }, [useLiveData]);
+
+  const data = (useLiveData && liveOverview) ? liveOverview : QUALITY_OVERVIEW;
+  const issuesSource = (useLiveData && liveIssues) ? liveIssues.issues : QUALITY_ISSUES.issues;
+  const issuesTotal = (useLiveData && liveIssues) ? liveIssues.total : QUALITY_ISSUES.total;
 
   const filteredIssues = useMemo(() => {
-    let items = QUALITY_ISSUES.issues;
+    let items = issuesSource;
     if (filterTable) items = items.filter(i => i.table === filterTable);
     if (filterCheck) items = items.filter(i => i.check === filterCheck);
     if (searchTerm) {
@@ -548,7 +574,7 @@ export default function DataQualityModule() {
       );
     }
     return items;
-  }, [filterTable, filterCheck, searchTerm]);
+  }, [issuesSource, filterTable, filterCheck, searchTerm]);
 
   const deadEndGroups = useMemo(() => {
     const groups = {};
@@ -585,17 +611,42 @@ export default function DataQualityModule() {
             <p className="text-[11px] text-neutral-500">Monitor integrity, debug pipelines, and ensure clean analytics.</p>
           </div>
         </div>
-        <div className="flex gap-1 rounded-full border border-neutral-800 bg-[#0D0D0D] p-1">
-          {[
-            { id: 'overview', label: 'Overview', icon: <LayoutDashboard size={13} /> },
-            { id: 'issues', label: 'Issue Explorer', icon: <Search size={13} /> },
-          ].map(t => (
-            <button key={t.id} onClick={() => setSubTab(t.id)} className={`inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-bold transition-all duration-200 ${subTab === t.id ? 'bg-[#1a1a1a] text-white shadow-sm' : 'text-neutral-500 hover:text-neutral-200'}`}>
-              {t.icon}{t.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-3">
+          {/* Live data toggle */}
+          <button
+            onClick={() => setUseLiveData(v => !v)}
+            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold transition-all duration-200 ${
+              useLiveData
+                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+                : 'border-neutral-700 bg-[#0D0D0D] text-neutral-500 hover:border-neutral-600 hover:text-neutral-300'
+            }`}
+          >
+            {liveLoading
+              ? <Loader2 size={11} className="animate-spin" />
+              : <span className={`h-1.5 w-1.5 rounded-full ${useLiveData ? 'bg-emerald-400 shadow-[0_0_6px_#34d399]' : 'bg-neutral-600'}`} />
+            }
+            {useLiveData ? 'Live' : 'Demo'}
+          </button>
+
+          <div className="flex gap-1 rounded-full border border-neutral-800 bg-[#0D0D0D] p-1">
+            {[
+              { id: 'overview', label: 'Overview', icon: <LayoutDashboard size={13} /> },
+              { id: 'issues', label: 'Issue Explorer', icon: <Search size={13} /> },
+            ].map(t => (
+              <button key={t.id} onClick={() => setSubTab(t.id)} className={`inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-bold transition-all duration-200 ${subTab === t.id ? 'bg-[#1a1a1a] text-white shadow-sm' : 'text-neutral-500 hover:text-neutral-200'}`}>
+                {t.icon}{t.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
+
+      {/* Live data error banner */}
+      {useLiveData && liveError && (
+        <div className="border-b border-red-900/40 bg-red-950/20 px-6 py-2 text-xs text-red-400">
+          Failed to load live data: {liveError}. Showing demo data.
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto p-6">
         {/* ═══════════ OVERVIEW SUB-TAB ═══════════ */}
@@ -658,7 +709,7 @@ export default function DataQualityModule() {
                           <div className="min-w-0">
                             <div className="text-[9px] font-bold uppercase tracking-[0.15em] text-neutral-500">{kpi.label}</div>
                             <div className={`mt-1.5 text-2xl font-black tracking-tight ${kpi.valueColor}`}>{kpi.value}</div>
-                            <div className="mt-1 text-[10px] text-neutral-600">{kpi.sub}</div>
+                            <div className="mt-1 text-[10px] text-neutral-400">{kpi.sub}</div>
                           </div>
                           <div className={`shrink-0 rounded-lg ${kpi.iconBg} p-2`}>
                             <KpiIcon className={`h-3.5 w-3.5 ${kpi.iconColor} opacity-60`} />
@@ -690,7 +741,7 @@ export default function DataQualityModule() {
                         <div className="min-w-0">
                           <div className="text-[9px] font-bold uppercase tracking-[0.15em] text-neutral-500">{conf.label}</div>
                           <div className={`mt-1.5 text-2xl font-black tracking-tight ${conf.color}`}>{cnt}</div>
-                          <div className="mt-1 text-[10px] text-neutral-600">issues detected</div>
+                          <div className="mt-1 text-[10px] text-neutral-400">issues detected</div>
                         </div>
                         <div className={`shrink-0 rounded-lg ${conf.bg} p-2`}>
                           <Icon className={`h-3.5 w-3.5 ${conf.color} opacity-60`} />
@@ -716,19 +767,21 @@ export default function DataQualityModule() {
                     <div className="rounded-lg bg-violet-500/10 p-1.5"><HelpCircle className="h-3.5 w-3.5 text-violet-400" /></div>
                     Value Contamination Matrix
                   </h3>
-                  <span className="text-[10px] font-medium uppercase tracking-wider text-neutral-600">% of "Unknown" or NULL values</span>
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-neutral-400">% of "Unknown" or NULL values</span>
                 </div>
                 <ContaminationHeatmap rows={data.heatmap} />
               </Panel>
-              <Panel>
-                <div className="mb-4 flex items-center justify-between">
+              <Panel className="flex flex-col">
+                <div className="mb-4 flex items-center justify-between shrink-0">
                   <h3 className="flex items-center gap-2 text-sm font-bold text-white">
                     <div className="rounded-lg bg-amber-500/10 p-1.5"><Unlink className="h-3.5 w-3.5 text-amber-400" /></div>
                     Broken Reference Chains
                   </h3>
-                  <span className="text-[10px] font-medium uppercase tracking-wider text-neutral-600">Foreign Key Violations</span>
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-neutral-400">Foreign Key Violations</span>
                 </div>
-                <OrphanFlowDiagram links={data.orphan_links} />
+                <div className="flex flex-1 items-center">
+                  <OrphanFlowDiagram links={data.orphan_links} />
+                </div>
               </Panel>
             </div>
 
@@ -761,7 +814,7 @@ export default function DataQualityModule() {
                           <div key={idx} className="group flex items-center gap-2 rounded-lg border border-transparent px-2.5 py-1.5 transition-all duration-150 hover:border-neutral-800/60 hover:bg-[#111111]">
                             <div className="h-3.5 w-0.5 shrink-0 rounded-full bg-amber-500/40" />
                             <span className="flex-1 truncate text-[12px] font-medium text-neutral-300">{item.name}</span>
-                            <span className="shrink-0 text-[11px] text-neutral-600">{item.uploads}↑</span>
+                            <span className="shrink-0 text-[11px] text-neutral-400">{item.uploads}↑</span>
                             <span className="shrink-0 rounded-md bg-red-500/10 px-1.5 py-0.5 text-[10px] font-bold text-red-400">0 pub</span>
                           </div>
                         ))}
@@ -769,7 +822,7 @@ export default function DataQualityModule() {
                     </div>
                   ))}
                   {Object.keys(deadEndGroups).length === 0 && (
-                    <p className="py-4 text-center text-sm text-neutral-600">No dead ends found.</p>
+                    <p className="py-4 text-center text-sm text-neutral-400">No dead ends found.</p>
                   )}
                 </div>
               </Panel>
@@ -814,7 +867,7 @@ export default function DataQualityModule() {
                   <option value="">All Tables</option>
                   {Object.keys(TABLE_COLOR_MAP).map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
-                <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-600" />
+                <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
               </div>
 
               <div className="h-5 w-px bg-neutral-800" />
@@ -829,7 +882,7 @@ export default function DataQualityModule() {
               <div className="h-5 w-px bg-neutral-800" />
 
               <div className="relative min-w-[180px] flex-1">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-600" />
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
                 <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search issues..." className="w-full rounded-xl border border-neutral-800 bg-[#080808] py-2 pl-9 pr-3 text-sm text-neutral-300 placeholder-neutral-600 transition-colors focus:border-neutral-600 focus:outline-none" />
               </div>
             </div>
@@ -861,23 +914,23 @@ export default function DataQualityModule() {
                   <thead className="sticky top-0 z-10 bg-[#0a0a0a]">
                     <tr>
                       <th className="w-10 border-b border-neutral-800/60 p-3" />
-                      <th className="border-b border-neutral-800/60 p-3 text-[10px] font-bold uppercase tracking-wider text-neutral-600">Table</th>
-                      <th className="border-b border-neutral-800/60 p-3 text-[10px] font-bold uppercase tracking-wider text-neutral-600">Check Type</th>
-                      <th className="border-b border-neutral-800/60 p-3 text-[10px] font-bold uppercase tracking-wider text-neutral-600">Column</th>
-                      <th className="border-b border-neutral-800/60 p-3 text-[10px] font-bold uppercase tracking-wider text-neutral-600">Count</th>
-                      <th className="border-b border-neutral-800/60 p-3 text-[10px] font-bold uppercase tracking-wider text-neutral-600">Severity</th>
+                      <th className="border-b border-neutral-800/60 p-3 text-[10px] font-bold uppercase tracking-wider text-neutral-400">Table</th>
+                      <th className="border-b border-neutral-800/60 p-3 text-[10px] font-bold uppercase tracking-wider text-neutral-400">Check Type</th>
+                      <th className="border-b border-neutral-800/60 p-3 text-[10px] font-bold uppercase tracking-wider text-neutral-400">Column</th>
+                      <th className="border-b border-neutral-800/60 p-3 text-[10px] font-bold uppercase tracking-wider text-neutral-400">Count</th>
+                      <th className="border-b border-neutral-800/60 p-3 text-[10px] font-bold uppercase tracking-wider text-neutral-400">Severity</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredIssues.map((issue, idx) => <IssueRow key={idx} issue={issue} />)}
                     {filteredIssues.length === 0 && (
-                      <tr><td colSpan="6" className="p-8 text-center text-neutral-600">No issues found matching filters.</td></tr>
+                      <tr><td colSpan="6" className="p-8 text-center text-neutral-400">No issues found matching filters.</td></tr>
                     )}
                   </tbody>
                 </table>
               </div>
               <div className="flex items-center justify-between border-t border-neutral-800/60 bg-[#0a0a0a] px-4 py-3 text-sm text-neutral-500">
-                <span>Showing <span className="font-semibold text-neutral-300">{filteredIssues.length}</span> of {QUALITY_ISSUES.total} issues</span>
+                <span>Showing <span className="font-semibold text-neutral-300">{filteredIssues.length}</span> of {issuesTotal} issues</span>
               </div>
             </div>
           </div>
