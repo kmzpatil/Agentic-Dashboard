@@ -252,22 +252,17 @@ export default function ExplorerModule({ authUser }) {
     }
   }, [multi.data?.dim2Values, multi.dataUrl, multiQuery, hasPreselectedDim2]);
 
-  // High-contrast red-family palette — alternates dark/bright/light for clear separation
-  const RED_PALETTE = [
-    { bg: 'rgba(239,68,68,0.88)',   border: '#ef4444' },  // vivid red
-    { bg: 'rgba(69,10,10,0.95)',    border: '#450a0a' },  // near-black maroon
-    { bg: 'rgba(255,160,122,0.88)', border: '#ffa07a' },  // light salmon / orange-red
-    { bg: 'rgba(153,27,27,0.92)',   border: '#991b1b' },  // dark red-800
-    { bg: 'rgba(255,99,71,0.88)',   border: '#ff6347' },  // tomato / orange-red
-    { bg: 'rgba(100,10,10,0.95)',   border: '#640a0a' },  // very dark maroon
-    { bg: 'rgba(252,165,165,0.88)', border: '#fca5a5' },  // light pink-red
-    { bg: 'rgba(185,28,28,0.92)',   border: '#b91c1c' },  // red-700
-    { bg: 'rgba(255,50,50,0.88)',   border: '#ff3232' },  // bright coral
-    { bg: 'rgba(127,29,29,0.92)',   border: '#7f1d1d' },  // red-900
-    { bg: 'rgba(255,200,180,0.88)', border: '#ffc8b4' },  // very light peach-red
-    { bg: 'rgba(200,30,30,0.88)',   border: '#c81e1e' },  // medium-dark red
-  ];
-  const getIndexColor = (idx) => RED_PALETTE[idx % RED_PALETTE.length];
+  // Same gradient as "Channel publish conversion" in Funnel → red (#ef4444) to dark slate (#48485a)
+  const getIndexColor = (idx, total = 1) => {
+    const t = total <= 1 ? 0 : idx / (total - 1);
+    const r = Math.round(239 + (72  - 239) * t);
+    const g = Math.round(68  + (72  - 68)  * t);
+    const b = Math.round(68  + (90  - 68)  * t);
+    return {
+      bg:     `rgba(${r},${g},${b},0.85)`,
+      border: `rgb(${r},${g},${b})`,
+    };
+  };
 
   // Data Formatting
   const matrixChartData = useMemo(() => {
@@ -303,13 +298,15 @@ export default function ExplorerModule({ authUser }) {
     return {
       labels: dim1Vals,
       datasets: dim2Vals.map((d2, idx) => {
-        const colors = getIndexColor(idx);
+        const colors = getIndexColor(idx, dim2Vals.length);
         return {
           label: d2,
           data: dim1Vals.map((d1) => lookup.get(`${d1}|||${d2}`) || 0),
           backgroundColor: colors.bg,
           borderColor: colors.border,
-          borderWidth: 1,
+          borderWidth: 2,
+          borderRadius: 6,
+          borderSkipped: false,
         }
       }),
     };
@@ -350,13 +347,16 @@ export default function ExplorerModule({ authUser }) {
     return {
       labels: periods,
       datasets: dim2Vals.map((d2, idx) => {
-        const colors = getIndexColor(idx);
+        const colors = getIndexColor(idx, dim2Vals.length);
         return {
           label: d2,
           data: periods.map((p) => lookup.get(`${p}|||${d2}`) || 0),
           backgroundColor: colors.bg,
           borderColor: colors.border,
-          borderWidth: 1,
+          borderWidth: 2,
+          tension: 0.4,
+          pointRadius: 3,
+          pointHoverRadius: 5,
           stack: 'stacked',
         }
       }),
@@ -507,21 +507,34 @@ export default function ExplorerModule({ authUser }) {
   }, [rowsData]);
 
   return (
-    <div className="flex h-full w-full bg-[#050505] text-white overflow-hidden font-sans">
+    <div className="flex h-full w-full flex-col bg-[#050505] text-white overflow-hidden font-sans">
 
-      {/* MAIN CONTENT (Filters and Views) */}
-      <div className="flex-1 overflow-y-auto min-w-0 min-h-0 p-6 bg-[#050505]">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-neutral-900 bg-[#080808] px-6 py-3 shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10">
+            <Database className="h-4 w-4 text-red-400" />
+          </div>
+          <div>
+            <h2 className="text-sm font-bold text-white">Explorer</h2>
+            <p className="text-[11px] text-neutral-500">Slice and visualize data across any dimension combination.</p>
+          </div>
+        </div>
 
         {/* View Switcher (Admin Only) */}
         {canUseRawExplorer && (
-          <div className="flex gap-2 mb-4 bg-[#111111] p-1 rounded-lg w-fit border border-neutral-800">
-            <button onClick={() => setViewTab('multi')} className={`px-4 py-2 text-[11px] font-medium rounded-md transition-all duration-300 ${viewTab === 'multi' ? 'bg-[#ef4444] text-white' : 'text-neutral-400 hover:text-white'}`}>Multi-Dim Analysis</button>
-            <button onClick={() => setViewTab('raw')} className={`px-4 py-2 text-[11px] font-medium rounded-md transition-all duration-300 ${viewTab === 'raw' ? 'bg-[#ef4444] text-white' : 'text-neutral-400 hover:text-white'}`}>Raw Table Explorer</button>
+          <div className="flex gap-1 rounded-full border border-neutral-800 bg-[#0D0D0D] p-1">
+            <button onClick={() => setViewTab('multi')} className={`inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-bold transition-all duration-200 ${viewTab === 'multi' ? 'bg-[#1a1a1a] text-white shadow-sm' : 'text-neutral-500 hover:text-neutral-200'}`}>Multi-Dim Analysis</button>
+            <button onClick={() => setViewTab('raw')} className={`inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-bold transition-all duration-200 ${viewTab === 'raw' ? 'bg-[#1a1a1a] text-white shadow-sm' : 'text-neutral-500 hover:text-neutral-200'}`}>Raw Table Explorer</button>
           </div>
         )}
+      </div>
+
+      {/* MAIN CONTENT */}
+      <div className="flex-1 overflow-y-auto min-w-0 min-h-0 p-6 bg-[#050505]">
 
         {/* Dynamic Control Bar (Filters) */}
-        <div className={`bg-[#111111] border border-neutral-800 rounded-xl p-4 flex flex-col gap-4 ${viewTab === 'raw' ? 'mb-0 rounded-b-none border-b-0' : 'mb-6'}`}>
+        <div className={`bg-[#0d0d0d] border border-neutral-800/60 rounded-2xl p-5 flex flex-col gap-4 ${viewTab === 'raw' ? 'mb-0 rounded-b-none border-b-0' : 'mb-6'}`}>
 
           {/* Multi-Dim Controls */}
           {viewTab === 'multi' && (
@@ -546,7 +559,7 @@ export default function ExplorerModule({ authUser }) {
 
                   <div
                     onClick={() => setIsChannelDropdownOpen(!isChannelDropdownOpen)}
-                    className={`w-full bg-[#0A0A0A] border rounded px-3 py-2 text-xs text-white max-w-none flex items-center justify-between cursor-pointer select-none transition-colors ${isChannelDropdownOpen ? 'border-neutral-500' : 'border-neutral-700 hover:border-neutral-600'}`}
+                    className={`w-full bg-[#0a0a0a] border rounded-xl px-3 py-2 text-xs text-white max-w-none flex items-center justify-between cursor-pointer select-none transition-colors ${isChannelDropdownOpen ? 'border-neutral-600' : 'border-neutral-800 hover:border-neutral-700'}`}
                   >
                     <span className="truncate pr-2">{getChannelButtonLabel()}</span>
                     <ChevronDown size={14} className={`text-neutral-500 transition-transform ${isChannelDropdownOpen ? 'rotate-180' : ''}`} />
@@ -598,14 +611,14 @@ export default function ExplorerModule({ authUser }) {
 
                 <div className="flex flex-col gap-1 flex-1 min-w-[120px]">
                   <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">Analyze By (X-Axis)</label>
-                  <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-xs text-white w-full outline-none" value={dim1} onChange={handleDim1Change}>
+                  <select className="bg-[#0a0a0a] border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white w-full outline-none focus:border-neutral-600 transition-colors" value={dim1} onChange={handleDim1Change}>
                     {(dimsData?.dimensions || []).map((d) => <option key={`d1-${d.key}`} value={d.key}>{d.label}</option>)}
                   </select>
                 </div>
 
                 <div className="flex flex-col gap-1 flex-1 min-w-[120px]">
                   <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">{isTimeAnalysisOn ? 'Split By (legend)' : 'Segment By (legend)'}</label>
-                  <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-xs text-white w-full outline-none" value={dim2} onChange={handleDim2Change}>
+                  <select className="bg-[#0a0a0a] border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white w-full outline-none focus:border-neutral-600 transition-colors" value={dim2} onChange={handleDim2Change}>
                     <option value="none">None (Overall Data)</option>
                     {(dimsData?.dimensions || []).filter(d => d.key !== dim1 && d.key !== 'channel').map((d) => <option key={`d2-${d.key}`} value={d.key}>{d.label}</option>)}
                   </select>
@@ -618,7 +631,7 @@ export default function ExplorerModule({ authUser }) {
 
                     <div
                       onClick={() => setIsDim2DropdownOpen(!isDim2DropdownOpen)}
-                      className={`w-full bg-[#0A0A0A] border rounded px-3 py-2 text-xs text-white max-w-none flex items-center justify-between cursor-pointer select-none transition-colors ${isDim2DropdownOpen ? 'border-neutral-500' : 'border-neutral-700 hover:border-neutral-600'}`}
+                      className={`w-full bg-[#0a0a0a] border rounded-xl px-3 py-2 text-xs text-white max-w-none flex items-center justify-between cursor-pointer select-none transition-colors ${isDim2DropdownOpen ? 'border-neutral-600' : 'border-neutral-800 hover:border-neutral-700'}`}
                     >
                       <span className="truncate pr-2">{getDim2ButtonLabel()}</span>
                       <ChevronDown size={14} className={`text-neutral-500 transition-transform ${isDim2DropdownOpen ? 'rotate-180' : ''}`} />
@@ -676,7 +689,7 @@ export default function ExplorerModule({ authUser }) {
                 {!isTimeAnalysisOn && (
                   <div className="flex flex-col gap-1 flex-1 min-w-[140px]">
                     <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">Measure (Y-Axis)</label>
-                    <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-xs text-white w-full outline-none" value={measure} onChange={(e) => setMeasure(e.target.value)}>
+                    <select className="bg-[#0a0a0a] border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white w-full outline-none focus:border-neutral-600 transition-colors" value={measure} onChange={(e) => setMeasure(e.target.value)}>
                       {(dimsData?.measures || []).map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
                     </select>
                   </div>
@@ -686,7 +699,7 @@ export default function ExplorerModule({ authUser }) {
                 {isTimeAnalysisOn && (
                   <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
                     <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">Time Grain</label>
-                    <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-xs text-white w-full outline-none" value={timeGrain} onChange={(e) => setTimeGrain(e.target.value)}>
+                    <select className="bg-[#0a0a0a] border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white w-full outline-none focus:border-neutral-600 transition-colors" value={timeGrain} onChange={(e) => setTimeGrain(e.target.value)}>
                       <option value="day">By day</option>
                       <option value="week">By week</option>
                       <option value="month">By month</option>
@@ -700,7 +713,7 @@ export default function ExplorerModule({ authUser }) {
                 {isTimeAnalysisOn && (
                   <div className="flex flex-col gap-1 flex-1 min-w-[140px]">
                     <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">Date Field</label>
-                    <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-1.5 text-xs text-white w-full outline-none" value={dateField} onChange={(e) => setDateField(e.target.value)}>
+                    <select className="bg-[#0a0a0a] border border-neutral-800 rounded-xl px-3 py-1.5 text-xs text-white w-full outline-none focus:border-neutral-600 transition-colors" value={dateField} onChange={(e) => setDateField(e.target.value)}>
                       <option value="upload_date">Upload Date</option>
                       <option value="create_date">Create Date</option>
                       <option value="publish_date">Publish Date</option>
@@ -719,7 +732,7 @@ export default function ExplorerModule({ authUser }) {
                   <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold cursor-pointer">Date Range from</label>
                   <input
                     type="date"
-                    className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-1.5 text-xs text-neutral-300 w-full outline-none focus:border-[#ef4444] transition-colors [&::-webkit-calendar-picker-indicator]:invert-[0.8] cursor-pointer"
+                    className="bg-[#0a0a0a] border border-neutral-800 rounded-xl px-3 py-1.5 text-xs text-neutral-300 w-full outline-none focus:border-neutral-600 transition-colors [&::-webkit-calendar-picker-indicator]:invert-[0.8] cursor-pointer"
                     style={{ colorScheme: 'dark' }}
                     min="2025-01-01"
                     value={startDate}
@@ -745,7 +758,7 @@ export default function ExplorerModule({ authUser }) {
                   <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold cursor-pointer">to</label>
                   <input
                     type="date"
-                    className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-1.5 text-xs text-neutral-300 w-full outline-none focus:border-[#ef4444] transition-colors [&::-webkit-calendar-picker-indicator]:invert-[0.8] cursor-pointer"
+                    className="bg-[#0a0a0a] border border-neutral-800 rounded-xl px-3 py-1.5 text-xs text-neutral-300 w-full outline-none focus:border-neutral-600 transition-colors [&::-webkit-calendar-picker-indicator]:invert-[0.8] cursor-pointer"
                     style={{ colorScheme: 'dark' }}
                     min="2025-01-01"
                     value={endDate}
@@ -761,7 +774,7 @@ export default function ExplorerModule({ authUser }) {
             <div className="flex flex-row gap-4 items-end flex-wrap">
               <div className="flex flex-col gap-1 shrink-0 min-w-[140px]">
                 <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">Select Table</label>
-                <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-xs text-white w-full max-w-sm outline-none" value={tableName} onChange={(e) => {
+                <select className="bg-[#0a0a0a] border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white w-full max-w-sm outline-none focus:border-neutral-600 transition-colors" value={tableName} onChange={(e) => {
                   setTableName(e.target.value);
                   setColumnFilters({}); // Optionally clear filters on table switch
                   setSortConfig({ key: null, direction: 'default' }); // Optionally empty sort
@@ -771,7 +784,7 @@ export default function ExplorerModule({ authUser }) {
               </div>
               <div className="flex flex-col gap-1 shrink-0 min-w-[80px]">
                 <label className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">Rows</label>
-                <select className="bg-[#0A0A0A] border border-neutral-700 rounded px-3 py-2 text-xs text-white w-full outline-none" value={rowLimit} onChange={(e) => setRowLimit(Number(e.target.value))}>
+                <select className="bg-[#0a0a0a] border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white w-full outline-none focus:border-neutral-600 transition-colors" value={rowLimit} onChange={(e) => setRowLimit(Number(e.target.value))}>
                   <option value={10}>10</option>
                   <option value={50}>50</option>
                   <option value={100}>100</option>
@@ -804,12 +817,12 @@ export default function ExplorerModule({ authUser }) {
             {/* Top Row: Visual Analysis & Metrics */}
             <div className="flex flex-col lg:flex-row gap-6">
               {/* Chart Area */}
-              <div className="flex-1 bg-[#111111] border border-neutral-800 rounded-xl p-4 min-w-0">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-300 mb-4 flex items-center gap-2">
-                  <Activity size={16} className="text-blue-500" /> Visual Analysis
+              <div className="flex-1 bg-[#0d0d0d] border border-neutral-800/60 rounded-2xl p-5 min-w-0">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-400 mb-4 flex items-center gap-2">
+                  <Activity size={14} className="text-red-400" /> Visual Analysis
                 </h3>
                 {multi.loading ? (
-                  <div className="flex flex-col items-center justify-center h-[360px] w-full bg-[#0A0A0A] border-2 border-dashed border-neutral-800 rounded-xl animate-pulse">
+                  <div className="flex flex-col items-center justify-center h-[360px] w-full bg-[#0a0a0a] border border-dashed border-neutral-800/60 rounded-2xl animate-pulse">
                     <div className="w-8 h-8 border-4 border-neutral-700 border-t-[#ef4444] rounded-full animate-spin mb-4"></div>
                     <span className="text-xs text-neutral-500">Loading new data...</span>
                   </div>
@@ -831,7 +844,7 @@ export default function ExplorerModule({ authUser }) {
 
                     {/* Scrollable Chart Area or Empty State */}
                     {(effectiveTimeGrain === 'none' ? matrixChartData.labels.length === 0 : timeSeriesChartData.labels.length === 0) ? (
-                      <div className="flex flex-col items-center justify-center h-[360px] w-full text-neutral-500 bg-[#0A0A0A] border-2 border-dashed border-neutral-800 rounded-xl">
+                      <div className="flex flex-col items-center justify-center h-[360px] w-full text-neutral-500 bg-[#0a0a0a] border border-dashed border-neutral-800/60 rounded-2xl">
                         <Table size={24} className="mb-2 text-neutral-400" />
                         <span className="text-xs">No data available for the selected filters</span>
                       </div>
@@ -845,8 +858,54 @@ export default function ExplorerModule({ authUser }) {
                           }}
                         >
                           {effectiveTimeGrain === 'none'
-                            ? <Bar data={matrixChartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }} />
-                            : <Line data={timeSeriesChartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { stacked: true }, y: { stacked: true } } }} />
+                            ? <Bar data={matrixChartData} options={{
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                interaction: { mode: 'index', intersect: false },
+                                plugins: {
+                                  legend: { display: false },
+                                  tooltip: {
+                                    backgroundColor: 'rgba(10,10,10,0.92)',
+                                    borderColor: 'rgba(255,255,255,0.08)',
+                                    borderWidth: 1,
+                                    titleColor: '#e5e5e5',
+                                    bodyColor: '#a3a3a3',
+                                    padding: 10,
+                                    callbacks: {
+                                      labelColor: (ctx) => ({ backgroundColor: ctx.dataset.backgroundColor, borderColor: ctx.dataset.borderColor }),
+                                    },
+                                  },
+                                },
+                                scales: {
+                                  x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#525252' } },
+                                  y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#525252' } },
+                                },
+                                borderRadius: 6,
+                                borderSkipped: false,
+                              }} />
+                            : <Line data={timeSeriesChartData} options={{
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                interaction: { mode: 'index', intersect: false },
+                                plugins: {
+                                  legend: { display: false },
+                                  tooltip: {
+                                    backgroundColor: 'rgba(10,10,10,0.92)',
+                                    borderColor: 'rgba(255,255,255,0.08)',
+                                    borderWidth: 1,
+                                    titleColor: '#e5e5e5',
+                                    bodyColor: '#a3a3a3',
+                                    padding: 10,
+                                    callbacks: {
+                                      labelColor: (ctx) => ({ backgroundColor: ctx.dataset.borderColor, borderColor: ctx.dataset.borderColor }),
+                                    },
+                                  },
+                                },
+                                scales: {
+                                  x: { stacked: true, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#525252' } },
+                                  y: { stacked: true, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#525252' } },
+                                },
+                              }} />
                           }
                         </div>
                       </div>
@@ -856,35 +915,39 @@ export default function ExplorerModule({ authUser }) {
               </div>
 
               {/* Relocated Metrics Sidebar */}
-              <div className="w-full lg:w-[280px] shrink-0">
-                <div className="bg-[#111111] border border-neutral-800 rounded-xl p-4 flex flex-col gap-4 h-full">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-400 mb-2">Metrics</h3>
+              <div className="w-full lg:w-[260px] shrink-0">
+                <div className="bg-[#0d0d0d] border border-neutral-800/60 rounded-2xl p-5 flex flex-col gap-3 h-full">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-neutral-500 mb-1">Summary</div>
                   {multi.loading ? (
-                    <div className="flex flex-col gap-4 animate-pulse">
+                    <div className="flex flex-col gap-3 animate-pulse">
                       {[1, 2, 3, 4].map(i => (
-                        <div key={i} className="bg-[#0A0A0A] border border-neutral-800 rounded-lg p-4 h-[76px]">
+                        <div key={i} className="bg-[#0a0a0a] border border-neutral-800 rounded-xl p-4 h-[72px]">
                           <div className="w-20 h-2 bg-neutral-800 rounded mb-3"></div>
                           <div className="w-16 h-5 bg-neutral-800 rounded"></div>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <div className="grid grid-cols-2 lg:grid-cols-1 gap-4">
-                      <div className="bg-[#0A0A0A] border border-neutral-800 border-l-4 border-l-[#ef4444] rounded-lg p-4">
-                        <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold mb-1">Total Records</div>
-                        <div className="text-2xl font-bold">{filteredTotalRecords}</div>
+                    <div className="grid grid-cols-2 lg:grid-cols-1 gap-3">
+                      <div className="relative bg-[#0a0a0a] border border-neutral-800 rounded-xl p-4 overflow-hidden">
+                        <div className="absolute left-0 top-0 h-0.5 w-full bg-red-500 opacity-40" />
+                        <div className="text-[9px] uppercase tracking-[0.15em] text-neutral-500 font-bold mb-1">Total Records</div>
+                        <div className="text-2xl font-black text-red-400">{filteredTotalRecords}</div>
                       </div>
-                      <div className="bg-[#0A0A0A] border border-neutral-800 border-l-4 border-l-green-500 rounded-lg p-4">
-                        <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold mb-1">Active Measure</div>
-                        <div className="text-lg font-bold text-neutral-200 capitalize">{measure.replace('_', ' ')}</div>
+                      <div className="relative bg-[#0a0a0a] border border-neutral-800 rounded-xl p-4 overflow-hidden">
+                        <div className="absolute left-0 top-0 h-0.5 w-full bg-neutral-500 opacity-40" />
+                        <div className="text-[9px] uppercase tracking-[0.15em] text-neutral-500 font-bold mb-1">Measure</div>
+                        <div className="text-sm font-bold text-neutral-200 capitalize">{measure.replace(/_/g, ' ')}</div>
                       </div>
-                      <div className="bg-[#0A0A0A] border border-neutral-800 border-l-4 border-l-blue-500 rounded-lg p-4">
-                        <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold mb-1">Primary Dim</div>
-                        <div className="text-lg font-bold text-neutral-200 capitalize">{dim1}</div>
+                      <div className="relative bg-[#0a0a0a] border border-neutral-800 rounded-xl p-4 overflow-hidden">
+                        <div className="absolute left-0 top-0 h-0.5 w-full bg-neutral-500 opacity-40" />
+                        <div className="text-[9px] uppercase tracking-[0.15em] text-neutral-500 font-bold mb-1">Primary Dim</div>
+                        <div className="text-sm font-bold text-neutral-200 capitalize">{dim1.replace(/_/g, ' ')}</div>
                       </div>
-                      <div className="bg-[#0A0A0A] border border-neutral-800 border-l-4 border-l-purple-500 rounded-lg p-4">
-                        <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold mb-1">{isTimeAnalysisOn ? 'Split By' : 'Secondary Dim'}</div>
-                        <div className="text-lg font-bold text-neutral-200 capitalize">{dim2}</div>
+                      <div className="relative bg-[#0a0a0a] border border-neutral-800 rounded-xl p-4 overflow-hidden">
+                        <div className="absolute left-0 top-0 h-0.5 w-full bg-neutral-500 opacity-40" />
+                        <div className="text-[9px] uppercase tracking-[0.15em] text-neutral-500 font-bold mb-1">{isTimeAnalysisOn ? 'Split By' : 'Secondary Dim'}</div>
+                        <div className="text-sm font-bold text-neutral-200 capitalize">{dim2.replace(/_/g, ' ')}</div>
                       </div>
                     </div>
                   )}
@@ -893,10 +956,10 @@ export default function ExplorerModule({ authUser }) {
             </div>
 
             {/* Dimension Analysis Data Table */}
-            <div className="bg-[#111111] border border-neutral-800 rounded-xl overflow-hidden">
-              <div className="p-4 border-b border-neutral-800">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-300 flex items-center gap-2">
-                  <Table size={16} className="text-[#ef4444]" /> Dimension Analysis Data
+            <div className="bg-[#0d0d0d] border border-neutral-800/60 rounded-2xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-neutral-800/60">
+                <h3 className="text-[10px] font-bold uppercase tracking-[0.15em] text-neutral-400 flex items-center gap-2">
+                  <Table size={13} className="text-red-400" /> Dimension Analysis Data
                 </h3>
               </div>
               {multi.loading ? (
@@ -914,7 +977,7 @@ export default function ExplorerModule({ authUser }) {
                       <tr>
                         {effectiveTimeGrain === 'none' ? (
                           <>
-                            <th className="px-4 py-3 font-semibold text-neutral-400 uppercase border-b border-neutral-800">
+                            <th className="px-4 py-3 font-bold text-neutral-500 uppercase text-[10px] tracking-[0.12em] border-b border-neutral-800/60 bg-[#0a0a0a]">
                               <div
                                 className="flex items-center gap-2 cursor-pointer hover:text-white transition-colors"
                                 onClick={() => setDimTableSort(p => ({
@@ -927,7 +990,7 @@ export default function ExplorerModule({ authUser }) {
                               </div>
                             </th>
                             {dim2 !== 'none' && (
-                              <th className="px-4 py-3 font-semibold text-neutral-400 uppercase border-b border-neutral-800">
+                              <th className="px-4 py-3 font-bold text-neutral-500 uppercase text-[10px] tracking-[0.12em] border-b border-neutral-800/60 bg-[#0a0a0a]">
                                 <div
                                   className="flex items-center gap-2 cursor-pointer hover:text-white transition-colors"
                                   onClick={() => setDimTableSort(p => ({
@@ -940,7 +1003,7 @@ export default function ExplorerModule({ authUser }) {
                                 </div>
                               </th>
                             )}
-                            <th className="px-4 py-3 font-semibold text-neutral-400 uppercase border-b border-neutral-800 text-right">
+                            <th className="px-4 py-3 font-bold text-neutral-500 uppercase text-[10px] tracking-[0.12em] border-b border-neutral-800/60 bg-[#0a0a0a] text-right">
                               <div
                                 className="flex items-center justify-end gap-2 cursor-pointer hover:text-white transition-colors"
                                 onClick={() => setDimTableSort(p => ({
@@ -955,7 +1018,7 @@ export default function ExplorerModule({ authUser }) {
                           </>
                         ) : (
                           <>
-                            <th className="px-4 py-3 font-semibold text-neutral-400 uppercase border-b border-neutral-800">
+                            <th className="px-4 py-3 font-bold text-neutral-500 uppercase text-[10px] tracking-[0.12em] border-b border-neutral-800/60 bg-[#0a0a0a]">
                               <div
                                 className="flex items-center gap-2 cursor-pointer hover:text-white transition-colors"
                                 onClick={() => setDimTableSort(p => ({
@@ -967,7 +1030,7 @@ export default function ExplorerModule({ authUser }) {
                                 {dimTableSort.key === 'period' ? (dimTableSort.direction === 'asc' ? <ArrowUp size={12} className="text-[#ef4444]" /> : <ArrowDown size={12} className="text-[#ef4444]" />) : <ArrowUpDown size={12} />}
                               </div>
                             </th>
-                            <th className="px-4 py-3 font-semibold text-neutral-400 uppercase border-b border-neutral-800">
+                            <th className="px-4 py-3 font-bold text-neutral-500 uppercase text-[10px] tracking-[0.12em] border-b border-neutral-800/60 bg-[#0a0a0a]">
                               <div
                                 className="flex items-center gap-2 cursor-pointer hover:text-white transition-colors"
                                 onClick={() => setDimTableSort(p => ({
@@ -980,7 +1043,7 @@ export default function ExplorerModule({ authUser }) {
                               </div>
                             </th>
                             {dim2 !== 'none' && (
-                              <th className="px-4 py-3 font-semibold text-neutral-400 uppercase border-b border-neutral-800">
+                              <th className="px-4 py-3 font-bold text-neutral-500 uppercase text-[10px] tracking-[0.12em] border-b border-neutral-800/60 bg-[#0a0a0a]">
                                 <div
                                   className="flex items-center gap-2 cursor-pointer hover:text-white transition-colors"
                                   onClick={() => setDimTableSort(p => ({
@@ -993,7 +1056,7 @@ export default function ExplorerModule({ authUser }) {
                                 </div>
                               </th>
                             )}
-                            <th className="px-4 py-3 font-semibold text-neutral-400 uppercase border-b border-neutral-800 text-right">
+                            <th className="px-4 py-3 font-bold text-neutral-500 uppercase text-[10px] tracking-[0.12em] border-b border-neutral-800/60 bg-[#0a0a0a] text-right">
                               <div
                                 className="flex items-center justify-end gap-2 cursor-pointer hover:text-white transition-colors"
                                 onClick={() => setDimTableSort(p => ({
@@ -1042,7 +1105,7 @@ export default function ExplorerModule({ authUser }) {
 
         {viewTab === 'raw' && canUseRawExplorer && (
           <div className="space-y-6 pb-8">
-            <div className="bg-[#111111] border border-neutral-800 rounded-b-xl overflow-hidden">
+            <div className="bg-[#0d0d0d] border border-neutral-800/60 rounded-b-2xl overflow-hidden">
               {rowsLoading && <div className="text-neutral-500 text-sm py-10 text-center">Loading table...</div>}
               {rowsError && <div className="text-red-400 text-sm py-10 text-center">{rowsError}</div>}
               {!rowsLoading && !rowsError && (
@@ -1061,7 +1124,7 @@ export default function ExplorerModule({ authUser }) {
                           const isSortable = isNumericCol || isDateCol;
 
                           return (
-                            <th key={`th-${col}`} className="px-4 py-3 font-semibold text-neutral-400 uppercase bg-[#0A0A0A]">
+                            <th key={`th-${col}`} className="px-4 py-3 font-semibold text-neutral-500 uppercase bg-[#0a0a0a] text-[10px] tracking-[0.12em]">
                               <div className="mb-2 whitespace-nowrap flex items-center justify-between gap-2">
                                 <span>{col}</span>
                                 {isSortable && (
@@ -1088,20 +1151,20 @@ export default function ExplorerModule({ authUser }) {
                           const isDurationCol = ['created_duration', 'published_duration', 'uploaded_duration'].includes(colLower);
 
                           return (
-                            <th key={`filter-${col}`} className="px-2 pb-3 bg-[#0A0A0A] align-top border-b border-neutral-800">
+                            <th key={`filter-${col}`} className="px-2 pb-3 bg-[#0a0a0a] align-top border-b border-neutral-800/60">
                               {isDateCol ? (
                                 <div className="flex flex-col gap-1 min-w-[120px]">
                                   <input
                                     type="date"
                                     title="Start Date"
-                                    className="w-full bg-[#0A0A0A] border border-neutral-700 rounded px-2 py-1.5 text-xs text-neutral-300 outline-none focus:border-[#ef4444] transition-colors [&::-webkit-calendar-picker-indicator]:invert-[0.8]"
+                                    className="w-full bg-[#0a0a0a] border border-neutral-800 rounded-lg px-2 py-1.5 text-xs text-neutral-300 outline-none focus:border-neutral-600 transition-colors [&::-webkit-calendar-picker-indicator]:invert-[0.8]"
                                     value={columnFilters[col]?.start || ''}
                                     onChange={(e) => handleColumnFilterChange(col, 'start', e.target.value)}
                                   />
                                   <input
                                     type="date"
                                     title="End Date"
-                                    className="w-full bg-[#0A0A0A] border border-neutral-700 rounded px-2 py-1.5 text-xs text-neutral-300 outline-none focus:border-[#ef4444] transition-colors [&::-webkit-calendar-picker-indicator]:invert-[0.8]"
+                                    className="w-full bg-[#0a0a0a] border border-neutral-800 rounded-lg px-2 py-1.5 text-xs text-neutral-300 outline-none focus:border-neutral-600 transition-colors [&::-webkit-calendar-picker-indicator]:invert-[0.8]"
                                     value={columnFilters[col]?.end || ''}
                                     onChange={(e) => handleColumnFilterChange(col, 'end', e.target.value)}
                                   />
@@ -1111,14 +1174,14 @@ export default function ExplorerModule({ authUser }) {
                                   <input
                                     type="number"
                                     placeholder=">= Min"
-                                    className="w-full bg-[#0A0A0A] border border-neutral-700 rounded px-2 py-1.5 text-xs text-neutral-300 outline-none focus:border-[#ef4444] transition-colors"
+                                    className="w-full bg-[#0a0a0a] border border-neutral-800 rounded-lg px-2 py-1.5 text-xs text-neutral-300 outline-none focus:border-neutral-600 transition-colors"
                                     value={columnFilters[col]?.min || ''}
                                     onChange={(e) => handleColumnFilterChange(col, 'min', e.target.value)}
                                   />
                                   <input
                                     type="number"
                                     placeholder="<= Max"
-                                    className="w-full bg-[#0A0A0A] border border-neutral-700 rounded px-2 py-1.5 text-xs text-neutral-300 outline-none focus:border-[#ef4444] transition-colors"
+                                    className="w-full bg-[#0a0a0a] border border-neutral-800 rounded-lg px-2 py-1.5 text-xs text-neutral-300 outline-none focus:border-neutral-600 transition-colors"
                                     value={columnFilters[col]?.max || ''}
                                     onChange={(e) => handleColumnFilterChange(col, 'max', e.target.value)}
                                   />
@@ -1217,7 +1280,7 @@ export default function ExplorerModule({ authUser }) {
                                         type={isNumericCol ? "number" : "text"}
                                         list={isNumericCol ? undefined : `list-${col}`}
                                         placeholder={`Filter${isNumericCol ? ' number' : ''}...`}
-                                        className="w-full bg-[#0A0A0A] border border-neutral-700 rounded px-2 py-1.5 text-xs text-neutral-300 outline-none focus:border-[#ef4444] transition-colors"
+                                        className="w-full bg-[#0a0a0a] border border-neutral-800 rounded-lg px-2 py-1.5 text-xs text-neutral-300 outline-none focus:border-neutral-600 transition-colors"
                                         value={columnFilters[col]?.text || ''}
                                         onChange={(e) => handleColumnFilterChange(col, 'text', e.target.value)}
                                       />

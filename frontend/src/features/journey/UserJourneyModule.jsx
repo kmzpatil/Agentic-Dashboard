@@ -36,7 +36,7 @@ function getAnomalyInsight(anomaly) {
 }
 
 // ─── Palettes ────────────────────────────────────────────────────────────────
-const PLATFORM_COLORS = ['#ef4444','#dc2626','#b91c1c','#991b1b','#7f1d1d','#737373','#525252','#3a3a3a'];
+const PLATFORM_COLORS = ['#ef4444','#a3a3a3','#dc2626','#737373','#b91c1c','#525252','#7f1d1d','#333333'];
 
 // ─── Granularity ─────────────────────────────────────────────────────────────
 const GRANULARITIES = [
@@ -76,7 +76,7 @@ function StatCard({ title, value, subtitle, trendData }) {
   };
 
   return (
-    <div className="bg-[#111111] rounded-xl p-5 border border-neutral-800 flex justify-between items-start min-h-[120px]">
+    <div className="bg-[#111111] rounded-xl p-5 border border-neutral-800 flex justify-between items-start min-h-[120px] overflow-hidden">
       <div className="flex-1 flex flex-col justify-between h-full">
         <div>
           <div className="text-xs font-bold tracking-wider text-neutral-500 mb-1">{title}</div>
@@ -85,7 +85,7 @@ function StatCard({ title, value, subtitle, trendData }) {
         <div className="text-sm text-neutral-400 mt-2">{subtitle}</div>
       </div>
       {chartData && (
-        <div className="w-24 h-16 ml-4 mt-2 shrink-0">
+        <div className="w-24 h-16 ml-4 mt-2 shrink-0 overflow-hidden">
           <Line data={chartData} options={chartOpts} />
         </div>
       )}
