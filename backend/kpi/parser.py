@@ -197,42 +197,30 @@ def _has_arithmetic(expr: str, metric: str) -> bool:
 
 def _call_llm(prompt: str) -> str:
     """
-    Call the Anthropic API to convert NL → DSL JSON.
+    Call the Gemini API to convert NL → DSL JSON.
     Raises ValueError if the API key is missing or the call fails.
     """
-    api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+    api_key = os.getenv("GOOGLE_API_KEY", "").strip().strip('"')
     if not api_key:
         raise ValueError(
-            "ANTHROPIC_API_KEY is not set. "
-            "Natural-language KPI creation requires a valid Anthropic API key."
+            "GOOGLE_API_KEY is not set. "
+            "Natural-language KPI creation requires a valid Google API key."
         )
 
     try:
-        import anthropic  # type: ignore
+        from google import genai
+        from google.genai import types
 
-        client = anthropic.Anthropic(api_key=api_key)
-        message = client.messages.create(
-            model=os.getenv("ANTHROPIC_MODEL", "claude-3-haiku-20240307"),
-            max_tokens=512,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return message.content[0].text
-
-    except ImportError:
-        # Fallback: try langchain_anthropic (already installed per requirements.txt)
-        try:
-            from langchain_anthropic import ChatAnthropic  # type: ignore
-
-            llm = ChatAnthropic(
-                model_name=os.getenv("ANTHROPIC_MODEL", "claude-3-haiku-20240307"),
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model=os.getenv("GEMINI_MODEL", "gemini-3-flash-preview"),
+            contents=prompt,
+            config=types.GenerateContentConfig(
                 temperature=0,
-                api_key=api_key,
-                max_tokens=512,
-            )
-            result = llm.invoke(prompt)
-            return result.content
-        except Exception as exc:
-            raise ValueError(f"LLM call failed: {exc}") from exc
+                max_output_tokens=512,
+            ),
+        )
+        return response.text or ""
 
     except Exception as exc:
         logger.error("LLM call for NL KPI parsing failed: %s", exc)

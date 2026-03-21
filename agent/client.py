@@ -1,11 +1,11 @@
 """
 client.py
 ---------
-LLM client abstraction supporting Anthropic and Gemini providers.
+LLM client wrapping the native Google GenAI Python SDK.
 
 Features:
-  - Dual provider support (Anthropic Claude / Google Gemini)
-  - Single Gemini client via GOOGLE_API_KEY (langchain-google-genai)
+  - Single Gemini provider via GOOGLE_API_KEY
+  - Sync and async invocation (simple prompts + tool-calling)
   - Exponential backoff retry on 429 rate-limit errors
   - Factory modes: fast(), thinking(), creative()
 """
@@ -18,6 +18,8 @@ import time
 from typing import Optional
 
 from dotenv import load_dotenv
+from google import genai
+from google.genai import types
 
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
@@ -27,22 +29,9 @@ logger = logging.getLogger("frammer.client")
 
 _THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL)
 
-AI_PROVIDER = os.getenv("AI_PROVIDER", "anthropic").strip().lower()
-DEFAULT_ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
 DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
 
-# Single Gemini API key
 _GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "").strip().strip('"')
-
-try:
-    from langchain_anthropic import ChatAnthropic
-except ImportError:
-    ChatAnthropic = None
-
-try:
-    from langchain_google_genai import ChatGoogleGenerativeAI
-except ImportError:
-    ChatGoogleGenerativeAI = None
 
 
 class LLMResponse:
@@ -56,96 +45,95 @@ class LLMResponse:
 
 class LLMClient:
     """
-    Unified LLM client supporting Anthropic and Gemini providers.
-    Provider is selected via AI_PROVIDER env var (default: anthropic).
-    Single GOOGLE_API_KEY for Gemini via langchain-google-genai.
+    LLM client using the native Google GenAI SDK.
+    Single GOOGLE_API_KEY for Gemini — no LangChain, no Anthropic.
     """
 
     def __init__(
         self,
-        provider: Optional[str] = None,
         model: Optional[str] = None,
         temperature: float = 0,
         preserve_thinking: bool = False,
     ):
-        self.provider = (provider or AI_PROVIDER).strip().lower()
+        self.model = model or DEFAULT_GEMINI_MODEL
         self.temperature = temperature
         self.preserve_thinking = preserve_thinking
 
-        if self.provider == "gemini":
-            self.model = model or DEFAULT_GEMINI_MODEL
-            self._init_gemini()
-        else:
-            self.model = model or DEFAULT_ANTHROPIC_MODEL
-            self._init_anthropic()
-
-    def _init_gemini(self):
-        if ChatGoogleGenerativeAI is None:
-            raise ImportError("langchain-google-genai is not installed.")
         if not _GOOGLE_API_KEY:
             raise ValueError("No GOOGLE_API_KEY found in environment")
-        self.llm = ChatGoogleGenerativeAI(
-            model=self.model,
-            google_api_key=_GOOGLE_API_KEY,
-            temperature=self.temperature,
-            max_output_tokens=8192,
-        )
-        logger.info("Gemini client created: model=%s, temp=%.1f", self.model, self.temperature)
 
-    def _init_anthropic(self):
-        if ChatAnthropic is None:
-            raise ImportError("langchain-anthropic is not installed.")
-        api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
-        if not api_key:
-            logger.warning("No ANTHROPIC_API_KEY found in environment!")
-        self.llm = ChatAnthropic(
-            model_name=self.model,
-            temperature=self.temperature,
-            api_key=api_key,
-            max_tokens=4096,
-        )
+        self._client = genai.Client(api_key=_GOOGLE_API_KEY)
+        logger.info("Gemini client created: model=%s, temp=%.1f", self.model, self.temperature)
 
     # ── Factory helpers ──────────────────────────────────────────────────────
 
     @classmethod
-    def fast(cls, provider: Optional[str] = None, model: Optional[str] = None) -> "LLMClient":
+    def fast(cls, model: Optional[str] = None) -> "LLMClient":
         """Deterministic routing / structured output mode."""
-        return cls(provider=provider, model=model, temperature=0, preserve_thinking=False)
+        return cls(model=model, temperature=0, preserve_thinking=False)
 
     @classmethod
-    def thinking(cls, provider: Optional[str] = None, model: Optional[str] = None) -> "LLMClient":
+    def thinking(cls, model: Optional[str] = None) -> "LLMClient":
         """Mode with reasoning trace preserved."""
-        return cls(provider=provider, model=model, temperature=0, preserve_thinking=True)
+        return cls(model=model, temperature=0, preserve_thinking=True)
 
     @classmethod
-    def creative(cls, provider: Optional[str] = None, model: Optional[str] = None) -> "LLMClient":
+    def creative(cls, model: Optional[str] = None) -> "LLMClient":
         """Conversational / insight generation mode."""
-        return cls(provider=provider, model=model, temperature=0.7, preserve_thinking=False)
+        return cls(model=model, temperature=0.7, preserve_thinking=False)
 
-    # ── Core invoke ──────────────────────────────────────────────────────────
+    # ── Sync invoke (simple string prompt, no tools) ─────────────────────────
 
     def invoke(self, prompt: str, *, label: str = "llm") -> LLMResponse:
         """
-        Call the LLM with exponential backoff on 429 rate-limit errors.
+        Call the LLM synchronously with exponential backoff on 429 errors.
+        Used by memory.py for compaction and title generation.
         """
         max_attempts = 5
         start_time = time.time()
 
         for attempt in range(max_attempts):
-            logger.info("[%s] Calling %s (model: %s, attempt %d)...", label, self.provider, self.model, attempt + 1)
+            logger.info("[%s] Calling Gemini (model: %s, attempt %d)...", label, self.model, attempt + 1)
 
             try:
-                result = self.llm.invoke(prompt)
+                result = self._client.models.generate_content(
+                    model=self.model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        temperature=self.temperature,
+                        max_output_tokens=8192,
+                    ),
+                )
                 duration = time.time() - start_time
-                usage = getattr(result, "usage_metadata", {})
+                usage = {}
+                if result.usage_metadata:
+                    usage = {
+                        "input_tokens": getattr(result.usage_metadata, "prompt_token_count", 0),
+                        "output_tokens": getattr(result.usage_metadata, "candidates_token_count", 0),
+                    }
 
                 logger.info(
-                    "[%s] %s responded in %.2fs. Usage: %s",
-                    label, self.provider, duration, json.dumps(usage) if usage else "N/A"
+                    "[%s] Gemini responded in %.2fs. Usage: %s",
+                    label, duration, json.dumps(usage) if usage else "N/A"
                 )
-                return self._parse(result.content, usage=usage)
+                return self._parse(result.text or "", usage=usage)
 
             except Exception as exc:
+                exc_msg = str(exc)
+                exc_lower = exc_msg.lower()
+
+                if "free_tier" in exc_lower or "freetier" in exc_lower:
+                    logger.error(
+                        "[%s] FREE TIER QUOTA HIT — your GOOGLE_API_KEY is on the free tier "
+                        "(limit: 20 requests/day). Enable billing at https://ai.dev/rate-limit",
+                        label,
+                    )
+                    raise RuntimeError(
+                        f"Gemini free-tier quota exceeded. Your API key is being treated as "
+                        f"free tier (20 req/day). Verify billing at "
+                        f"https://aistudio.google.com/apikey"
+                    ) from exc
+
                 if self._is_rate_limit(exc) and attempt < max_attempts - 1:
                     wait = 5 * (2 ** attempt)
                     logger.warning(
@@ -157,17 +145,45 @@ class LLMClient:
 
                 duration = time.time() - start_time
                 logger.error(
-                    "[%s] !!! LLM CALL FAILED !!!\n  Provider : %s\n  Model    : %s\n  Duration : %.2fs\n  Error    : %s",
-                    label, self.provider, self.model, duration, exc,
+                    "[%s] !!! LLM CALL FAILED !!!\n  Model    : %s\n  Duration : %.2fs\n  Error    : %s",
+                    label, self.model, duration, exc,
                 )
                 raise
 
         raise RuntimeError(f"[{label}] Max LLM retries exceeded")
 
+    # ── Async invoke (simple string prompt, no tools) ────────────────────────
+
+    async def ainvoke(self, prompt: str, *, label: str = "llm"):
+        """
+        Call the LLM asynchronously. Returns the raw genai response.
+        Used by _force_synthesize, _synthesize_report, conversational fast-path.
+        """
+        return await self._client.aio.models.generate_content(
+            model=self.model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=self.temperature,
+                max_output_tokens=8192,
+            ),
+        )
+
+    # ── Async invoke with tools (for ReAct loop) ────────────────────────────
+
+    async def ainvoke_with_tools(self, contents, config: types.GenerateContentConfig):
+        """
+        Call the LLM asynchronously with tool definitions.
+        Returns the raw genai response for the agent loop to parse.
+        """
+        return await self._client.aio.models.generate_content(
+            model=self.model,
+            contents=contents,
+            config=config,
+        )
+
     # ── Internal helpers ─────────────────────────────────────────────────────
 
     def _parse(self, raw, *, usage: Optional[dict] = None) -> LLMResponse:
-        # Gemini returns content as a list of blocks; normalise to string
         if isinstance(raw, list):
             raw = " ".join(
                 part.get("text", "") if isinstance(part, dict) else str(part)
@@ -189,4 +205,4 @@ class LLMClient:
 
     def __repr__(self) -> str:
         mode = "thinking" if self.preserve_thinking else "fast"
-        return f"LLMClient(provider:{self.provider}, model:{self.model}, t={self.temperature}, {mode})"
+        return f"LLMClient(model:{self.model}, t={self.temperature}, {mode})"

@@ -143,7 +143,7 @@ def setup_logging(level: int = logging.INFO) -> None:
     root.addHandler(handler)
 
     # Silence noisy libs
-    for noisy in ("httpx", "httpcore", "groq._base_client", "langchain", "openai", "anthropic"):
+    for noisy in ("httpx", "httpcore", "groq._base_client", "openai", "google.genai"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
     # Keep our loggers at INFO
