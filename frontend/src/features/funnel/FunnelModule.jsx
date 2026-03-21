@@ -39,6 +39,53 @@ const EMPTY_FILTERS = { client: '', input_type: '', output_type: '', language: '
 const FILTER_DIMENSIONS = new Set(['client', 'input_type', 'output_type', 'language', 'channel', 'user', 'team']);
 const FILTER_KEYS = ['client', 'input_type', 'output_type', 'language', 'channel', 'user', 'team'];
 
+function getEventPoint(chart, nativeEvent) {
+  if (!chart || !nativeEvent) return null;
+  if (Number.isFinite(nativeEvent.offsetX) && Number.isFinite(nativeEvent.offsetY)) {
+    return { x: nativeEvent.offsetX, y: nativeEvent.offsetY };
+  }
+  const rect = chart.canvas?.getBoundingClientRect?.();
+  if (rect && Number.isFinite(nativeEvent.clientX) && Number.isFinite(nativeEvent.clientY)) {
+    return {
+      x: nativeEvent.clientX - rect.left,
+      y: nativeEvent.clientY - rect.top,
+    };
+  }
+  return null;
+}
+
+function isSankeyNodeHit(chart, nativeEvent) {
+  if (!chart || !nativeEvent) return false;
+  const meta = chart.getDatasetMeta?.(0);
+  const controller = meta?.controller;
+  const nodes = controller?._nodes;
+  const xScale = controller?._cachedMeta?.xScale;
+  const yScale = controller?._cachedMeta?.yScale;
+  if (!nodes || !xScale || !yScale || typeof nodes.values !== 'function') return false;
+
+  const point = getEventPoint(chart, nativeEvent);
+  if (!point) return false;
+
+  const nodeWidth = Number(controller?.options?.nodeWidth || 10);
+  const sizeMethod = String(controller?.options?.size || 'min') === 'max' ? 'max' : 'min';
+
+  for (const node of nodes.values()) {
+    const x = xScale.getPixelForValue(node.x);
+    const fromSize = Number(node.in || 0);
+    const toSize = Number(node.out || 0);
+    const flowSpan = Math[sizeMethod](fromSize || toSize, toSize || fromSize);
+    const y = yScale.getPixelForValue(node.y);
+    const y2 = yScale.getPixelForValue(node.y + flowSpan);
+    const top = Math.min(y, y2);
+    const bottom = Math.max(y, y2);
+
+    if (point.x >= x && point.x <= x + nodeWidth && point.y >= top && point.y <= bottom) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function buildFiltersFromRouteState(routeState = {}) {
   const next = { ...EMPTY_FILTERS };
   FILTER_KEYS.forEach((key) => {
@@ -48,6 +95,7 @@ function buildFiltersFromRouteState(routeState = {}) {
 }
 
 export default function FunnelModule({ authUser, routeState = {}, onNavigate }) {
+  const stageChartRef = useRef(null);
   const compositionChartRef = useRef(null);
 
   const [breakdown, setBreakdown] = useState(routeState.breakdown || 'channel');
@@ -110,6 +158,13 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
     setFilters(next);
     navigate(next);
   };
+  const handleZoomOut = useCallback(() => {
+    const dim = breakdown;
+    if (!dim || !filters[dim]) return;
+    const next = { ...filters, [dim]: '' };
+    setFilters(next);
+    navigate(next);
+  }, [breakdown, filters, navigate]);
 
   const stageLinks = useMemo(() => normalizeStageSankeyLinks(data?.sankeyLinks || []), [data?.sankeyLinks]);
   const showAllCompositionSources = compositionSourceMode === 'all';
@@ -141,6 +196,15 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
       .length
   ), [data?.breakdown]);
   const hiddenBreakdownSources = Math.max(totalBreakdownSources - compositionTopN, 0);
+  const compositionHiddenSources = useMemo(() => {
+    if (breakdown === 'client') return 0;
+    if (compositionSourceMode !== 'top') return 0;
+    return hiddenBreakdownSources;
+  }, [breakdown, compositionSourceMode, hiddenBreakdownSources]);
+  const compositionSourceEntityLabel = useMemo(
+    () => String(breakdown || 'source').replace(/_/g, ' '),
+    [breakdown],
+  );
 
   const compositionLinks = useMemo(() => groupSmallLinks(compositionBaseLinks), [compositionBaseLinks]);
   const stageFromTotals = useMemo(() => buildFromTotals(stageLinks), [stageLinks]);
@@ -283,11 +347,11 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
   }, [stageLinks, stageColumn, stagePriority]);
 
   const compositionNodeLabels = useMemo(() => {
-    if (hiddenBreakdownSources > 0) {
-      return { 'Other': `Other (${hiddenBreakdownSources})` };
+    if (compositionHiddenSources > 0) {
+      return { 'Other': `Other (${compositionHiddenSources})` };
     }
     return {};
-  }, [hiddenBreakdownSources]);
+  }, [compositionHiddenSources]);
 
   const compositionSankeyData = useMemo(() => ({
     datasets: [{
@@ -318,12 +382,25 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
     const chart = compositionChartRef.current;
     if (!chart || !event?.nativeEvent || !compositionLinks.length) return;
 
+    if (isSankeyNodeHit(chart, event.nativeEvent)) {
+      handleZoomOut();
+      return;
+    }
+
     const points = chart.getElementsAtEventForMode(event.nativeEvent, 'nearest', { intersect: false }, true);
     if (!points?.length) return;
 
     const link = compositionLinks[points[0].index];
     handleCompositionZoom(link);
-  }, [compositionLinks, handleCompositionZoom]);
+  }, [compositionLinks, handleCompositionZoom, handleZoomOut]);
+
+  const handleStageClick = useCallback((event) => {
+    const chart = stageChartRef.current;
+    if (!chart || !event?.nativeEvent) return;
+    if (isSankeyNodeHit(chart, event.nativeEvent)) {
+      handleZoomOut();
+    }
+  }, [handleZoomOut]);
 
   const handleCompositionChartHover = useCallback((event) => {
     const chart = compositionChartRef.current;
@@ -336,8 +413,16 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
 
   const stageSankeyOptions = useMemo(() => makeSankeyOptions(stageFromTotals), [stageFromTotals]);
   const compositionSankeyOptions = useMemo(
-    () => makeSankeyOptions(compositionFromTotals, {}, { interactive: true, hiddenSources: hiddenBreakdownSources }),
-    [compositionFromTotals, hiddenBreakdownSources],
+    () => makeSankeyOptions(
+      compositionFromTotals,
+      {},
+      {
+        interactive: true,
+        hiddenSources: compositionHiddenSources,
+        sourceEntity: compositionSourceEntityLabel,
+      },
+    ),
+    [compositionFromTotals, compositionHiddenSources, compositionSourceEntityLabel],
   );
 
   const hasActive = Object.values(effectiveFilters).some(Boolean);
@@ -404,6 +489,8 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
                   groupedCompositionCount={groupedCompositionCount}
                   stageSankeyData={stageSankeyData}
                   stageSankeyOptions={stageSankeyOptions}
+                  stageChartRef={stageChartRef}
+                  handleStageClick={handleStageClick}
                   compositionSankeyData={compositionSankeyData}
                   compositionSankeyOptions={compositionSankeyOptions}
                   compositionChartRef={compositionChartRef}

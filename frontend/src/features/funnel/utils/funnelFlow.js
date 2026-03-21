@@ -281,7 +281,12 @@ export function buildFromTotals(links = []) {
   }, {});
 }
 
-export function makeSankeyOptions(fromTotals = {}, extras = {}, { interactive = false, hiddenSources = 0 } = {}) {
+export function makeSankeyOptions(
+  fromTotals = {},
+  extras = {},
+  { interactive = false, hiddenSources = 0, sourceEntity = 'source' } = {},
+) {
+  const sourceLabel = String(sourceEntity || 'source');
   return {
     responsive: true,
     maintainAspectRatio: false,
@@ -314,11 +319,11 @@ export function makeSankeyOptions(fromTotals = {}, extras = {}, { interactive = 
             const flow = Number(raw.flow || 0);
             const fromTotal = Number(fromTotals[raw.from] || 0);
             const share = fromTotal > 0 ? (flow / fromTotal) * 100 : 0;
-            const lines = [`${formatNumber(Math.round(flow))} flow (${share.toFixed(1)}% of ${raw.from || 'source'})`];
+            const lines = [`${formatNumber(Math.round(flow))} flow (${share.toFixed(1)}% of ${raw.from || sourceLabel})`];
             if (interactive && !raw.grouped) {
               const toLower = (raw.to || '').toLowerCase();
               if (toLower === 'published' || toLower === 'not published') {
-                lines.push('Click to filter by this source');
+                lines.push(`Click to filter by this ${sourceLabel}`);
               }
             }
             return lines;
