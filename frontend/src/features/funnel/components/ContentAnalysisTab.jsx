@@ -479,7 +479,7 @@ export default function ContentAnalysisTab({ authUser, data, breakdown = 'channe
       {summary && (
         <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
           <KpiCard label="Tracked" value={summary.total} sub={`${viewLabel}s in current view`} />
-          <KpiCard label="Avg conversion" value={fmtPct(summary.avg)} tone="red" />
+          <KpiCard label="Avg conversion" value={fmtPct(summary.avg)} />
           <KpiCard label="Best" value={fmtPct(summary.best?.conversion)} sub={summary.best?.label} />
           <KpiCard label="Lowest" value={fmtPct(summary.worst?.conversion)} sub={summary.worst?.label} />
           <KpiCard
