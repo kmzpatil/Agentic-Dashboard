@@ -237,7 +237,9 @@ export default function ReportRenderer({ reportHtml }) {
       const fullDoc = isFullDocument ? reportHtml : buildPdfDocument(reportHtml);
 
       const iframe = document.createElement('iframe');
-      iframe.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;border:none;visibility:hidden;';
+      // Give the iframe real dimensions so Chart.js can render onto canvas elements.
+      // Position offscreen so the user doesn't see it.
+      iframe.style.cssText = 'position:fixed;left:-9999px;top:0;width:900px;height:1200px;border:none;';
       document.body.appendChild(iframe);
 
       const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
@@ -249,8 +251,25 @@ export default function ReportRenderer({ reportHtml }) {
         if (iframe.contentWindow.document.readyState === 'complete') resolve();
         else iframe.contentWindow.addEventListener('load', resolve);
       });
-      // Full documents need extra time for Chart.js CDN load + canvas rendering
-      await new Promise((r) => setTimeout(r, isFullDocument ? 800 : 300));
+
+      if (isFullDocument) {
+        // Wait for Chart.js CDN to load and charts to render on canvas.
+        // Poll for up to 5s checking if Chart.js has initialized.
+        const start = Date.now();
+        while (Date.now() - start < 5000) {
+          const chartReady = iframe.contentWindow.Chart;
+          const canvases = iframeDoc.querySelectorAll('canvas');
+          if (chartReady && canvases.length === 0) break; // No charts to wait for
+          if (chartReady && canvases.length > 0) {
+            // Give Chart.js a moment to finish rendering after init
+            await new Promise((r) => setTimeout(r, 500));
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 200));
+        }
+      } else {
+        await new Promise((r) => setTimeout(r, 300));
+      }
 
       iframe.contentWindow.focus();
       iframe.contentWindow.print();

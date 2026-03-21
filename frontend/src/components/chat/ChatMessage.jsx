@@ -80,11 +80,11 @@ export default function ChatMessage({ msg, showActivity = false }) {
   }
 
   // Check if this is a report message
-  const reportRaw = msg.reportHtml || msg.content || '';
+  const reportRaw = msg.reportHtml || msg.report_html || msg.content || '';
   const isReport = msg.intent === 'report' || isReportHtml(reportRaw);
 
   if (isReport) {
-    const html = msg.reportHtml || cleanReportHtml(reportRaw);
+    const html = msg.reportHtml || msg.report_html || cleanReportHtml(reportRaw);
     if (html) {
       return (
         <div>

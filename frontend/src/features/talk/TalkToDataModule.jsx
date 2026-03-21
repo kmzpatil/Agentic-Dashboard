@@ -164,7 +164,11 @@ function ErrorBanner({ error }) {
 
 function AssistantMessageItem({ message, onOpenCanvas, onNavigate }) {
   // Report mode — download card only, no inline preview
-  if (message.intent === 'report' && message.reportHtml) {
+  const reportContent = message.reportHtml || message.report_html || '';
+  const isReportMsg = message.intent === 'report' || isReportHtml(reportContent) || isReportHtml(message.content);
+  const finalReportHtml = reportContent || (isReportMsg ? cleanReportHtml(message.content || '') : '');
+
+  if (isReportMsg && finalReportHtml) {
     return (
       <div className="max-w-[780px]">
         <div className="mb-2.5 flex items-center gap-2.5">
@@ -175,7 +179,7 @@ function AssistantMessageItem({ message, onOpenCanvas, onNavigate }) {
         </div>
         <div className="pl-[34px]">
           <ThinkingTrace actions={message.actions} />
-          <ReportRenderer reportHtml={message.reportHtml} />
+          <ReportRenderer reportHtml={finalReportHtml} />
         </div>
       </div>
     );

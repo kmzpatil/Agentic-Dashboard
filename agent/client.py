@@ -1,10 +1,12 @@
 """
 client.py
 ---------
-LLM client abstraction using Anthropic Claude 3 Haiku.
+LLM client abstraction supporting Anthropic and Gemini providers.
 
 Features:
-  - Single API usage (Anthropic)
+  - Dual provider support (Anthropic Claude / Google Gemini)
+  - Pre-built pool of Gemini clients (one per API key) with random
+    selection at each invoke(), spreading load across all keys
   - Exponential backoff retry on 429 rate-limit errors
   - Factory modes: fast(), thinking(), creative()
 """
@@ -12,9 +14,10 @@ Features:
 import json
 import logging
 import os
+import random
 import re
 import time
-from typing import Optional
+from typing import List, Optional
 
 from dotenv import load_dotenv
 
@@ -26,12 +29,56 @@ logger = logging.getLogger("frammer.client")
 
 _THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL)
 
-DEFAULT_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-haiku-20240307")
+AI_PROVIDER = os.getenv("AI_PROVIDER", "anthropic").strip().lower()
+DEFAULT_ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
+DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
+
+# Parse Gemini keys once at module level
+_GEMINI_KEYS = [
+    k.strip() for k in os.getenv("GEMINI_KEYS", "").split(",") if k.strip()
+]
 
 try:
     from langchain_anthropic import ChatAnthropic
 except ImportError:
     ChatAnthropic = None
+
+try:
+    from langchain_google_genai import ChatGoogleGenerativeAI
+except ImportError:
+    ChatGoogleGenerativeAI = None
+
+
+# ── Gemini client pool (built lazily, keyed by (model, temperature)) ────────
+
+_gemini_pools: dict = {}  # (model, temperature) -> List[ChatGoogleGenerativeAI]
+
+
+def _get_gemini_pool(model: str, temperature: float) -> List:
+    """
+    Return (or build) a list of ChatGoogleGenerativeAI clients,
+    one per API key, for the given model+temperature combo.
+    """
+    cache_key = (model, temperature)
+    if cache_key not in _gemini_pools:
+        if ChatGoogleGenerativeAI is None:
+            raise ImportError("langchain-google-genai is not installed.")
+        if not _GEMINI_KEYS:
+            raise ValueError("No GEMINI_KEYS found in environment")
+        pool = []
+        for key in _GEMINI_KEYS:
+            pool.append(ChatGoogleGenerativeAI(
+                model=model,
+                google_api_key=key,
+                temperature=temperature,
+                max_output_tokens=8192,
+            ))
+        _gemini_pools[cache_key] = pool
+        logger.info(
+            "Gemini pool created: model=%s, temp=%.1f, %d clients",
+            model, temperature, len(pool),
+        )
+    return _gemini_pools[cache_key]
 
 
 class LLMResponse:
@@ -45,70 +92,95 @@ class LLMResponse:
 
 class LLMClient:
     """
-    Unified LLM client backed by Anthropic Claude 3 Haiku.
+    Unified LLM client supporting Anthropic and Gemini providers.
+    Provider is selected via AI_PROVIDER env var (default: anthropic).
+    For Gemini, each invoke() randomly picks from a pre-built pool of
+    clients (one per API key) to spread load across rate-limit quotas.
     """
 
     def __init__(
         self,
-        model: str = DEFAULT_MODEL,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
         temperature: float = 0,
         preserve_thinking: bool = False,
     ):
-        self.model = model
+        self.provider = (provider or AI_PROVIDER).strip().lower()
         self.temperature = temperature
         self.preserve_thinking = preserve_thinking
-        
+
+        if self.provider == "gemini":
+            self.model = model or DEFAULT_GEMINI_MODEL
+            # Eagerly build the pool so import-time errors surface early
+            self._gemini_pool = _get_gemini_pool(self.model, self.temperature)
+            # Expose .llm for code that accesses it directly (e.g. fast-path)
+            self.llm = random.choice(self._gemini_pool)
+        else:
+            self.model = model or DEFAULT_ANTHROPIC_MODEL
+            self._gemini_pool = []
+            self._init_anthropic()
+
+    def _init_anthropic(self):
         if ChatAnthropic is None:
             raise ImportError("langchain-anthropic is not installed.")
-            
         api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
         if not api_key:
             logger.warning("No ANTHROPIC_API_KEY found in environment!")
-            
         self.llm = ChatAnthropic(
             model_name=self.model,
             temperature=self.temperature,
             api_key=api_key,
-            max_tokens=4096,  # Prevent SQL/tool call truncation
+            max_tokens=4096,
         )
+
+    def _pick_gemini(self):
+        """Pick a random Gemini client from the pool."""
+        return random.choice(self._gemini_pool)
 
     # ── Factory helpers ──────────────────────────────────────────────────────
 
     @classmethod
-    def fast(cls, model: str = DEFAULT_MODEL) -> "LLMClient":
+    def fast(cls, provider: Optional[str] = None, model: Optional[str] = None) -> "LLMClient":
         """Deterministic routing / structured output mode."""
-        return cls(model=model, temperature=0, preserve_thinking=False)
+        return cls(provider=provider, model=model, temperature=0, preserve_thinking=False)
 
     @classmethod
-    def thinking(cls, model: str = DEFAULT_MODEL) -> "LLMClient":
-        """Conversational mode (Haiku does not really use reasoning tags, but keeping signature)."""
-        return cls(model=model, temperature=0, preserve_thinking=True)
+    def thinking(cls, provider: Optional[str] = None, model: Optional[str] = None) -> "LLMClient":
+        """Mode with reasoning trace preserved."""
+        return cls(provider=provider, model=model, temperature=0, preserve_thinking=True)
 
     @classmethod
-    def creative(cls, model: str = DEFAULT_MODEL) -> "LLMClient":
+    def creative(cls, provider: Optional[str] = None, model: Optional[str] = None) -> "LLMClient":
         """Conversational / insight generation mode."""
-        return cls(model=model, temperature=0.7, preserve_thinking=False)
+        return cls(provider=provider, model=model, temperature=0.7, preserve_thinking=False)
 
     # ── Core invoke ──────────────────────────────────────────────────────────
 
     def invoke(self, prompt: str, *, label: str = "llm") -> LLMResponse:
         """
         Call the LLM with exponential backoff on 429 rate-limit errors.
+        For Gemini, picks a random client from the pool on each attempt.
         """
         max_attempts = 5
         start_time = time.time()
 
         for attempt in range(max_attempts):
-            logger.info("[%s] Calling Anthropic (model: %s, attempt %d)...", label, self.model, attempt + 1)
+            # Pick a fresh random Gemini client each attempt
+            if self.provider == "gemini":
+                llm = self._pick_gemini()
+            else:
+                llm = self.llm
+
+            logger.info("[%s] Calling %s (model: %s, attempt %d)...", label, self.provider, self.model, attempt + 1)
 
             try:
-                result = self.llm.invoke(prompt)
+                result = llm.invoke(prompt)
                 duration = time.time() - start_time
                 usage = getattr(result, "usage_metadata", {})
-                
+
                 logger.info(
-                    "[%s] Anthropic responded in %.2fs. Usage: %s",
-                    label, duration, json.dumps(usage) if usage else "N/A"
+                    "[%s] %s responded in %.2fs. Usage: %s",
+                    label, self.provider, duration, json.dumps(usage) if usage else "N/A"
                 )
                 return self._parse(result.content, label=label, usage=usage)
 
@@ -124,8 +196,8 @@ class LLMClient:
 
                 duration = time.time() - start_time
                 logger.error(
-                    "[%s] !!! LLM CALL FAILED !!!\n  Model    : %s\n  Duration : %.2fs\n  Error    : %s",
-                    label, self.model, duration, exc,
+                    "[%s] !!! LLM CALL FAILED !!!\n  Provider : %s\n  Model    : %s\n  Duration : %.2fs\n  Error    : %s",
+                    label, self.provider, self.model, duration, exc,
                 )
                 raise
 
@@ -133,7 +205,15 @@ class LLMClient:
 
     # ── Internal helpers ─────────────────────────────────────────────────────
 
-    def _parse(self, raw: str, *, label: str, usage: Optional[dict] = None) -> LLMResponse:
+    def _parse(self, raw, *, label: str, usage: Optional[dict] = None) -> LLMResponse:
+        # Gemini returns content as a list of blocks; normalise to string
+        if isinstance(raw, list):
+            raw = " ".join(
+                part.get("text", "") if isinstance(part, dict) else str(part)
+                for part in raw
+            ).strip()
+        if not isinstance(raw, str):
+            raw = str(raw)
         thinking = None
         match = _THINK_RE.search(raw)
         if match and self.preserve_thinking:
@@ -144,8 +224,9 @@ class LLMClient:
     @staticmethod
     def _is_rate_limit(exc: Exception) -> bool:
         msg = str(exc).lower()
-        return any(kw in msg for kw in ("429", "rate limit", "too many requests", "rate_limit_exceeded"))
+        return any(kw in msg for kw in ("429", "rate limit", "too many requests", "rate_limit_exceeded", "resource_exhausted"))
 
     def __repr__(self) -> str:
         mode = "thinking" if self.preserve_thinking else "fast"
-        return f"LLMClient(model:{self.model}, t={self.temperature}, {mode})"
+        pool_info = f", pool={len(self._gemini_pool)}" if self._gemini_pool else ""
+        return f"LLMClient(provider:{self.provider}, model:{self.model}, t={self.temperature}, {mode}{pool_info})"
