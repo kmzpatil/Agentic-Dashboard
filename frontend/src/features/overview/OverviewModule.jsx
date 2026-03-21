@@ -19,6 +19,19 @@ const CORE_KPI_KEYS = [
   { id: 'waste_index',             title: 'WASTE INDEX',               trendMetric: 'waste_index',             getValue: (k) => k.waste_index !== undefined ? Number(k.waste_index).toFixed(2) : '—',           getSubtitle: () => 'Logarithmic waste' },
 ];
 
+const TOP_PERFORMER_DIMENSION_MAP = {
+  channel: 'channel',
+  user: 'user',
+  'input type': 'input_type',
+  input_type: 'input_type',
+  'output type': 'output_type',
+  output_type: 'output_type',
+  language: 'language',
+  team: 'team',
+  client: 'client',
+};
+
+const FUNNEL_FILTER_KEYS = ['client', 'input_type', 'output_type', 'language', 'channel', 'user', 'team'];
 function buildCoreKpiCards(kpis, monthlyTrends) {
   return CORE_KPI_KEYS.map(({ id, title, trendMetric, getValue, getSubtitle }) => ({
     id,
@@ -188,6 +201,26 @@ export default function OverviewModule({ onNavigate }) {
   const [showKpiCreator, setShowKpiCreator] = useState(false);
   const [editingKpi, setEditingKpi] = useState(null);  // custom KPI being edited
   const [customKpis, setCustomKpis] = useState([]);  // KPIs created by user
+
+  const handleTopPerformerClick = (item) => {
+    const rawDimension = String(item?.dimension || '').trim().toLowerCase();
+    const mappedDimension = TOP_PERFORMER_DIMENSION_MAP[rawDimension];
+    const label = item?.label ? String(item.label) : '';
+    if (!mappedDimension || !label) return;
+
+    const clearedFilters = FUNNEL_FILTER_KEYS.reduce((acc, key) => {
+      acc[key] = '';
+      return acc;
+    }, {});
+
+    onNavigate?.({
+      view: 'funnel',
+      tab: 'channel',
+      breakdown: mappedDimension,
+      ...clearedFilters,
+      [mappedDimension]: label,
+    });
+  };
 
   useEffect(() => {
     if (data?.outputStats?.length > 0 && !activeOutputTab) {
@@ -679,9 +712,11 @@ export default function OverviewModule({ onNavigate }) {
                   const pct = item.conversion || 0;
                   const barWidth = Math.min(Math.max(pct, 0), 100);
                   return (
-                    <div
+                    <button
+                      type="button"
                       key={`${item.dimension}-${item.label}`}
-                      className="rounded-xl border border-neutral-800 bg-[#0f1217] px-3 py-2.5 transition-colors hover:border-neutral-700"
+                      onClick={() => handleTopPerformerClick(item)}
+                      className="w-full rounded-xl border border-neutral-800 bg-[#0f1217] px-3 py-2.5 text-left transition-colors hover:border-neutral-700"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -709,7 +744,7 @@ export default function OverviewModule({ onNavigate }) {
                           style={{ width: `${barWidth}%` }}
                         />
                       </div>
-                    </div>
+                    </button>
                   );
                 });
               })()}

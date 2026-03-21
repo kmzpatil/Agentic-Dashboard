@@ -98,16 +98,16 @@ export default function FunnelFilterBar({ authUser, breakdown, filters, onBreakd
   const isAdminOrClientAdmin = role === 'website_admin' || role === 'client_admin';
 
   const { data: opts, loading: optionsLoading, error: optionsError } = useApi(`${API_BASE}/funnel/filter-options`, []);
-  const options = opts || { clients: [], input_types: [], languages: [], channels: [], users: [], teams: [] };
+  const options = opts || { clients: [], input_types: [], output_types: [], languages: [], channels: [], users: [], teams: [] };
   const filtersDisabled = Boolean(optionsError) || optionsLoading || externalDisabled;
 
   const allowedViewBy = ALL_VIEW_BY.filter((o) => o.roles.includes(role));
 
   const update = (key, value) => onFiltersChange({ ...filters, [key]: value || '' });
   const clear  = (key)        => onFiltersChange({ ...filters, [key]: '' });
-  const reset  = ()           => onFiltersChange({ client: '', input_type: '', language: '', channel: '', user: '', team: '' });
+  const reset  = ()           => onFiltersChange({ client: '', input_type: '', output_type: '', language: '', channel: '', user: '', team: '' });
 
-  const FILTER_ORDER = ['client', 'channel', 'input_type', 'user', 'team', 'language'];
+  const FILTER_ORDER = ['client', 'channel', 'input_type', 'output_type', 'user', 'team', 'language'];
   const active = FILTER_ORDER
     .filter((key) => filters[key])
     .map((key) => [key, filters[key]]);

@@ -1286,6 +1286,28 @@ export default function UsageTrendsModule({
       interaction: { mode: "index", intersect: false },
       plugins: {
         legend: { labels: { color: "#d1d5db" } },
+        zoom: {
+          limits: {
+            x: { min: "original", max: "original", minRange: 6 },
+          },
+          pan: {
+            enabled: true,
+            mode: "x",
+            threshold: 4,
+          },
+          zoom: {
+            wheel: { enabled: true },
+            pinch: { enabled: true },
+            drag: {
+              enabled: true,
+              modifierKey: "shift",
+              backgroundColor: "rgba(239, 68, 68, 0.12)",
+              borderColor: "rgba(239, 68, 68, 0.35)",
+              borderWidth: 1,
+            },
+            mode: "x",
+          },
+        },
         tooltip: {
           callbacks: {
             afterBody(tooltipItems) {
