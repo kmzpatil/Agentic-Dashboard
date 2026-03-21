@@ -46,9 +46,9 @@ export default function InsightCard({ insight, onNavigate }) {
         </span>
       </div>
 
-      <div className="mt-3 flex items-center justify-between gap-3">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
         {evidence.length > 0 ? (
-          <div className="min-w-0 text-[11px] text-neutral-400 truncate">
+          <div className="min-w-0 flex-1 text-[11px] text-neutral-400 truncate">
             <span className="text-neutral-500">Evidence:</span>{' '}
             {visibleEvidence.join(' • ')}
             {extraEvidenceCount > 0 ? ` +${extraEvidenceCount}` : ''}
@@ -58,7 +58,7 @@ export default function InsightCard({ insight, onNavigate }) {
         )}
         <button
           onClick={() => onNavigate?.(insight.cta?.filter_state || { view: insight.cta?.target })}
-          className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-neutral-600 bg-neutral-800/50 px-3 py-1.5 text-[11px] font-semibold text-neutral-200 transition-colors hover:border-neutral-400 hover:text-white hover:bg-neutral-700/60"
+          className="shrink-0 ml-auto inline-flex items-center gap-1.5 rounded-lg border border-neutral-600 bg-neutral-800/50 px-3 py-1.5 text-[11px] font-semibold text-neutral-200 transition-colors hover:border-neutral-400 hover:text-white hover:bg-neutral-700/60"
         >
           {insight.cta?.label || 'Open'}
           <ArrowRight size={12} />
