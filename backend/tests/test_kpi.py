@@ -115,8 +115,8 @@ class TestNLParser:
 
     def test_nl_missing_api_key_raises(self):
         from backend.kpi.parser import parse_nl_mode
-        with patch("backend.kpi.parser._call_llm", side_effect=ValueError("ANTHROPIC_API_KEY is not set")):
-            with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
+        with patch("backend.kpi.parser._call_llm", side_effect=ValueError("GOOGLE_API_KEY is not set")):
+            with pytest.raises(ValueError, match="GOOGLE_API_KEY"):
                 parse_nl_mode("total videos")
 
 

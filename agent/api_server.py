@@ -1,7 +1,7 @@
 """
 api_server.py
 ──────────────
-FastAPI server that exposes the Anthropic-powered Frammer analytics agent.
+FastAPI server that exposes the Frammer analytics agent.
 """
 
 import json
@@ -17,6 +17,9 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 # Fallback to root .env
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 load_dotenv()
+
+from logger_setup import setup_logging
+setup_logging()
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
@@ -47,9 +50,8 @@ async def lifespan(app: FastAPI):
         logger.warning("Could not ensure conversation tables: %s", exc)
     yield
 
-app = FastAPI(title="Frammer Analytics API (Anthropic Version)", version="5.0.0-anthropic", lifespan=lifespan)
+app = FastAPI(title="Frammer Analytics API", version="5.0.0", lifespan=lifespan)
 
-# setup_logging() is called above.
 logger = logging.getLogger("frammer.api_server")
 
 app.add_middleware(
@@ -117,10 +119,10 @@ async def healthz():
 
     return {
         "ok": database["ok"],
-        "service": "frammer-agent-anthropic",
+        "service": "frammer-agent",
         "database": database,
         "providers": {
-            "anthropic_configured": bool(os.getenv("ANTHROPIC_API_KEY")),
+            "gemini_configured": bool(os.getenv("GOOGLE_API_KEY")),
         },
     }
 
@@ -142,14 +144,14 @@ async def run_query_route(req: QueryRequest):
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
-    logger.info("Chat request (Anthropic): %r (conv=%s)", req.message, req.conversation_id)
+    logger.info("Chat request: %r (conv=%s)", req.message, req.conversation_id)
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty.")
 
     conv_id = req.conversation_id
     conv = get_conversation(conv_id) if conv_id else None
     if not conv:
-        conv = create_conversation(title="New conversation (Anthropic)")
+        conv = create_conversation(title="New conversation")
         conv_id = conv["id"]
         logger.info("Created conversation %s", conv_id)
 
@@ -235,8 +237,5 @@ async def get_data_route(req: DataRequest):
     return {"records": parsed.get("data", [])}
 
 if __name__ == "__main__":
-    from logger_setup import setup_logging
-    setup_logging()
     import uvicorn
-    # Use port 4001 or whatever matches the frontend/tests
     uvicorn.run(app, host="0.0.0.0", port=4001)

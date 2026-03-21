@@ -21,6 +21,8 @@ Architecture:
 
   All database access routes through the MCP DatabaseClient (via execute_sql_query)
   which provides query validation, auth-scoped CTE injection, and connection management.
+
+  Uses the native google-genai SDK for all LLM calls — no LangChain.
 """
 
 import asyncio
@@ -36,6 +38,7 @@ from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from dotenv import load_dotenv
+from google.genai import types
 
 # -- Load env: agent dir first, then project root --
 _AGENT_DIR = Path(__file__).resolve().parent
@@ -45,6 +48,13 @@ if str(_AGENT_DIR) not in sys.path:
 load_dotenv(_AGENT_DIR / ".env")
 load_dotenv(_AGENT_DIR.parent / ".env")
 load_dotenv()
+
+# Ensure logging is configured even if agent.py is imported before api_server.py
+try:
+    from logger_setup import setup_logging
+except ImportError:
+    from agent.logger_setup import setup_logging
+setup_logging()
 
 try:
     from client import LLMClient
@@ -56,14 +66,12 @@ try:
         build_report_planning_prompt,
         build_report_synthesis_prompt,
     )
-    from gemini_client import get_gemini_llm
     from report_formatter import render_report_html
 except ImportError:
     from agent.prompts.report_prompt import (
         build_report_planning_prompt,
         build_report_synthesis_prompt,
     )
-    from agent.gemini_client import get_gemini_llm
     from agent.report_formatter import render_report_html
 
 # -- Core MCP and Tools --
@@ -171,6 +179,7 @@ class AgentResult:
 # ── Constants ────────────────────────────────────────────────────────────────
 
 MAX_ITERATIONS = 10  # Safety cap — agent finishes naturally via answer/clarify
+_RETRY_MAX_ATTEMPTS = 5  # Retry limit for rate-limited / resource-exhausted calls
 
 # ── Schema cache ─────────────────────────────────────────────────────────────
 _schema_cache: Optional[str] = None
@@ -178,6 +187,51 @@ _schema_cache_lock = threading.Lock()
 
 # ── LLM client ───────────────────────────────────────────────────────────────
 _llm_client = LLMClient()
+
+
+# ── Retry wrapper for async LLM calls ────────────────────────────────────────
+
+_RATE_LIMIT_KEYWORDS = ("429", "rate limit", "too many requests", "rate_limit_exceeded", "resource_exhausted")
+
+
+async def _invoke_with_retry(invoke_fn, *, label: str = "llm"):
+    """
+    Call invoke_fn() (an async callable) with exponential backoff on rate-limit errors.
+    """
+    for attempt in range(_RETRY_MAX_ATTEMPTS):
+        try:
+            return await invoke_fn()
+        except Exception as exc:
+            msg = str(exc)
+            msg_lower = msg.lower()
+            is_rate_limit = any(kw in msg_lower for kw in _RATE_LIMIT_KEYWORDS)
+
+            # Detect free-tier quota errors — the API key's project has no billing
+            if "free_tier" in msg_lower or "freetier" in msg_lower:
+                logger.error(
+                    "[%s] FREE TIER QUOTA HIT — your GOOGLE_API_KEY is on the free tier "
+                    "(limit: 20 requests/day). Enable billing at https://ai.dev/rate-limit "
+                    "or use a key from a paid project. Error: %s",
+                    label, msg,
+                )
+                raise RuntimeError(
+                    f"Gemini free-tier quota exceeded. Your API key is being treated as free tier "
+                    f"(20 requests/day limit). Please verify billing is enabled for your Google AI "
+                    f"project at https://aistudio.google.com/apikey and check "
+                    f"https://ai.dev/rate-limit for current usage."
+                ) from exc
+
+            if is_rate_limit and attempt < _RETRY_MAX_ATTEMPTS - 1:
+                wait = 5 * (2 ** attempt)
+                logger.warning(
+                    "[%s] Rate limit / resource exhausted — retrying in %ds (attempt %d/%d): %s",
+                    label, wait, attempt + 1, _RETRY_MAX_ATTEMPTS, msg,
+                )
+                await asyncio.sleep(wait)
+                continue
+            logger.error("[%s] LLM call failed (attempt %d): %s", label, attempt + 1, msg)
+            raise
+    raise RuntimeError(f"[{label}] Max LLM retries exceeded")
 
 
 # ── Report Planning ──────────────────────────────────────────────────────────
@@ -202,10 +256,13 @@ async def _plan_report_sub_questions(
     )
 
     fast_client = LLMClient.fast()
-    resp = await asyncio.to_thread(fast_client.invoke, prompt)
+    resp = await _invoke_with_retry(
+        lambda: fast_client.ainvoke(prompt, label="report-plan"),
+        label="report-plan",
+    )
 
     # Parse JSON from response — LLM may wrap it in markdown or narrative
-    raw = resp.content.strip()
+    raw = (resp.text or "").strip()
     raw = re.sub(r'^```(?:json)?\s*\n?', '', raw, flags=re.IGNORECASE)
     raw = re.sub(r'\n?```\s*$', '', raw).strip()
 
@@ -239,13 +296,13 @@ async def _plan_report_sub_questions(
     ]
 
 
-# ── Tool definitions (for LangChain bind_tools) ─────────────────────────────
+# ── Tool definitions (plain functions for google-genai SDK) ───────────────────
+#
+# The google-genai SDK auto-generates FunctionDeclaration schemas from
+# Python function signatures and docstrings. These are stub functions —
+# the agent loop dispatches on the tool name and handles execution.
 
-from langchain_core.tools import tool
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
-
-@tool
 def execute_queries(
     queries: Optional[List[Dict[str, str]]] = None,
     reasoning: str = "",
@@ -259,7 +316,6 @@ def execute_queries(
     return json.dumps({"status": "ok", "queries": queries or []})
 
 
-@tool
 def answer(
     response: str = "",
     needs_chart: bool = False,
@@ -289,7 +345,6 @@ def answer(
     return json.dumps({"status": "ok"})
 
 
-@tool
 def clarify(question: str = "") -> str:
     """Ask the user a clarifying question when the request is ambiguous.
     Args:
@@ -300,7 +355,6 @@ def clarify(question: str = "") -> str:
     return json.dumps({"status": "clarification_requested", "question": question})
 
 
-@tool
 def get_column_values_tool(
     table_name: str = "",
     column_name: str = "",
@@ -314,7 +368,6 @@ def get_column_values_tool(
     return json.dumps({"status": "ok", "table_name": table_name, "column_name": column_name})
 
 
-@tool
 def get_kpi_info_tool(
     kpi_id: str = "",
 ) -> str:
@@ -330,7 +383,6 @@ def get_kpi_info_tool(
     return json.dumps({"status": "ok", "kpi_id": kpi_id})
 
 
-@tool
 def explore_tool(
     queries: Optional[List[str]] = None,
     reasoning: str = "",
@@ -492,6 +544,13 @@ Ask yourself these 3 questions:
 - **NEVER generate HTML**. Your response must be plain text with markdown formatting only. No `<div>`, `<style>`, `<html>`, or any HTML tags.
 - If the user asks for a "report", still answer in markdown. Full formatted reports are generated separately via report mode.
 
+## MANDATORY: Tool Call Protocol
+You MUST respond with a tool call on every turn. NEVER produce a plain text response.
+- First turn: call `execute_queries` with multiple SQL queries (they run in parallel — more queries = richer analysis at zero extra cost).
+- After reviewing results: call `execute_queries` again if you need follow-up data, or call `answer` if you have enough.
+- Your analysis text goes in the `response` field of `answer`. Your chart specs go in the `charts` field of `answer`.
+- NEVER write JSON, chart specs, or analysis as plain text. It MUST go through the `answer` tool.
+
 Current System Time: {now_str}
 """
 
@@ -606,8 +665,11 @@ async def _force_synthesize(question: str, query_results: List[Dict]) -> str:
     """Emergency synthesis when the agent hits max iterations without answering."""
     results_block = _summarize_query_results(query_results)
     prompt = SYNTHESIZER_PROMPT.format(question=question, results_block=results_block)
-    resp = await asyncio.to_thread(_llm_client.llm.invoke, prompt)
-    return _extract_response(resp.content)
+    resp = await _invoke_with_retry(
+        lambda: _llm_client.ainvoke(prompt, label="force-synthesize"),
+        label="force-synthesize",
+    )
+    return _extract_response(resp.text or "")
 
 
 # ── Chart Generation Helper ─────────────────────────────────────────────────
@@ -655,18 +717,66 @@ async def _generate_charts_from_specs(
 ALL_TOOLS = [execute_queries, answer, clarify, get_column_values_tool, get_kpi_info_tool, explore_tool]
 
 
-def _build_cached_system_message(
+# ── google-genai Content helpers ─────────────────────────────────────────────
+
+def _user_content(text: str) -> types.Content:
+    """Build a user message Content object."""
+    return types.Content(role="user", parts=[types.Part(text=text)])
+
+
+def _tool_response_content(tool_name: str, result_text: str) -> types.Content:
+    """Build a function response Content object."""
+    return types.Content(role="user", parts=[
+        types.Part.from_function_response(name=tool_name, response={"result": result_text})
+    ])
+
+
+def _parse_genai_response(resp):
+    """Parse a google-genai GenerateContentResponse into (text, tool_calls, usage).
+
+    Returns:
+        text: str — any text content from the response
+        tool_calls: list of dicts [{name, args, id}] — function calls from the response
+        usage: dict — token usage info
+    """
+    text = ""
+    tool_calls = []
+
+    if resp.candidates and resp.candidates[0].content and resp.candidates[0].content.parts:
+        for part in resp.candidates[0].content.parts:
+            if part.function_call:
+                tool_calls.append({
+                    "name": part.function_call.name,
+                    "args": dict(part.function_call.args) if part.function_call.args else {},
+                    "id": f"call_{len(tool_calls)}",
+                })
+            elif part.text:
+                text += part.text
+
+    usage = {}
+    if resp.usage_metadata:
+        usage = {
+            "input_tokens": getattr(resp.usage_metadata, "prompt_token_count", 0),
+            "output_tokens": getattr(resp.usage_metadata, "candidates_token_count", 0),
+        }
+
+    return text, tool_calls, usage
+
+
+# ── System prompt builder ────────────────────────────────────────────────────
+
+def _build_system_prompt(
     schema: str,
     metrics: str,
     auth: Any,
     working_memory: str,
     mode: str = "normal",
     report_sub_questions: Optional[List[Dict]] = None,
-) -> SystemMessage:
-    """Build the static system message with cache_control for prompt caching.
+) -> str:
+    """Build the system instruction string for the Gemini config.
 
-    This message stays constant across all loop iterations. Query results
-    flow through ToolMessage objects, not the system prompt.
+    This stays constant across all loop iterations. Query results flow
+    through function_response parts, not the system prompt.
     """
     prompt_text = AGENT_PROMPT.format(
         schema_block=schema or "",
@@ -677,7 +787,7 @@ def _build_cached_system_message(
         max_iterations=MAX_ITERATIONS,
     )
 
-    # Append report mode instructions (moved out of the loop)
+    # Append report mode instructions
     if mode == "report":
         sq_text = "\n".join(
             f"  {sq['id']}. [{sq['type'].upper()}] {sq['question']}"
@@ -700,21 +810,7 @@ def _build_cached_system_message(
         if sq_text:
             prompt_text += f"\n\n## Report Sub-Questions to Investigate\n{sq_text}\nExecute ALL of these in your first batch, then go deeper based on results."
 
-    # Gemini-specific reinforcement
-    if _llm_client.provider == "gemini":
-        prompt_text += "\n\n## MANDATORY: Tool Call Protocol"
-        prompt_text += "\nYou MUST respond with a tool call on every turn. NEVER produce a plain text response."
-        prompt_text += "\n- First turn: call `execute_queries` with multiple SQL queries (they run in parallel — more queries = richer analysis at zero extra cost)."
-        prompt_text += "\n- After reviewing results: call `execute_queries` again if you need follow-up data, or call `answer` if you have enough."
-        prompt_text += "\n- Your analysis text goes in the `response` field of `answer`. Your chart specs go in the `charts` field of `answer`."
-        prompt_text += "\n- NEVER write JSON, chart specs, or analysis as plain text. It MUST go through the `answer` tool."
-
-    # Anthropic supports cache_control content blocks; Gemini needs plain string
-    if _llm_client.provider == "gemini":
-        return SystemMessage(content=prompt_text)
-    return SystemMessage(content=[
-        {"type": "text", "text": prompt_text, "cache_control": {"type": "ephemeral"}}
-    ])
+    return prompt_text
 
 
 def _load_schema_and_metrics() -> tuple:
@@ -895,17 +991,16 @@ async def _synthesize_report(question: str, all_query_results: List[Dict]) -> st
     Charts and tables bind to actual query data via source_query_index,
     so visualizations show real values — not LLM approximations.
 
-    Falls back to Anthropic if Gemini is unavailable.
     Returns a complete self-contained HTML document.
     """
-    # Phase 1: Build results_block (50-row samples for synthesis context)
+    # Phase 1: Build results_block (20-row samples for synthesis context)
     results_parts = []
     for i, qr in enumerate(all_query_results):
         desc = qr.get("description", f"Query {i}")
         sq_type = qr.get("type", "breakdown")
 
         if qr.get("status") == "success":
-            sample = qr.get("sample", qr.get("data", []))[:50]
+            sample = qr.get("sample", qr.get("data", []))[:20]
             cols = qr.get("columns", [])
             results_parts.append(
                 f"### Query {i} ({sq_type}): {desc}\n"
@@ -925,25 +1020,29 @@ async def _synthesize_report(question: str, all_query_results: List[Dict]) -> st
         results_block=results_block,
     )
 
-    # Phase 2: Call Gemini (or Anthropic fallback) for JSON report structure
-    gemini = get_gemini_llm()
-    llm_label = "Gemini" if gemini else "Anthropic (fallback)"
-    llm_to_use = gemini or _llm_client.llm
-
-    logger.info("=== REPORT SYNTHESIZER: Calling %s for JSON ===", llm_label)
+    # Phase 2: Call Gemini for JSON report structure
+    logger.info("=== REPORT SYNTHESIZER: Calling Gemini for JSON ===")
     start = time.time()
-    resp = await asyncio.to_thread(llm_to_use.invoke, prompt)
+    resp = await _invoke_with_retry(
+        lambda: _llm_client.ainvoke(prompt, label="report-synthesize"),
+        label="report-synthesize",
+    )
     duration = time.time() - start
 
-    usage = getattr(resp, "usage_metadata", {})
+    usage = {}
+    if resp.usage_metadata:
+        usage = {
+            "input_tokens": getattr(resp.usage_metadata, "prompt_token_count", 0),
+            "output_tokens": getattr(resp.usage_metadata, "candidates_token_count", 0),
+        }
     logger.info(
-        "=== REPORT SYNTHESIZER DONE (%s, %.2fs) — %d input, %d output tokens ===",
-        llm_label, duration,
+        "=== REPORT SYNTHESIZER DONE (%.2fs) — %d input, %d output tokens ===",
+        duration,
         usage.get("input_tokens", 0),
         usage.get("output_tokens", 0),
     )
 
-    content = _extract_response(resp.content)
+    content = _extract_response(resp.text or "")
 
     # Phase 3: Parse JSON report structure
     report_dict = _parse_report_json(content)
@@ -974,40 +1073,65 @@ def _is_conversational(question: str) -> bool:
 
 # ── Message Serialization (for clarification state persistence) ──────────────
 
-def _serialize_messages(messages: List) -> List[Dict]:
-    """Serialize LangChain messages to JSON-safe dicts for agent_state storage."""
+def _serialize_messages(contents: List[types.Content]) -> List[Dict]:
+    """Serialize google-genai Content objects to JSON-safe dicts for agent_state storage."""
     serialized = []
-    for msg in messages:
-        entry = {"type": msg.__class__.__name__}
-        # Handle content that may be a list of blocks (cache_control) or a string
-        entry["content"] = msg.content
-        if hasattr(msg, "tool_calls") and msg.tool_calls:
-            entry["tool_calls"] = msg.tool_calls
-        if hasattr(msg, "tool_call_id") and msg.tool_call_id:
-            entry["tool_call_id"] = msg.tool_call_id
+    for content in contents:
+        entry = {"role": content.role, "parts": []}
+        for part in content.parts:
+            if part.function_call:
+                entry["parts"].append({
+                    "type": "function_call",
+                    "name": part.function_call.name,
+                    "args": dict(part.function_call.args) if part.function_call.args else {},
+                })
+            elif part.function_response:
+                resp_data = part.function_response.response
+                entry["parts"].append({
+                    "type": "function_response",
+                    "name": part.function_response.name,
+                    "response": dict(resp_data) if resp_data else {},
+                })
+            elif part.text:
+                entry["parts"].append({"type": "text", "text": part.text})
         serialized.append(entry)
     return serialized
 
 
-def _deserialize_messages(serialized: List[Dict]) -> List:
-    """Restore LangChain messages from serialized dicts."""
-    restored = []
+def _deserialize_messages(serialized: List[Dict]) -> List[types.Content]:
+    """Restore google-genai Content objects from serialized dicts."""
+    contents = []
     for entry in serialized:
-        msg_type = entry.get("type", "")
-        content = entry.get("content", "")
-        if msg_type == "SystemMessage":
-            restored.append(SystemMessage(content=content))
-        elif msg_type == "HumanMessage":
-            restored.append(HumanMessage(content=content))
-        elif msg_type == "AIMessage":
-            tool_calls = entry.get("tool_calls", [])
-            restored.append(AIMessage(content=content, tool_calls=tool_calls))
-        elif msg_type == "ToolMessage":
-            restored.append(ToolMessage(
-                content=content,
-                tool_call_id=entry.get("tool_call_id", ""),
-            ))
-    return restored
+        parts = []
+        for p in entry.get("parts", []):
+            p_type = p.get("type", "")
+            if p_type == "text":
+                parts.append(types.Part(text=p["text"]))
+            elif p_type == "function_call":
+                parts.append(types.Part.from_function_call(
+                    name=p["name"],
+                    args=p.get("args", {}),
+                ))
+            elif p_type == "function_response":
+                parts.append(types.Part.from_function_response(
+                    name=p["name"],
+                    response=p.get("response", {}),
+                ))
+        contents.append(types.Content(role=entry.get("role", "user"), parts=parts))
+    return contents
+
+
+# ── Gemini config builder ────────────────────────────────────────────────────
+
+def _build_gemini_config(system_prompt: str) -> types.GenerateContentConfig:
+    """Build the GenerateContentConfig with tools and system instruction."""
+    return types.GenerateContentConfig(
+        tools=ALL_TOOLS,
+        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+        temperature=_llm_client.temperature,
+        max_output_tokens=8192,
+        system_instruction=system_prompt,
+    )
 
 
 # ── Main Entry Point ─────────────────────────────────────────────────────────
@@ -1038,14 +1162,16 @@ async def run_agent(
     # Conversational fast-path — skip schema/tools/full prompt for greetings
     if not agent_state and mode == "normal" and _is_conversational(question):
         logger.info("=== CONVERSATIONAL FAST-PATH ===")
-        fast_llm = _llm_client._pick_gemini() if _llm_client.provider == "gemini" else _llm_client.llm
-        resp = await asyncio.to_thread(
-            fast_llm.invoke,
-            f"You are Frammer AI, a friendly analytics assistant. Respond briefly: {question}",
+        resp = await _invoke_with_retry(
+            lambda: _llm_client.ainvoke(
+                f"You are Frammer AI, a friendly analytics assistant. Respond briefly: {question}",
+                label="conversational",
+            ),
+            label="conversational",
         )
         return AgentResult(
             intent="conversational",
-            response=_extract_response(resp.content),
+            response=_extract_response(resp.text or ""),
             actions=["Conversational (fast path)"],
         )
 
@@ -1074,11 +1200,7 @@ async def run_agent(
         # 1. Load schema + metrics
         schema, metrics = _load_schema_and_metrics()
 
-        # 2. Build LLM with tools (pick fresh Gemini client from pool per request)
-        base_llm = _llm_client._pick_gemini() if _llm_client.provider == "gemini" else _llm_client.llm
-        agent_llm = base_llm.bind_tools(ALL_TOOLS)
-
-        # 2b. Report planning phase
+        # 2. Report planning phase
         report_sub_questions: List[Dict] = []
         if mode == "report" and not agent_state:
             try:
@@ -1089,37 +1211,42 @@ async def run_agent(
             except Exception as plan_err:
                 logger.warning("Report planning failed: %s", plan_err)
 
-        # 3. Build messages ONCE — static system prompt + history + question
-        #    (replaces per-iteration _build_system_prompt + _build_messages)
+        # 3. Build system prompt and Gemini config
+        system_prompt = _build_system_prompt(
+            schema, metrics, auth, working_memory, mode, report_sub_questions,
+        )
+        gemini_config = _build_gemini_config(system_prompt)
+
+        # 4. Build contents list — history + question
         if agent_state and agent_state.get("messages"):
-            messages = _deserialize_messages(agent_state["messages"])
-            messages.append(HumanMessage(content=question))
+            contents = _deserialize_messages(agent_state["messages"])
+            contents.append(_user_content(question))
         else:
-            system_msg = _build_cached_system_message(
-                schema, metrics, auth, working_memory, mode, report_sub_questions,
-            )
-            messages = [system_msg]
+            contents: List[types.Content] = []
             for msg in (history or [])[-4:]:
                 role = msg.get("role", "")
                 content = msg.get("content", "") or ""
                 if role == "user":
-                    messages.append(HumanMessage(content=content))
+                    contents.append(_user_content(content))
                 elif role == "assistant":
-                    messages.append(AIMessage(content=content))
-            messages.append(HumanMessage(content=question))
+                    contents.append(types.Content(role="model", parts=[types.Part(text=content)]))
+            contents.append(_user_content(question))
 
-        # 4. ReAct loop — accumulate messages instead of rebuilding
+        # 5. ReAct loop — accumulate contents instead of rebuilding
         answer_text = ""
         answer_charts: List[ChartResult] = []
 
         for iteration in range(start_iter, MAX_ITERATIONS):
-            logger.info("=== ITERATION %d: Calling LLM (%d messages) ===", iteration + 1, len(messages))
+            logger.info("=== ITERATION %d: Calling LLM (%d contents) ===", iteration + 1, len(contents))
             actions_log.append(f"Thinking (round {iteration + 1})...")
             start = time.time()
-            resp = await asyncio.to_thread(agent_llm.invoke, messages)
+            resp = await _invoke_with_retry(
+                lambda: _llm_client.ainvoke_with_tools(contents, gemini_config),
+                label=f"react-{iteration+1}",
+            )
             duration = time.time() - start
 
-            usage = getattr(resp, "usage_metadata", {})
+            text, tool_calls, usage = _parse_genai_response(resp)
             logger.info(
                 "=== ITERATION %d DONE (%.2fs) — %d input, %d output tokens ===",
                 iteration + 1, duration,
@@ -1127,10 +1254,9 @@ async def run_agent(
                 usage.get("output_tokens", 0),
             )
 
-            # Extract tool call
-            tool_calls = getattr(resp, "tool_calls", [])
+            # No tool call — handle inline response
             if not tool_calls:
-                raw_text = _extract_response(resp.content)
+                raw_text = _extract_response(text)
                 if mode == "report":
                     logger.info("=== REPORT MODE: No tool call, treating as answer ===")
                     answer_text = raw_text
@@ -1139,7 +1265,7 @@ async def run_agent(
 
                 # Check if Gemini dumped an analytical response without using the answer tool
                 cleaned_text, inline_charts = _extract_chart_specs_from_text(raw_text)
-                has_data = bool(all_query_results)  # We already ran queries
+                has_data = bool(all_query_results)
                 is_analytical = has_data or len(raw_text) > 500 or bool(inline_charts)
 
                 if is_analytical:
@@ -1161,12 +1287,12 @@ async def run_agent(
                     )
 
             tc = tool_calls[0]
-            tool_name = tc.get("name", "")
-            args = tc.get("args", {})
-            tool_call_id = tc.get("id", f"call_{iteration}")
+            tool_name = tc["name"]
+            args = tc["args"]
 
-            # Append the AIMessage (with tool_calls) so the LLM sees its prior decisions
-            messages.append(resp)
+            # Append the model's response (with function call) so the LLM sees its prior decisions
+            if resp.candidates and resp.candidates[0].content:
+                contents.append(resp.candidates[0].content)
 
             # ── EXECUTE QUERIES ──
             if tool_name == "execute_queries":
@@ -1191,9 +1317,9 @@ async def run_agent(
                             f"SQL Error — {result.get('error', '')[:60]}"
                         )
 
-                # Send results back via ToolMessage (not system prompt)
+                # Send results back via function_response
                 tool_result_text = _summarize_query_results(batch_results)
-                messages.append(ToolMessage(content=tool_result_text, tool_call_id=tool_call_id))
+                contents.append(_tool_response_content(tool_name, tool_result_text))
                 continue  # Next iteration
 
             # ── CLARIFY ──
@@ -1215,7 +1341,7 @@ async def run_agent(
                         "actions_log": actions_log,
                         "last_sql": last_sql,
                         "iteration": iteration,
-                        "messages": _serialize_messages(messages),
+                        "messages": _serialize_messages(contents),
                     },
                 )
 
@@ -1243,7 +1369,7 @@ async def run_agent(
                 all_query_results.append(result)
                 all_full_data.append(result)
                 tool_result_text = _summarize_query_results([result])
-                messages.append(ToolMessage(content=tool_result_text, tool_call_id=tool_call_id))
+                contents.append(_tool_response_content(tool_name, tool_result_text))
                 continue
 
             # ── GET KPI INFO ──
@@ -1254,7 +1380,7 @@ async def run_agent(
                 all_query_results.append(result)
                 all_full_data.append(result)
                 tool_result_text = _summarize_query_results([result])
-                messages.append(ToolMessage(content=tool_result_text, tool_call_id=tool_call_id))
+                contents.append(_tool_response_content(tool_name, tool_result_text))
                 continue
 
             # ── EXPLORE ──
@@ -1266,7 +1392,7 @@ async def run_agent(
                 all_query_results.append(result)
                 all_full_data.append(result)
                 tool_result_text = _summarize_query_results([result])
-                messages.append(ToolMessage(content=tool_result_text, tool_call_id=tool_call_id))
+                contents.append(_tool_response_content(tool_name, tool_result_text))
                 continue
 
         else:
@@ -1335,13 +1461,15 @@ async def run_agent_stream(
     # Conversational fast-path — skip schema/tools/full prompt for greetings
     if not agent_state and mode == "normal" and _is_conversational(question):
         logger.info("=== STREAM CONVERSATIONAL FAST-PATH ===")
-        fast_llm = _llm_client._pick_gemini() if _llm_client.provider == "gemini" else _llm_client.llm
-        resp = await asyncio.to_thread(
-            fast_llm.invoke,
-            f"You are Frammer AI, a friendly analytics assistant. Respond briefly: {question}",
+        resp = await _invoke_with_retry(
+            lambda: _llm_client.ainvoke(
+                f"You are Frammer AI, a friendly analytics assistant. Respond briefly: {question}",
+                label="stream-conversational",
+            ),
+            label="stream-conversational",
         )
         yield {"type": "complete", "message": {
-            "response": _extract_response(resp.content),
+            "response": _extract_response(resp.text or ""),
             "intent": "conversational",
             "actions": ["Conversational (fast path)"],
             "charts": [],
@@ -1357,11 +1485,7 @@ async def run_agent_stream(
         # 1. Load schema + metrics
         schema, metrics = _load_schema_and_metrics()
 
-        # 2. Build LLM with tools (pick fresh Gemini client from pool per request)
-        base_llm = _llm_client._pick_gemini() if _llm_client.provider == "gemini" else _llm_client.llm
-        agent_llm = base_llm.bind_tools(ALL_TOOLS)
-
-        # 3. State — restore if resuming from clarification
+        # 2. State — restore if resuming from clarification
         if agent_state:
             all_query_results = agent_state.get("query_results", [])
             all_full_data = agent_state.get("full_data", [])
@@ -1380,7 +1504,7 @@ async def run_agent_stream(
         answer_charts_data = []
         report_sub_questions: List[Dict] = []
 
-        # 3b. Report planning phase — decompose into typed sub-questions
+        # 3. Report planning phase — decompose into typed sub-questions
         if mode == "report" and not agent_state:
             yield {"type": "phase", "phase": "planning report"}
             try:
@@ -1395,25 +1519,28 @@ async def run_agent_stream(
             except Exception as plan_err:
                 logger.warning("Report planning failed, continuing without plan: %s", plan_err)
 
-        # 3c. Build messages ONCE — static system prompt + history + question
+        # 4. Build system prompt and Gemini config
+        system_prompt = _build_system_prompt(
+            schema, metrics, auth, working_memory, mode, report_sub_questions,
+        )
+        gemini_config = _build_gemini_config(system_prompt)
+
+        # 5. Build contents list
         if agent_state and agent_state.get("messages"):
-            messages = _deserialize_messages(agent_state["messages"])
-            messages.append(HumanMessage(content=question))
+            contents = _deserialize_messages(agent_state["messages"])
+            contents.append(_user_content(question))
         else:
-            system_msg = _build_cached_system_message(
-                schema, metrics, auth, working_memory, mode, report_sub_questions,
-            )
-            messages = [system_msg]
+            contents: List[types.Content] = []
             for msg in (history or [])[-4:]:
                 role = msg.get("role", "")
                 content = msg.get("content", "") or ""
                 if role == "user":
-                    messages.append(HumanMessage(content=content))
+                    contents.append(_user_content(content))
                 elif role == "assistant":
-                    messages.append(AIMessage(content=content))
-            messages.append(HumanMessage(content=question))
+                    contents.append(types.Content(role="model", parts=[types.Part(text=content)]))
+            contents.append(_user_content(question))
 
-        # 4. ReAct loop — accumulate messages instead of rebuilding
+        # 6. ReAct loop — accumulate contents instead of rebuilding
         report_step_idx = 0  # Track which sub-question we're on
         for iteration in range(start_iter, MAX_ITERATIONS):
             # Yield thinking phase
@@ -1422,14 +1549,18 @@ async def run_agent_stream(
                 phase_label = "thinking (continued)"
             yield {"type": "phase", "phase": phase_label}
 
-            logger.info("=== STREAM ITERATION %d: Calling LLM (%d messages) ===", iteration + 1, len(messages))
+            logger.info("=== STREAM ITERATION %d: Calling LLM (%d contents) ===", iteration + 1, len(contents))
             actions_log.append(f"Thinking (round {iteration + 1})...")
-            resp = await asyncio.to_thread(agent_llm.invoke, messages)
+            resp = await _invoke_with_retry(
+                lambda: _llm_client.ainvoke_with_tools(contents, gemini_config),
+                label=f"stream-react-{iteration+1}",
+            )
 
-            # Extract tool call
-            tool_calls = getattr(resp, "tool_calls", [])
+            text, tool_calls, usage = _parse_genai_response(resp)
+
+            # No tool call — handle inline response
             if not tool_calls:
-                raw_text = _extract_response(resp.content)
+                raw_text = _extract_response(text)
                 if mode == "report":
                     logger.info("=== REPORT MODE: No tool call, treating as answer ===")
                     answer_text = raw_text
@@ -1473,12 +1604,12 @@ async def run_agent_stream(
                     return
 
             tc = tool_calls[0]
-            tool_name = tc.get("name", "")
-            args = tc.get("args", {})
-            tool_call_id = tc.get("id", f"call_{iteration}")
+            tool_name = tc["name"]
+            args = tc["args"]
 
-            # Append the AIMessage (with tool_calls) so the LLM sees its prior decisions
-            messages.append(resp)
+            # Append the model's response so the LLM sees its prior decisions
+            if resp.candidates and resp.candidates[0].content:
+                contents.append(resp.candidates[0].content)
 
             # ── EXECUTE QUERIES ──
             if tool_name == "execute_queries":
@@ -1539,9 +1670,9 @@ async def run_agent_stream(
                         }
                         report_step_idx += 1
 
-                # Send results back via ToolMessage (not system prompt)
+                # Send results back via function_response
                 tool_result_text = _summarize_query_results(batch_results)
-                messages.append(ToolMessage(content=tool_result_text, tool_call_id=tool_call_id))
+                contents.append(_tool_response_content(tool_name, tool_result_text))
                 continue  # Next iteration
 
             # ── CLARIFY ──
@@ -1559,7 +1690,7 @@ async def run_agent_stream(
                         "actions_log": actions_log,
                         "last_sql": last_sql,
                         "iteration": iteration,
-                        "messages": _serialize_messages(messages),
+                        "messages": _serialize_messages(contents),
                     },
                 }
                 return  # Stop streaming — wait for user reply
@@ -1601,7 +1732,7 @@ async def run_agent_stream(
                 all_query_results.append(result)
                 all_full_data.append(result)
                 tool_result_text = _summarize_query_results([result])
-                messages.append(ToolMessage(content=tool_result_text, tool_call_id=tool_call_id))
+                contents.append(_tool_response_content(tool_name, tool_result_text))
 
                 yield {
                     "type": "step_complete",
@@ -1622,7 +1753,7 @@ async def run_agent_stream(
                 all_query_results.append(result)
                 all_full_data.append(result)
                 tool_result_text = _summarize_query_results([result])
-                messages.append(ToolMessage(content=tool_result_text, tool_call_id=tool_call_id))
+                contents.append(_tool_response_content(tool_name, tool_result_text))
 
                 yield {
                     "type": "step_complete",
@@ -1644,7 +1775,7 @@ async def run_agent_stream(
                 all_query_results.append(result)
                 all_full_data.append(result)
                 tool_result_text = _summarize_query_results([result])
-                messages.append(ToolMessage(content=tool_result_text, tool_call_id=tool_call_id))
+                contents.append(_tool_response_content(tool_name, tool_result_text))
 
                 yield {
                     "type": "step_complete",
