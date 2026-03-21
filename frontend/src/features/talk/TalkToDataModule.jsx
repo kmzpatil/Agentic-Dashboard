@@ -185,6 +185,30 @@ function AssistantMessageItem({ message, onOpenCanvas, onNavigate }) {
     );
   }
 
+  // Clarification message — distinct visual treatment
+  if (message.intent === 'clarification') {
+    return (
+      <div className="max-w-[780px]">
+        <div className="mb-2.5 flex items-center gap-2.5">
+          <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-amber-500/10">
+            <MessageSquare size={13} className="text-amber-400" />
+          </div>
+          <span className="text-[12px] font-semibold text-neutral-600">Frammer Copilot</span>
+          <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-amber-400">
+            Clarification
+          </span>
+        </div>
+        <div className="pl-[34px]">
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+              {message.markdown || message.content || ''}
+            </ReactMarkdown>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const artifacts = message.artifacts || [];
   const hasChart = artifacts.some(a => a.kind === 'chart');
   const kpiArtifact = !hasChart ? artifacts.find(a => a.kind === 'kpi-grid') : null;
@@ -494,6 +518,7 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
   const [reportMode, setReportMode] = useState(false);
   const [reportSubQuestions, setReportSubQuestions] = useState([]);
   const [reportStepStatus, setReportStepStatus] = useState(new Map());
+  const [pendingClarification, setPendingClarification] = useState(false);
   const endRef = useRef(null);
 
   const voice = useVoiceInput({
@@ -525,6 +550,7 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
     setMessages([]);
     setConversationId(null);
     setCanvasMessage(null);
+    setPendingClarification(false);
     setInput(routeState?.prompt || '');
   };
 
@@ -538,6 +564,7 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
       setConversationId(id);
       setCanvasMessage(null);
       setMessages(payload.messages || []);
+      setPendingClarification(!!payload.agent_state);
     } catch { /* ignore */ }
   };
 
@@ -557,6 +584,7 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
     if (!text || loading) return;
 
     setInput('');
+    setPendingClarification(false);
     setMessages(curr => [...curr, { role: 'user', content: text }]);
     setLoading(true);
     setStreamPhase('');
@@ -689,6 +717,28 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
                 setCompletedSteps(new Map());
                 break;
 
+              case 'clarification_needed': {
+                const clarificationMessage = {
+                  role: 'assistant',
+                  content: event.question,
+                  markdown: event.question,
+                  intent: 'clarification',
+                  artifacts: [],
+                  datasets: [],
+                  suggested_actions: [],
+                  actions: [],
+                  sql: '',
+                  error: '',
+                };
+                setMessages(curr => [...curr, clarificationMessage]);
+                setPendingClarification(true);
+                setLoading(false);
+                setStreamPhase('');
+                setPlanSteps([]);
+                setCompletedSteps(new Map());
+                break;
+              }
+
               default:
                 break;
             }
@@ -733,7 +783,9 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
           reportHtml: fbReportHtml,
         };
         setMessages(curr => [...curr, assistantMessage]);
-        if (!fbIsReport && shouldAutoOpenCanvas(assistantMessage.artifacts)) {
+        if (fbIntent === 'clarification') {
+          setPendingClarification(true);
+        } else if (!fbIsReport && shouldAutoOpenCanvas(assistantMessage.artifacts)) {
           setCanvasMessage(assistantMessage);
         }
         fetchConversations();

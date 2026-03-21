@@ -28,6 +28,7 @@ import json
 import logging
 import re
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -173,6 +174,7 @@ MAX_ITERATIONS = 10  # Safety cap — agent finishes naturally via answer/clarif
 
 # ── Schema cache ─────────────────────────────────────────────────────────────
 _schema_cache: Optional[str] = None
+_schema_cache_lock = threading.Lock()
 
 # ── LLM client ───────────────────────────────────────────────────────────────
 _llm_client = LLMClient()
@@ -400,7 +402,8 @@ Think like a data analyst. For every data question, consider what angles would g
 - The question could refer to multiple different metrics, entities, or time periods.
 - A filter value is ambiguous (e.g. "recent" without a clear timeframe).
 - The user's intent is genuinely unclear between two+ interpretations.
-- Do NOT use clarify for simple questions. Most queries (99%+) should proceed without clarification.
+- Use clarify when ambiguity would lead you to guess. A brief clarification is better than an incorrect analysis.
+- Prefer to proceed without clarification when you can make a reasonable default assumption (e.g., "recent" defaults to last 30 days). Mention the assumption in your answer.
 
 ## Example Analysis Patterns
 
@@ -717,8 +720,9 @@ def _build_cached_system_message(
 def _load_schema_and_metrics() -> tuple:
     """Load and cache schema + metrics."""
     global _schema_cache
-    if not _schema_cache:
-        _schema_cache = get_frammer_schema()
+    with _schema_cache_lock:
+        if not _schema_cache:
+            _schema_cache = get_frammer_schema()
     all_metrics = "\n".join(f"- **{k}**: {v}" for k, v in METRIC_DICTIONARY.items())
     all_metrics += "\n\n" + retrieve_metric_definitions("XYZ_FAIL")
     return _schema_cache, all_metrics
@@ -1034,8 +1038,9 @@ async def run_agent(
     # Conversational fast-path — skip schema/tools/full prompt for greetings
     if not agent_state and mode == "normal" and _is_conversational(question):
         logger.info("=== CONVERSATIONAL FAST-PATH ===")
+        fast_llm = _llm_client._pick_gemini() if _llm_client.provider == "gemini" else _llm_client.llm
         resp = await asyncio.to_thread(
-            _llm_client.llm.invoke,
+            fast_llm.invoke,
             f"You are Frammer AI, a friendly analytics assistant. Respond briefly: {question}",
         )
         return AgentResult(
@@ -1330,8 +1335,9 @@ async def run_agent_stream(
     # Conversational fast-path — skip schema/tools/full prompt for greetings
     if not agent_state and mode == "normal" and _is_conversational(question):
         logger.info("=== STREAM CONVERSATIONAL FAST-PATH ===")
+        fast_llm = _llm_client._pick_gemini() if _llm_client.provider == "gemini" else _llm_client.llm
         resp = await asyncio.to_thread(
-            _llm_client.llm.invoke,
+            fast_llm.invoke,
             f"You are Frammer AI, a friendly analytics assistant. Respond briefly: {question}",
         )
         yield {"type": "complete", "message": {
