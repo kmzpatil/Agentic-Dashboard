@@ -496,7 +496,7 @@ export default function PublishPredictorGame({ authUser }) {
 
   // ── render ─────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
@@ -588,9 +588,9 @@ export default function PublishPredictorGame({ authUser }) {
       )}
 
       {/* Main layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         {/* ── Left: Configure ── */}
-        <div className="lg:col-span-2 rounded-2xl border border-neutral-800 bg-[#0a0a0a] p-6 space-y-5">
+        <div className="lg:col-span-2 rounded-2xl border border-neutral-800 bg-[#0a0a0a] p-4 space-y-3">
           <h4 className="text-[10px] font-bold uppercase tracking-[0.15em] text-neutral-500">
             Configure Asset
           </h4>
@@ -654,7 +654,7 @@ export default function PublishPredictorGame({ authUser }) {
             }))}
           />
 
-          <div className="pt-3 border-t border-neutral-800/50 space-y-4">
+          <div className="pt-2 border-t border-neutral-800/50 space-y-3">
             <div className="flex items-end gap-2">
               <div className="flex-1 min-w-0">
                 <DurationSlider
@@ -733,9 +733,9 @@ export default function PublishPredictorGame({ authUser }) {
         </div>
 
         {/* ── Right: Prediction ── */}
-        <div className="lg:col-span-3 space-y-5">
+        <div className="lg:col-span-3 space-y-4">
           {/* Gauge */}
-          <div className="rounded-2xl border border-neutral-800 bg-[#0a0a0a] p-6 flex flex-col items-center">
+          <div className="rounded-2xl border border-neutral-800 bg-[#0a0a0a] p-4 flex flex-col items-center">
             {result ? (
               <ProbabilityGauge
                 value={Number(result.publish_probability || 0)}
@@ -770,8 +770,8 @@ export default function PublishPredictorGame({ authUser }) {
 
           {/* RCA stats */}
           {result && (
-            <div className="rounded-2xl border border-neutral-800 bg-[#0a0a0a] p-6">
-              <h4 className="text-[10px] font-bold uppercase tracking-[0.15em] text-neutral-500 mb-4">
+            <div className="rounded-2xl border border-neutral-800 bg-[#0a0a0a] p-4">
+              <h4 className="text-[10px] font-bold uppercase tracking-[0.15em] text-neutral-500 mb-3">
                 RCA Stats (Normalized Contribution)
               </h4>
               {!normalizedImpacts.length ? (
@@ -779,14 +779,14 @@ export default function PublishPredictorGame({ authUser }) {
                   SHAP diagnostics unavailable for this prediction.
                 </div>
               ) : (
-                <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                   {normalizedImpacts.map((item, idx) => {
                     const impact = Number(item.impact || 0);
                     const positive = impact >= 0;
                     return (
                       <div
                         key={`${item.feature}-${idx}`}
-                        className="flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900/40 p-3"
+                        className="flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900/40 px-3 py-2"
                       >
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2.5">

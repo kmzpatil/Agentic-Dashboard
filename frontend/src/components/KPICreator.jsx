@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, Sparkles, FlaskConical, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
 const FORMULA_ATOMS = [
   'uploaded_count', 'created_count', 'published_count',

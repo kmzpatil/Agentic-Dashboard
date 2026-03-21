@@ -51,7 +51,7 @@ export default function KpiDetailsModal({ kpi, onClose }) {
     const fetchData = async () => {
       try {
         const token = localStorage.getItem('frammer_auth_token');
-        const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api';
+        const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
 
         // Custom KPIs use the /api/kpi/:id endpoint; built-ins use /api/advanced-kpis/:id
         const url = kpi.isCustom

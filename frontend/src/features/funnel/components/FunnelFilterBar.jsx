@@ -92,14 +92,14 @@ function FilterSelect({ label, value, options, onChange, disabled }) {
   );
 }
 
-export default function FunnelFilterBar({ authUser, breakdown, filters, onBreakdownChange, onFiltersChange }) {
+export default function FunnelFilterBar({ authUser, breakdown, filters, onBreakdownChange, onFiltersChange, disabled: externalDisabled }) {
   const role    = authUser?.role || 'user';
   const isAdmin = role === 'website_admin';
   const isAdminOrClientAdmin = role === 'website_admin' || role === 'client_admin';
 
   const { data: opts, loading: optionsLoading, error: optionsError } = useApi(`${API_BASE}/funnel/filter-options`, []);
   const options = opts || { clients: [], input_types: [], languages: [], channels: [], users: [], teams: [] };
-  const filtersDisabled = Boolean(optionsError) || optionsLoading;
+  const filtersDisabled = Boolean(optionsError) || optionsLoading || externalDisabled;
 
   const allowedViewBy = ALL_VIEW_BY.filter((o) => o.roles.includes(role));
 
@@ -118,7 +118,7 @@ export default function FunnelFilterBar({ authUser, breakdown, filters, onBreakd
       <div className="flex flex-nowrap items-center gap-2">
 
         {/* View By */}
-        <span className="text-[13px] font-bold uppercase tracking-[0.12em] text-neutral-500 select-none shrink-0">View by</span>
+        <span className={`text-[13px] font-bold uppercase tracking-[0.12em] select-none shrink-0 ${externalDisabled ? 'text-neutral-700' : 'text-neutral-500'}`}>View by</span>
 
         <div className="h-4 w-px bg-neutral-800 shrink-0" />
 
@@ -128,13 +128,16 @@ export default function FunnelFilterBar({ authUser, breakdown, filters, onBreakd
             return (
               <button
                 key={item.value}
-                onClick={() => onBreakdownChange(item.value)}
+                onClick={() => { if (!externalDisabled) onBreakdownChange(item.value); }}
+                disabled={externalDisabled}
                 className={[
                   'relative px-3 py-1 rounded-full text-[14px] font-semibold transition-all duration-150',
-                  on ? 'text-white' : 'text-neutral-500 hover:text-neutral-300',
+                  externalDisabled
+                    ? 'text-neutral-600 cursor-not-allowed'
+                    : on ? 'text-white' : 'text-neutral-500 hover:text-neutral-300',
                 ].join(' ')}
               >
-                {on && <span className="absolute inset-0 rounded-full bg-white/10 ring-1 ring-white/15" />}
+                {on && !externalDisabled && <span className="absolute inset-0 rounded-full bg-white/10 ring-1 ring-white/15" />}
                 <span className="relative">{item.label}</span>
               </button>
             );

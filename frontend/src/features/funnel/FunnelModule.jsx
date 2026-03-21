@@ -352,6 +352,7 @@ export default function FunnelModule({ authUser, routeState = {}, onNavigate }) 
           filters={effectiveFilters}
           onBreakdownChange={handleBreakdownChange}
           onFiltersChange={handleFiltersChange}
+          disabled={analysisTab === 'predictor'}
         />
 
         {loading && <FunnelSkeleton />}

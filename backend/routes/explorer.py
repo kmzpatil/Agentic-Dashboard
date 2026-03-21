@@ -111,11 +111,11 @@ def get_multidim(
         # Apply Global Date Filters to Matrix Query
         if startDate:
             matrix_params.append(startDate)
-            matrix_where.append(f"{date_expr} >= ${len(matrix_params)}::date")
+            matrix_where.append(f"{date_expr} >= CAST(${len(matrix_params)} AS date)")
         
         if endDate:
             matrix_params.append(endDate)
-            matrix_where.append(f"{date_expr} <= ${len(matrix_params)}::date")
+            matrix_where.append(f"{date_expr} <= CAST(${len(matrix_params)} AS date)")
 
         # Add the dynamic IN clause for the Matrix Query (Channels)
         if channels and channels != "all":
@@ -150,11 +150,11 @@ def get_multidim(
             # Apply Date Filters to Time Series
             if startDate:
                 ts_params.append(startDate)
-                ts_where.append(f"{date_expr} >= ${len(ts_params)}::date")
+                ts_where.append(f"{date_expr} >= CAST(${len(ts_params)} AS date)")
             
             if endDate:
                 ts_params.append(endDate)
-                ts_where.append(f"{date_expr} <= ${len(ts_params)}::date")
+                ts_where.append(f"{date_expr} <= CAST(${len(ts_params)} AS date)")
 
             if dim1Value:
                 ts_params.append(dim1Value)

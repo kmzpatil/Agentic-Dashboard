@@ -877,8 +877,8 @@ export default function ExplorerModule({ authUser }) {
                                   },
                                 },
                                 scales: {
-                                  x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#525252' } },
-                                  y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#525252' } },
+                                  x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#a3a3a3' } },
+                                  y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#a3a3a3' } },
                                 },
                                 borderRadius: 6,
                                 borderSkipped: false,
@@ -902,8 +902,8 @@ export default function ExplorerModule({ authUser }) {
                                   },
                                 },
                                 scales: {
-                                  x: { stacked: true, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#525252' } },
-                                  y: { stacked: true, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#525252' } },
+                                  x: { stacked: true, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#a3a3a3' } },
+                                  y: { stacked: true, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#a3a3a3' } },
                                 },
                               }} />
                           }
