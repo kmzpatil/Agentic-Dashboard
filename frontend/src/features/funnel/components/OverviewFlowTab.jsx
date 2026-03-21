@@ -10,6 +10,8 @@ export default function OverviewFlowTab({
   groupedCompositionCount,
   stageSankeyData,
   stageSankeyOptions,
+  stageChartRef,
+  handleStageClick,
   compositionSankeyData,
   compositionSankeyOptions,
   compositionChartRef,
@@ -63,7 +65,14 @@ export default function OverviewFlowTab({
 
             <div className={sankeyCanvasClass} aria-label="Stage flow sankey">
               {stageLinksCount > 0 ? (
-                <Chart key={`stage-${breakdown}-${stageSignature}`} type="sankey" data={stageSankeyData} options={stageSankeyOptions} />
+                <Chart
+                  key={`stage-${breakdown}-${stageSignature}`}
+                  ref={stageChartRef}
+                  type="sankey"
+                  data={stageSankeyData}
+                  options={stageSankeyOptions}
+                  onClick={handleStageClick}
+                />
               ) : (
                 <div className="flex items-center justify-center h-full text-neutral-400 text-sm">No stage flow data for current filters</div>
               )}
