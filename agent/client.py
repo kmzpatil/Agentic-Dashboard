@@ -16,6 +16,7 @@ import logging
 import os
 import random
 import re
+import threading
 import time
 from typing import List, Optional
 
@@ -52,6 +53,7 @@ except ImportError:
 # ── Gemini client pool (built lazily, keyed by (model, temperature)) ────────
 
 _gemini_pools: dict = {}  # (model, temperature) -> List[ChatGoogleGenerativeAI]
+_gemini_pools_lock = threading.Lock()
 
 
 def _get_gemini_pool(model: str, temperature: float) -> List:
@@ -60,25 +62,26 @@ def _get_gemini_pool(model: str, temperature: float) -> List:
     one per API key, for the given model+temperature combo.
     """
     cache_key = (model, temperature)
-    if cache_key not in _gemini_pools:
-        if ChatGoogleGenerativeAI is None:
-            raise ImportError("langchain-google-genai is not installed.")
-        if not _GEMINI_KEYS:
-            raise ValueError("No GEMINI_KEYS found in environment")
-        pool = []
-        for key in _GEMINI_KEYS:
-            pool.append(ChatGoogleGenerativeAI(
-                model=model,
-                google_api_key=key,
-                temperature=temperature,
-                max_output_tokens=8192,
-            ))
-        _gemini_pools[cache_key] = pool
-        logger.info(
-            "Gemini pool created: model=%s, temp=%.1f, %d clients",
-            model, temperature, len(pool),
-        )
-    return _gemini_pools[cache_key]
+    with _gemini_pools_lock:
+        if cache_key not in _gemini_pools:
+            if ChatGoogleGenerativeAI is None:
+                raise ImportError("langchain-google-genai is not installed.")
+            if not _GEMINI_KEYS:
+                raise ValueError("No GEMINI_KEYS found in environment")
+            pool = []
+            for key in _GEMINI_KEYS:
+                pool.append(ChatGoogleGenerativeAI(
+                    model=model,
+                    google_api_key=key,
+                    temperature=temperature,
+                    max_output_tokens=8192,
+                ))
+            _gemini_pools[cache_key] = pool
+            logger.info(
+                "Gemini pool created: model=%s, temp=%.1f, %d clients",
+                model, temperature, len(pool),
+            )
+        return _gemini_pools[cache_key]
 
 
 class LLMResponse:

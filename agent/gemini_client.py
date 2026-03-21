@@ -8,6 +8,7 @@ Pre-builds a pool of clients (one per API key) and picks randomly each call.
 import logging
 import os
 import random
+import threading
 
 from dotenv import load_dotenv
 from pathlib import Path
@@ -26,37 +27,39 @@ _GEMINI_KEYS = [
 
 # Lazy-built pool of report LLM clients
 _report_pool = []
+_report_pool_lock = threading.Lock()
 
 
 def _build_report_pool():
     """Build one ChatGoogleGenerativeAI client per API key."""
     global _report_pool
-    if _report_pool:
-        return
+    with _report_pool_lock:
+        if _report_pool:
+            return
 
-    model = os.getenv("GEMINI_REPORT_MODEL", "gemini-3-flash-preview").strip().strip('"')
+        model = os.getenv("GEMINI_REPORT_MODEL", "gemini-3-flash-preview").strip().strip('"')
 
-    try:
-        from langchain_google_genai import ChatGoogleGenerativeAI
-    except ImportError:
-        logger.error("langchain-google-genai not installed")
-        return
-
-    for key in _GEMINI_KEYS:
         try:
-            _report_pool.append(ChatGoogleGenerativeAI(
-                model=model,
-                google_api_key=key,
-                temperature=0.2,
-                max_output_tokens=16384,
-            ))
-        except Exception as exc:
-            logger.warning("Failed to create Gemini client for key ...%s: %s", key[-4:], exc)
+            from langchain_google_genai import ChatGoogleGenerativeAI
+        except ImportError:
+            logger.error("langchain-google-genai not installed")
+            return
 
-    if _report_pool:
-        logger.info("Gemini report pool created: model=%s, %d clients", model, len(_report_pool))
-    else:
-        logger.warning("No Gemini report clients could be created")
+        for key in _GEMINI_KEYS:
+            try:
+                _report_pool.append(ChatGoogleGenerativeAI(
+                    model=model,
+                    google_api_key=key,
+                    temperature=0.2,
+                    max_output_tokens=16384,
+                ))
+            except Exception as exc:
+                logger.warning("Failed to create Gemini client for key ...%s: %s", key[-4:], exc)
+
+        if _report_pool:
+            logger.info("Gemini report pool created: model=%s, %d clients", model, len(_report_pool))
+        else:
+            logger.warning("No Gemini report clients could be created")
 
 
 def get_gemini_llm():
