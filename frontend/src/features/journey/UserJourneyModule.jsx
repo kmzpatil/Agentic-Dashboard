@@ -3,7 +3,7 @@ import { Doughnut, Line, Bar } from 'react-chartjs-2';
 import {
   X, AlertTriangle, Download, Image as ImageIcon,
   CircleDot, ChevronDown, SlidersHorizontal, History,
-  Maximize2, Minimize2, RotateCcw, Zap, Settings2,
+  Maximize2, Minimize2, RotateCcw, Zap, Settings2, Info,
 } from 'lucide-react';
 import { useApi } from '../../hooks/useApi';
 import { API_BASE } from '../../lib/constants';
@@ -134,6 +134,27 @@ function GranularityPills({ value, onChange }) {
           }`}
         >{item.label}</button>
       ))}
+    </div>
+  );
+}
+
+function SectionInfoButton({ description = 'Context and definitions will be available here.' }) {
+  return (
+    <div className="relative group">
+      <button
+        type="button"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+        aria-label="Section information"
+        className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-neutral-700 bg-[#0f1116] text-neutral-400 transition-colors hover:border-neutral-500 hover:text-white"
+      >
+        <Info size={13} />
+      </button>
+      <div className="pointer-events-none absolute right-0 top-8 z-20 w-72 rounded-lg border border-neutral-700 bg-[#0b0d11] px-3 py-2 text-[11px] leading-relaxed text-neutral-300 opacity-0 shadow-xl transition-opacity group-hover:opacity-100">
+        {description}
+      </div>
     </div>
   );
 }
@@ -329,6 +350,14 @@ export default function UserJourneyModule({ authUser }) {
   const [isMaximized, setIsMaximized] = useState(false);
   const chartRef = useRef(null);
 
+  const forceChartResize = () => {
+    if (chartRef.current?.resize) {
+      chartRef.current.resize();
+      if (chartRef.current?.update) chartRef.current.update('none');
+    }
+    window.dispatchEvent(new Event('resize'));
+  };
+
   // ── Sensitivity state ───────────────────────────────────────────────────────
   const [sens, setSens] = useState({ views: 0, likes: 0, comments: 0, shares: 0, uploaded: 0, published: 0, distributions: 0 });
   const updateSens = (key, val) => setSens(prev => ({ ...prev, [key]: val }));
@@ -340,9 +369,17 @@ export default function UserJourneyModule({ authUser }) {
   }, [isMaximized]);
 
   useEffect(() => {
-    const t = setTimeout(() => { if (chartRef.current?.resize) chartRef.current.resize(); window.dispatchEvent(new Event('resize')); }, 80);
-    return () => clearTimeout(t);
-  }, [isMaximized]);
+    const r1 = requestAnimationFrame(() => forceChartResize());
+    const r2 = requestAnimationFrame(() => forceChartResize());
+    const t1 = setTimeout(() => forceChartResize(), 120);
+    const t2 = setTimeout(() => forceChartResize(), 260);
+    return () => {
+      cancelAnimationFrame(r1);
+      cancelAnimationFrame(r2);
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [isMaximized, activeChart]);
 
   // ── Filter helpers ──────────────────────────────────────────────────────────
   const appliedFiltersQuery = useMemo(() => buildFilterParams(appliedFilters), [appliedFilters]);
@@ -609,8 +646,23 @@ export default function UserJourneyModule({ authUser }) {
   const platformDoughnutOpts = useMemo(() => ({
     responsive: true, maintainAspectRatio: false, cutout: '48%',
     plugins: {
-      legend: { position: 'right', labels: { color: '#737373', font: { size: 11 }, boxWidth: 10, padding: 12 } },
-      tooltip: { ...TOOLTIP, callbacks: { label: ctx => ` ${ctx.label}: ${formatNumber(ctx.raw)} views` } },
+      legend: {
+        position: 'right',
+        labels: {
+          color: '#d1d5db',
+          font: { size: 13, weight: 600 },
+          boxWidth: 10,
+          boxHeight: 10,
+          padding: 14,
+        },
+      },
+      tooltip: {
+        ...TOOLTIP,
+        bodyColor: '#e5e7eb',
+        callbacks: {
+          label: (ctx) => ` ${formatNumber(ctx.raw)} views`,
+        },
+      },
     },
     onClick: (_evt, elements) => {
       if (elements.length > 0) {
@@ -673,10 +725,10 @@ export default function UserJourneyModule({ authUser }) {
 
   // ── Active chart renderer ───────────────────────────────────────────────────
   const chartEl = (() => {
-    if (activeChart === 'engagement') return <Line ref={chartRef} data={engagementData} options={baseOpts} />;
-    if (activeChart === 'rate')       return <Line ref={chartRef} data={rateData}       options={rateOpts} />;
-    if (activeChart === 'virality')   return <Line ref={chartRef} data={viralityData}   options={rateOpts} />;
-    if (activeChart === 'platforms')  return <Bar  ref={chartRef} data={platformData}   options={baseOpts} />;
+    if (activeChart === 'engagement') return <Line key={`engagement-${isMaximized ? 'max' : 'normal'}`} ref={chartRef} data={engagementData} options={baseOpts} />;
+    if (activeChart === 'rate')       return <Line key={`rate-${isMaximized ? 'max' : 'normal'}`} ref={chartRef} data={rateData}       options={rateOpts} />;
+    if (activeChart === 'virality')   return <Line key={`virality-${isMaximized ? 'max' : 'normal'}`} ref={chartRef} data={viralityData}   options={rateOpts} />;
+    if (activeChart === 'platforms')  return <Bar  key={`platforms-${isMaximized ? 'max' : 'normal'}`} ref={chartRef} data={platformData}   options={baseOpts} />;
     return null;
   })();
 
@@ -966,6 +1018,11 @@ export default function UserJourneyModule({ authUser }) {
                     </button>
                   </div>
                   <div className="flex items-center gap-2">
+                    <SectionInfoButton
+                      description={pipelineTab === 'conversion'
+                        ? 'Pipeline Conversion summarizes how content moves from upload to publish to distribution, with headline rates and top-performing context.'
+                        : 'Sensitivity Analysis lets you simulate changes to core inputs and see projected KPI impact across engagement, reach, and pipeline efficiency.'}
+                    />
                     {pipelineTab === 'sensitivity' && (
                       <KpiToggle items={SENS_KPIS} active={visibleSensKpis} onToggle={toggleSensKpi} />
                     )}
@@ -1142,18 +1199,22 @@ export default function UserJourneyModule({ authUser }) {
                     </div>
                   ) : anomalies.map((a) => {
                     const { definition, inference } = getAnomalyInsight(a);
+                    const zScore = Number(a.zScore || 0);
+                    const zAbs = Math.abs(zScore).toFixed(1);
+                    const zInterpretation = zScore < 0 ? `${zAbs} SD below avg` : `${zAbs} SD above avg`;
                     return (
                     <div key={`${a.period}-${a.direction}`}
                       className="group relative overflow-hidden rounded-xl border border-neutral-800 bg-[#0d0d0d] p-4 transition-all hover:border-neutral-600">
                       <div className={`absolute top-0 left-0 w-1 h-full ${a.direction === 'drop' ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-                      <div className="flex justify-between items-start">
-                        <div>
+                      <div className="grid grid-cols-[minmax(0,1fr)_112px] items-start gap-3">
+                        <div className="min-w-0">
                           <div className="text-sm font-bold text-white capitalize">{a.direction === 'drop' ? 'Significant Drop' : 'Abnormal Spike'}</div>
                           <div className="mt-0.5 text-xs text-neutral-400">{a.period}</div>
                         </div>
-                        <div className="text-right">
-                          <div className="text-base font-black text-white">{formatNumber(a.value)}</div>
-                          <div className="text-[10px] uppercase font-bold text-neutral-500">Z {Number(a.zScore).toFixed(1)}</div>
+                        <div className="min-w-0 text-right">
+                          <div className="text-[17px] leading-tight font-black tabular-nums text-white truncate">{formatNumber(a.value)}</div>
+                          <div className="mt-0.5 text-[11px] font-medium text-neutral-300 leading-tight">{zInterpretation}</div>
+                          <div className="text-[10px] uppercase font-bold tracking-[0.08em] text-neutral-400">Z-score = {zScore.toFixed(1)}</div>
                         </div>
                       </div>
                       {/* Insight — revealed on hover */}

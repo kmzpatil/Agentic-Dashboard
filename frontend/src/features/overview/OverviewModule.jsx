@@ -715,7 +715,10 @@ export default function OverviewModule({ onNavigate }) {
           </div>
 
           <div className="rounded-[24px] border border-amber-700/30 bg-[#15120f] p-5 overflow-y-auto hide-scrollbar">
-            <div className="mb-4 text-sm font-bold uppercase tracking-[0.14em] text-amber-300">Alerts</div>
+            <div className="mb-4 flex items-center justify-between gap-2">
+              <div className="text-sm font-bold uppercase tracking-[0.14em] text-amber-300">Alerts</div>
+              <GraphInfoButton description="Alert cards flag noteworthy changes that may need action. Click an alert to jump to funnel analysis with the relevant breakdown pre-applied." />
+            </div>
             <div className="space-y-3">
               {(data.alerts || []).map((alert) => (
                 <button
