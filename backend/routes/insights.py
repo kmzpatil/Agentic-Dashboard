@@ -16,12 +16,6 @@ def get_insights(
     limit: int = Query(default=6, ge=1, le=12),
     auth: AuthContext = Depends(require_auth),
 ):
-    if surface == "mission-control" and auth.role == "user":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Mission Control is restricted for user role",
-        )
-
     try:
         return {"insights": [card.model_dump() for card in build_insights(auth, surface=surface, limit=limit)]}
     except Exception as error:

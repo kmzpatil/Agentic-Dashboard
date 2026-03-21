@@ -51,6 +51,36 @@ export const KPI_DEFINITIONS = [
     getSubtitle: (kpis) => formatHours(kpis?.published_duration || 0)
   },
   {
+    id: 'publish_conversion_rate',
+    title: 'PUBLISH CONVERSION RATE',
+    definition: 'Share of created assets that are ultimately published.',
+    formula: '(Total Published Count / Total Created Count) * 100',
+    significance: 'Tracks end-to-end conversion quality from creation to publish.',
+    detailsData: {
+      timeSeries: { labels: [], data: [] },
+      channels: { labels: [], data: [] },
+      users: { labels: [], data: [] },
+      inputs: { labels: [], data: [] },
+      outputs: { labels: [], data: [] },
+    },
+    getValue: (kpis) => formatPct(kpis?.publish_conversion_rate || 0),
+    getSubtitle: () => 'Avg. conversion rate'
+  },
+  {
+    id: 'waste_index',
+    title: 'WASTE INDEX',
+    definition: 'Gap between average created duration and average published duration.',
+    formula: 'Avg Created Duration - Avg Published Duration',
+    significance: 'Highlights temporal inefficiency and likely over-production before publish.',
+    detailsData: {
+      users: { labels: [], data: [] },
+      channels: { labels: [], data: [] },
+      channelTreemap: [],
+    },
+    getValue: (kpis) => (kpis?.waste_index !== undefined ? Number(kpis.waste_index).toFixed(2) : '—'),
+    getSubtitle: () => 'Logarithmic waste'
+  },
+  {
     id: 'month_by_month_use_rate',
     title: 'MONTH BY MONTH USE RATE',
     getValue: () => '+12.5%',
