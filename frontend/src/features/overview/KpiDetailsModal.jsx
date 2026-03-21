@@ -355,8 +355,8 @@ export default function KpiDetailsModal({ kpi, onClose }) {
       case 'cdas':
         return (
           <div className="grid grid-cols-1 gap-4">
-            <ChartCard title="CDAS by Input Type">
-              <Bar data={{ labels: data?.inputs?.labels || [], datasets: [{ label: 'CDAS Score', data: data?.inputs?.data || [], backgroundColor: '#10b981' }] }} options={chartOptions} />
+            <ChartCard title="DFS by Input Type">
+              <Bar data={{ labels: data?.inputs?.labels || [], datasets: [{ label: 'DFS Score', data: data?.inputs?.data || [], backgroundColor: '#10b981' }] }} options={chartOptions} />
             </ChartCard>
             <ChartCard title="Avg Created vs Published Duration">
               <Bar data={{

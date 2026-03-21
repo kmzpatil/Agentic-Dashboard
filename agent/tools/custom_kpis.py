@@ -100,7 +100,7 @@ CUSTOM_KPIS: List[Dict[str, str]] = [
     },
     {
         "id": "cdas",
-        "title": "CLIP ALIGNMENT (CDAS)",
+        "title": "DURATION FIT SCORE (DFS)",
         "definition": "Measures how closely created asset duration aligns with final published asset duration.",
         "formula": "1 - (abs(avg created duration - avg published duration) / avg created duration)",
         "significance": "High score implies high accuracy in initial AI cuts (minimal manual editing needed).",
