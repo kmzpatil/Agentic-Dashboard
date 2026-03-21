@@ -299,6 +299,118 @@ def _recent_rows_query(filt: dict) -> str:
     '''
 
 
+_KPI_DEFINITIONS = {
+    # Engagement
+    "views": {
+        "definition": "Total number of views across all distributed posts.",
+        "formula": "SUM(views) from distributions",
+        "query": "SELECT COALESCE(SUM(views), 0) FROM scoped_distribution",
+    },
+    "interactions": {
+        "definition": "Total likes, comments, and shares across all distributed posts.",
+        "formula": "SUM(likes) + SUM(comments) + SUM(shares)",
+        "query": "SELECT COALESCE(SUM(likes),0) + COALESCE(SUM(comments),0) + COALESCE(SUM(shares),0) FROM scoped_distribution",
+    },
+    "er": {
+        "definition": "Ratio of total interactions to total views.",
+        "formula": "(likes + comments + shares) / views × 100",
+        "query": "ROUND(((SUM(likes) + SUM(comments) + SUM(shares)) / SUM(views)) × 100, 2)",
+    },
+    "virality": {
+        "definition": "Share-driven reach as a percentage of total views.",
+        "formula": "(shares / views) × 100",
+        "query": "ROUND((SUM(shares) / SUM(views)) × 100, 2)",
+    },
+    "likes": {
+        "definition": "Total number of likes across all distributed posts.",
+        "formula": "SUM(likes)",
+        "query": "SELECT COALESCE(SUM(likes), 0) FROM scoped_distribution",
+    },
+    "comments": {
+        "definition": "Total number of comments across all distributed posts.",
+        "formula": "SUM(comments)",
+        "query": "SELECT COALESCE(SUM(comments), 0) FROM scoped_distribution",
+    },
+    "shares": {
+        "definition": "Total number of shares across all distributed posts.",
+        "formula": "SUM(shares)",
+        "query": "SELECT COALESCE(SUM(shares), 0) FROM scoped_distribution",
+    },
+    "likeRate": {
+        "definition": "Percentage of views that resulted in a like.",
+        "formula": "(likes / views) × 100",
+        "query": "ROUND((SUM(likes) / SUM(views)) × 100, 2)",
+    },
+    "commentRate": {
+        "definition": "Percentage of views that resulted in a comment.",
+        "formula": "(comments / views) × 100",
+        "query": "ROUND((SUM(comments) / SUM(views)) × 100, 2)",
+    },
+    "shareRate": {
+        "definition": "Percentage of views that resulted in a share.",
+        "formula": "(shares / views) × 100",
+        "query": "ROUND((SUM(shares) / SUM(views)) × 100, 2)",
+    },
+    "likeToComment": {
+        "definition": "Ratio of likes to comments, indicating sentiment balance.",
+        "formula": "likes / comments",
+        "query": "SUM(likes) / NULLIF(SUM(comments), 0)",
+    },
+    # Pipeline
+    "uploaded": {
+        "definition": "Total number of raw videos uploaded into the pipeline.",
+        "formula": "COUNT(scoped_videos)",
+        "query": "SELECT COUNT(*) FROM scoped_videos",
+    },
+    "published": {
+        "definition": "Total number of posts published from created assets.",
+        "formula": "COUNT(scoped_posts)",
+        "query": "SELECT COUNT(*) FROM scoped_posts",
+    },
+    "distributions": {
+        "definition": "Total number of platform distributions of published posts.",
+        "formula": "COUNT(scoped_distribution)",
+        "query": "SELECT COUNT(*) FROM scoped_distribution",
+    },
+    "avgvdist": {
+        "definition": "Average number of views per distribution placement.",
+        "formula": "SUM(views) / COUNT(distributions)",
+        "query": "COALESCE(SUM(views), 0) / NULLIF(COUNT(*), 0) FROM scoped_distribution",
+    },
+    "publishRate": {
+        "definition": "Percentage of uploaded videos that resulted in a published post.",
+        "formula": "(published_posts / uploaded_videos) × 100",
+        "query": "ROUND((COUNT(scoped_posts) / COUNT(scoped_videos)) × 100, 1)",
+    },
+    "distRate": {
+        "definition": "Percentage of published posts that were distributed to platforms.",
+        "formula": "(distributed_posts / published_posts) × 100",
+        "query": "ROUND((COUNT(DISTINCT distributed Post_ID) / COUNT(scoped_posts)) × 100, 1)",
+    },
+    "contentYield": {
+        "definition": "Average number of distributions generated per uploaded video.",
+        "formula": "distributions / uploaded_videos",
+        "query": "COUNT(scoped_distribution) / NULLIF(COUNT(scoped_videos), 0)",
+    },
+    # Reach & Efficiency
+    "interactPerView": {
+        "definition": "Average number of interactions generated per view.",
+        "formula": "(likes + comments + shares) / views",
+        "query": "(SUM(likes) + SUM(comments) + SUM(shares)) / NULLIF(SUM(views), 0)",
+    },
+    "interactPerDist": {
+        "definition": "Average interactions generated per distribution placement.",
+        "formula": "(likes + comments + shares) / distributions",
+        "query": "(SUM(likes) + SUM(comments) + SUM(shares)) / NULLIF(COUNT(*), 0) FROM scoped_distribution",
+    },
+    "amplification": {
+        "definition": "Projected reach from shares, based on average views per distribution.",
+        "formula": "shares × avg_views_per_distribution",
+        "query": "SUM(shares) × (SUM(views) / NULLIF(COUNT(*), 0))",
+    },
+}
+
+
 @router.get("", include_in_schema=False)
 @router.get("/")
 def get_user_journey(
@@ -368,6 +480,7 @@ def get_user_journey(
             "platform_breakdown": platform_rows,
             "output_type_breakdown": output_rows,
             "recent_journey": recent_rows,
+            "kpiDefinitions": _KPI_DEFINITIONS,
         }
     except Exception as error:
         return JSONResponse(status_code=500, content={"error": str(error)})

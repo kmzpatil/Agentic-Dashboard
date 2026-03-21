@@ -240,6 +240,33 @@ def get_funnel(
                 "waste_index_seconds": round(float(kpis.get("waste_index_seconds") or 0), 1),
                 "avg_lag_days": round(float(kpis.get("avg_lag_days") or 0), 2),
             },
+            "kpiDefinitions": {
+                "publish_conversion_pct": {
+                    "definition": "Percentage of created assets that are published as posts.",
+                    "formula": "(Total Published Posts / Total Created Assets) × 100",
+                    "query": "scoped_posts COUNT / scoped_assets COUNT × 100",
+                },
+                "avg_assets_per_upload": {
+                    "definition": "Average number of assets generated per uploaded video.",
+                    "formula": "Total Created Assets / Total Uploaded Videos",
+                    "query": "scoped_assets COUNT / filtered_videos COUNT",
+                },
+                "upload_failure_rate": {
+                    "definition": "Share of uploaded videos that produce zero published posts.",
+                    "formula": "(Videos with 0 Published Posts / Total Videos) × 100",
+                    "query": "per_video WHERE published_count = 0 / per_video COUNT × 100",
+                },
+                "waste_index_seconds": {
+                    "definition": "Average duration gap between created assets and published posts.",
+                    "formula": "AVG(Created Duration) − AVG(Published Duration)",
+                    "query": "AVG(scoped_assets.Created_Duration) − AVG(scoped_posts.Published_Duration)",
+                },
+                "avg_lag_days": {
+                    "definition": "Average number of days between asset creation and post publication.",
+                    "formula": "AVG(Publish Date − Create Date)",
+                    "query": "AVG(scoped_posts.Publish_Date − scoped_assets.Create_Date)",
+                },
+            },
             "sankeyLinks": [
                 {
                     "from": "Uploaded",

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { formatNumber, formatPct } from '../../../lib/formatters';
 
 const FLOW_STYLES = `
@@ -115,6 +115,28 @@ function FlowConnector({ text, note, compact = false, alignToValue = false }) {
   );
 }
 
+function FlipCard({ front, back, className = '' }) {
+  const [flipped, setFlipped] = useState(false);
+  return (
+    <div
+      className={`relative overflow-hidden ${className}`}
+      style={{ perspective: '900px' }}
+      onMouseEnter={() => setFlipped(true)}
+      onMouseLeave={() => setFlipped(false)}
+    >
+      <div aria-hidden className="invisible pointer-events-none">{front}</div>
+      <div style={{ transformStyle: 'preserve-3d', transition: 'transform 0.42s cubic-bezier(0.4,0,0.2,1)', transform: flipped ? 'rotateY(180deg)' : 'rotateY(0deg)', position: 'absolute', inset: 0 }}>
+        <div style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden', position: 'absolute', inset: 0 }}>
+          {front}
+        </div>
+        <div style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden', transform: 'rotateY(180deg)', position: 'absolute', inset: 0 }}>
+          {back}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PipelineStrip({ data }) {
   const uploaded      = Number(data?.pipelineStrip?.uploads              || data?.stageCounts?.uploaded_count       || 0);
   const created       = Number(data?.pipelineStrip?.assets_created       || data?.stageCounts?.created_count        || 0);
@@ -212,36 +234,43 @@ export default function PipelineStrip({ data }) {
     };
   };
 
+  const kpiDefs = data?.kpiDefinitions || {};
+
   const kpis = [
     {
       label: 'Publish conversion',
       value: formatPct(publishConversion),
       sub: 'posts / assets',
-      level: publishConversion < 5 ? 'risk' : publishConversion < 12 ? 'watch' : 'good',
+      level: publishConversion < 5 ? 'risk' : publishConversion < 25 ? 'watch' : 'good',
+      defKey: 'publish_conversion_pct',
     },
     {
       label: 'Avg assets/upload',
       value: avgAssetsPerUpload.toFixed(2),
       sub: 'creation rate',
-      level: avgAssetsPerUpload < 1 ? 'watch' : 'good',
+      level: avgAssetsPerUpload < 1 ? 'risk' : avgAssetsPerUpload < 3 ? 'watch' : 'good',
+      defKey: 'avg_assets_per_upload',
     },
     {
       label: 'Upload failure rate',
       value: formatPct(uploadFailureRate),
       sub: 'cross-client avg',
-      level: uploadFailureRate > 20 ? 'risk' : uploadFailureRate > 10 ? 'watch' : 'good',
+      level: uploadFailureRate > 30 ? 'risk' : uploadFailureRate > 10 ? 'watch' : 'good',
+      defKey: 'upload_failure_rate',
     },
     {
       label: 'Waste index (avg)',
       value: `${wasteIndex.toFixed(1)}s`,
       sub: 'created not published',
-      level: wasteIndex > 200 ? 'risk' : wasteIndex > 120 ? 'watch' : 'good',
+      level: wasteIndex > 300 ? 'risk' : wasteIndex > 100 ? 'watch' : 'good',
+      defKey: 'waste_index_seconds',
     },
     {
       label: 'Avg publish lag',
       value: `${avgPublishLag.toFixed(2)} days`,
       sub: 'asset → post',
-      level: avgPublishLag > 10 ? 'risk' : avgPublishLag > 5 ? 'watch' : 'good',
+      level: avgPublishLag > 14 ? 'risk' : avgPublishLag > 3 ? 'watch' : 'good',
+      defKey: 'avg_lag_days',
     },
   ];
 
@@ -276,19 +305,34 @@ export default function PipelineStrip({ data }) {
         <div className="mx-auto grid max-w-[1220px] grid-cols-1 gap-y-4 sm:grid-cols-2 xl:grid-cols-5 xl:gap-x-5">
           {kpis.map((kpi) => {
             const tone = getKpiCardTone(kpi.level);
+            const def = kpiDefs[kpi.defKey];
+            const front = (
+              <div className={`h-full text-center rounded-xl border px-3 py-3.5 ${tone.border} ${tone.bg}`}>
+                <div className="mb-2 flex items-center justify-center">
+                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.11em] ${tone.badge}`}>
+                    {kpi.level === 'risk' ? 'High risk' : kpi.level === 'watch' ? 'Watch' : 'Healthy'}
+                  </span>
+                </div>
+                <div className="text-[14px] font-medium leading-snug text-neutral-200 mb-2">{kpi.label}</div>
+                <div className={`text-[28px] font-bold leading-none font-mono ${getKpiTone(kpi.level)}`}>
+                  {kpi.value}
+                </div>
+                <div className="text-[13px] text-neutral-300 mt-2">{kpi.sub}</div>
+              </div>
+            );
+            const back = (
+              <div className={`h-full rounded-xl border px-3 py-3 ${tone.border} ${tone.bg} flex flex-col justify-center gap-2 overflow-hidden`}>
+                <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-neutral-400">{kpi.label}</div>
+                <div className="text-[12px] leading-relaxed text-neutral-300">
+                  {def?.definition || 'No definition available.'}
+                </div>
+                <div className="text-[10px] font-mono leading-snug text-neutral-500 break-all mt-auto">
+                  {def?.formula || ''}
+                </div>
+              </div>
+            );
             return (
-            <div key={kpi.label} className={`text-center rounded-xl border px-3 py-3.5 ${tone.border} ${tone.bg}`}>
-              <div className="mb-2 flex items-center justify-center">
-                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.11em] ${tone.badge}`}>
-                  {kpi.level === 'risk' ? 'High risk' : kpi.level === 'watch' ? 'Watch' : 'Healthy'}
-                </span>
-              </div>
-              <div className="text-[14px] font-medium leading-snug text-neutral-200 mb-2">{kpi.label}</div>
-              <div className={`text-[28px] font-bold leading-none font-mono ${getKpiTone(kpi.level)}`}>
-                {kpi.value}
-              </div>
-              <div className="text-[13px] text-neutral-300 mt-2">{kpi.sub}</div>
-            </div>
+              <FlipCard key={kpi.label} front={front} back={back} />
             );
           })}
         </div>

@@ -36,7 +36,21 @@ function getAnomalyInsight(anomaly) {
 }
 
 // ─── Palettes ────────────────────────────────────────────────────────────────
-const PLATFORM_COLORS = ['#ef4444','#a3a3a3','#dc2626','#737373','#b91c1c','#525252','#7f1d1d','#333333'];
+function buildRedToDarkGradient(count) {
+  if (count <= 0) return [];
+  if (count === 1) return ['#ef4444'];
+
+  const start = { r: 239, g: 68, b: 68 };   // #ef4444
+  const end = { r: 51, g: 51, b: 51 };      // #333333
+
+  return Array.from({ length: count }, (_, idx) => {
+    const t = idx / (count - 1);
+    const r = Math.round(start.r + (end.r - start.r) * t);
+    const g = Math.round(start.g + (end.g - start.g) * t);
+    const b = Math.round(start.b + (end.b - start.b) * t);
+    return `rgb(${r}, ${g}, ${b})`;
+  });
+}
 
 // ─── Granularity ─────────────────────────────────────────────────────────────
 const GRANULARITIES = [
@@ -76,7 +90,7 @@ function StatCard({ title, value, subtitle, trendData }) {
   };
 
   return (
-    <div className="bg-[#111111] rounded-xl p-5 border border-neutral-800 flex justify-between items-start min-h-[120px] overflow-hidden">
+    <div className="bg-[#111111] rounded-xl p-5 border border-neutral-800 flex justify-between items-start h-full overflow-hidden">
       <div className="flex-1 flex flex-col justify-between h-full">
         <div>
           <div className="text-xs font-bold tracking-wider text-neutral-500 mb-1">{title}</div>
@@ -89,6 +103,28 @@ function StatCard({ title, value, subtitle, trendData }) {
           <Line data={chartData} options={chartOpts} />
         </div>
       )}
+    </div>
+  );
+}
+
+function FlipCard({ front, back, className = '' }) {
+  const [flipped, setFlipped] = useState(false);
+  return (
+    <div
+      className={`relative overflow-hidden ${className}`}
+      style={{ perspective: '900px' }}
+      onMouseEnter={() => setFlipped(true)}
+      onMouseLeave={() => setFlipped(false)}
+    >
+      <div aria-hidden className="invisible pointer-events-none">{front}</div>
+      <div style={{ transformStyle: 'preserve-3d', transition: 'transform 0.42s cubic-bezier(0.4,0,0.2,1)', transform: flipped ? 'rotateY(180deg)' : 'rotateY(0deg)', position: 'absolute', inset: 0 }}>
+        <div style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden', position: 'absolute', inset: 0 }}>
+          {front}
+        </div>
+        <div style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden', transform: 'rotateY(180deg)', position: 'absolute', inset: 0 }}>
+          {back}
+        </div>
+      </div>
     </div>
   );
 }
@@ -453,6 +489,7 @@ export default function UserJourneyModule({ authUser }) {
   const platformBD  = data?.platform_breakdown    || [];
   const outputBD    = data?.output_type_breakdown || [];
   const recent      = data?.recent_journey        || [];
+  const kpiDefs     = data?.kpiDefinitions        || {};
 
   // ── Derived totals ──────────────────────────────────────────────────────────
   const totalViews    = Number(summary.views    || 0);
@@ -638,7 +675,7 @@ export default function UserJourneyModule({ authUser }) {
     labels: platformBD.map(p => p.platform),
     datasets: [{
       data: platformBD.map(p => p.views),
-      backgroundColor: PLATFORM_COLORS.slice(0, platformBD.length),
+      backgroundColor: buildRedToDarkGradient(platformBD.length),
       borderColor: '#111111', borderWidth: 2, hoverOffset: 8,
     }],
   }), [platformBD]);
@@ -994,10 +1031,24 @@ export default function UserJourneyModule({ authUser }) {
                 const visible = TOP_KPIS.filter(k => visibleTopKpis.includes(k.id));
                 const cols = Math.min(visible.length, 4);
                 return visible.length > 0 && (
-                  <section className={`grid gap-4`} style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+                  <section className={`grid gap-4`} style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gridAutoRows: '120px' }}>
                     {visible.map(k => {
                       const d = topCardData[k.id];
-                      return d ? <StatCard key={k.id} {...d} /> : null;
+                      if (!d) return null;
+                      const def = kpiDefs[k.id];
+                      const front = <StatCard {...d} />;
+                      const back = (
+                        <div className="bg-[#111111] rounded-xl p-5 border border-neutral-800 flex flex-col justify-center gap-2 h-full overflow-hidden">
+                          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-neutral-400">{d.title}</div>
+                          <div className="text-[12px] leading-relaxed text-neutral-300">
+                            {def?.definition || 'No definition available.'}
+                          </div>
+                          <div className="text-[10px] font-mono leading-snug text-neutral-500 break-all mt-auto">
+                            {def?.formula || ''}
+                          </div>
+                        </div>
+                      );
+                      return <FlipCard key={k.id} front={front} back={back} className="h-full" />;
                     })}
                   </section>
                 );

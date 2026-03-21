@@ -3,6 +3,10 @@ import { useEffect, useState } from 'react';
 const cache = new Map(); // url -> { data, timestamp }
 const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
+export function clearApiCache() {
+  cache.clear();
+}
+
 export function useApi(url, dependencies = []) {
   const [data, setData] = useState(null);
   const [dataUrl, setDataUrl] = useState(null);
@@ -39,6 +43,7 @@ export function useApi(url, dependencies = []) {
 
         if (!response.ok) {
           if (response.status === 401) {
+            cache.clear();
             localStorage.removeItem('frammer_auth_token');
             localStorage.removeItem('frammer_auth_user');
           }

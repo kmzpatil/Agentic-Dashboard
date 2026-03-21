@@ -11,35 +11,12 @@ import KpiDetailsModal from './KpiDetailsModal';
 import { KPI_DEFINITIONS } from './kpiDefinitions';
 import KPICreator from '../../components/KPICreator';
 
-const STATIC_CORE_KPI_CARDS = [
-  {
-    id: 'uploaded_count',
-    title: 'UPLOADED',
-    value: '10,683',
-    subtitle: '3936.0 hrs',
-    trendData: [8, 14, 10, 18, 15, 24, 21],
-  },
-  {
-    id: 'processed_count',
-    title: 'PROCESSED',
-    value: '10,657',
-    subtitle: 'Videos reaching create stage',
-    trendData: [7, 12, 9, 19, 16, 25, 22],
-  },
-  {
-    id: 'created_count',
-    title: 'CREATED',
-    value: '53,669',
-    subtitle: '16816.2 hrs',
-    trendData: [9, 13, 11, 21, 19, 24, 23],
-  },
-  {
-    id: 'published_count',
-    title: 'PUBLISHED',
-    value: '1,294',
-    subtitle: '424.0 hrs',
-    trendData: [5, 12, 7, 18, 14, 23, 20],
-  },
+const CORE_KPI_KEYS = [
+  { id: 'uploaded_count',          title: 'UPLOADED',                  trendMetric: 'uploaded_count',          getValue: (k) => formatNumber(k.uploaded_count ?? 0),                                           getSubtitle: (k) => formatHours(k.uploaded_duration ?? 0) },
+  { id: 'created_count',           title: 'CREATED',                   trendMetric: 'created_count',           getValue: (k) => formatNumber(k.created_count ?? 0),                                            getSubtitle: (k) => formatHours(k.created_duration ?? 0) },
+  { id: 'published_count',         title: 'PUBLISHED',                 trendMetric: 'published_count',         getValue: (k) => formatNumber(k.published_count ?? 0),                                          getSubtitle: (k) => formatHours(k.published_duration ?? 0) },
+  { id: 'publish_conversion_rate', title: 'PUBLISH CONVERSION RATE',   trendMetric: 'publish_conversion_rate', getValue: (k) => formatPct(k.publish_conversion_rate ?? 0),                                      getSubtitle: () => 'Avg. conversion rate' },
+  { id: 'waste_index',             title: 'WASTE INDEX',               trendMetric: 'waste_index',             getValue: (k) => k.waste_index !== undefined ? Number(k.waste_index).toFixed(2) : '—',           getSubtitle: () => 'Logarithmic waste' },
 ];
 
 const TOP_PERFORMER_DIMENSION_MAP = {
@@ -55,6 +32,17 @@ const TOP_PERFORMER_DIMENSION_MAP = {
 };
 
 const FUNNEL_FILTER_KEYS = ['client', 'input_type', 'output_type', 'language', 'channel', 'user', 'team'];
+function buildCoreKpiCards(kpis, monthlyTrends) {
+  return CORE_KPI_KEYS.map(({ id, title, trendMetric, getValue, getSubtitle }) => ({
+    id,
+    title,
+    value: getValue(kpis),
+    subtitle: getSubtitle(kpis),
+    trendData: trendMetric && monthlyTrends[trendMetric]
+      ? monthlyTrends[trendMetric].map(p => p.value)
+      : [],
+  }));
+}
 
 function GraphInfoButton({ description = 'Graph context and definitions will be available here.' }) {
   return (
@@ -118,7 +106,7 @@ function MissionRailMetricCard({ title, value, subtitle, trendData, onClick, onR
         <div className="mt-1 text-[36px] leading-none font-black tracking-tight text-white">
           {value}
         </div>
-        <div className="mt-2 text-[14px] text-neutral-400 leading-snug">
+        <div className="mt-2 text-[12px] text-neutral-400 leading-snug">
           {subtitle}
         </div>
       </div>
@@ -134,7 +122,7 @@ function MissionRailMetricCard({ title, value, subtitle, trendData, onClick, onR
         <button
           type="button"
           onClick={onClick}
-          className="h-full w-full min-h-[128px] rounded-xl border border-neutral-800 bg-[#0f1218] px-4 py-4 text-left transition-colors hover:border-neutral-600"
+          className="h-full w-full min-h-[128px] rounded-xl border border-neutral-800 bg-[#0f1218] px-4 py-4 text-left transition-colors hover:border-neutral-600 overflow-hidden"
         >
           {inner}
         </button>
@@ -150,7 +138,7 @@ function MissionRailMetricCard({ title, value, subtitle, trendData, onClick, onR
   }
 
   const content = (
-    <div className="h-full min-h-[128px] rounded-xl border border-neutral-800 bg-[#0f1218] px-4 py-4 transition-colors hover:border-neutral-600">
+    <div className="h-full min-h-[128px] rounded-xl border border-neutral-800 bg-[#0f1218] px-4 py-4 transition-colors hover:border-neutral-600 overflow-hidden">
       {inner}
     </div>
   );
@@ -185,6 +173,19 @@ function MissionRailActionCard({ icon, label, onClick, tone = 'neutral' }) {
 export default function OverviewModule({ onNavigate }) {
   const overview = useApi(`${API_BASE}/overview`, []);
   const insights = useApi(`${API_BASE}/insights?surface=mission-control`, []);
+  const uploadedTrend   = useApi(`${API_BASE}/trends?metric=uploaded_count&granularity=month`, []);
+  const createdTrend    = useApi(`${API_BASE}/trends?metric=created_count&granularity=month`, []);
+  const publishedTrend  = useApi(`${API_BASE}/trends?metric=published_count&granularity=month`, []);
+  const conversionTrend = useApi(`${API_BASE}/trends?metric=publish_conversion_rate&granularity=month`, []);
+  const wasteTrend      = useApi(`${API_BASE}/trends?metric=waste_index&granularity=month`, []);
+
+  const monthlyTrends = {
+    uploaded_count:          uploadedTrend.data?.series   || [],
+    created_count:           createdTrend.data?.series    || [],
+    published_count:         publishedTrend.data?.series  || [],
+    publish_conversion_rate: conversionTrend.data?.series || [],
+    waste_index:             wasteTrend.data?.series      || [],
+  };
 
   const loading = overview.loading;
   const error = overview.error || insights.error;
@@ -423,8 +424,8 @@ export default function OverviewModule({ onNavigate }) {
                   </div>
                 ))}
 
-                {/* Hardcoded static core cards */}
-                {STATIC_CORE_KPI_CARDS.map((card) => (
+                {/* Core KPI cards from API */}
+                {buildCoreKpiCards(kpis, monthlyTrends).map((card) => (
                   <div key={card.id} className="w-[220px] sm:w-[240px] lg:w-[260px] h-[128px] shrink-0 snap-start">
                     <MissionRailMetricCard
                       title={card.title}
@@ -508,7 +509,7 @@ export default function OverviewModule({ onNavigate }) {
             </button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 max-h-[400px] overflow-y-auto pr-2 hide-scrollbar">
-            {KPI_DEFINITIONS.filter(k => !['uploaded_count', 'processed_count', 'created_count', 'published_count'].includes(k.id) && !activeExtraKpis.includes(k.id)).map(kpi => {
+            {KPI_DEFINITIONS.filter(k => !['uploaded_count', 'created_count', 'published_count'].includes(k.id) && !activeExtraKpis.includes(k.id)).map(kpi => {
               const isStaged = stagedKpis.includes(kpi.id);
               return (
                 <KpiCard 
