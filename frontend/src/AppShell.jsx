@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import './lib/chartSetup';
 import { API_BASE, customStyles } from './lib/constants';
-import { useApi } from './hooks/useApi';
+import { useApi, clearApiCache } from './hooks/useApi';
 import OverviewModule from './features/overview/OverviewModule';
 import UsageTrendsModule from './features/usage/UsageTrendsModule';
 import FunnelModule from './features/funnel/FunnelModule';
@@ -65,6 +65,11 @@ function readRouteState() {
   return Object.fromEntries(params.entries());
 }
 
+function getDefaultViewForRole(authUser) {
+  if (authUser?.role === 'user') return 'wrapped';
+  return 'mission-control';
+}
+
 
 export default function AppShell() {
   const [authToken, setAuthToken] = useState(() => localStorage.getItem('frammer_auth_token') || '');
@@ -91,7 +96,7 @@ export default function AppShell() {
       if (value === undefined || value === null || value === '') params.delete(key);
       else params.set(key, String(value));
     });
-    if (!params.get('view')) params.set('view', 'mission-control');
+    if (!params.get('view')) params.set('view', getDefaultViewForRole(authUser));
     const query = params.toString();
     const nextUrl = `${window.location.pathname}${query ? `?${query}` : ''}`;
     window.history.replaceState({}, '', nextUrl);
@@ -100,9 +105,15 @@ export default function AppShell() {
 
   useEffect(() => {
     if (!routeState.view) {
-      navigate({ view: 'mission-control' });
+      navigate({ view: getDefaultViewForRole(authUser) });
     }
-  }, [routeState.view]);
+  }, [routeState.view, authUser]);
+
+  useEffect(() => {
+    if (authUser?.role === 'user' && routeState.view === 'mission-control') {
+      navigate({ view: 'wrapped' });
+    }
+  }, [authUser, routeState.view]);
 
   useEffect(() => {
     const bootstrapSession = async () => {
@@ -133,17 +144,25 @@ export default function AppShell() {
   }, [authToken]);
 
   const health = useApi(authUser ? `${API_BASE}/health` : null, [authUser?.id]);
-  const activeView = routeState.view || 'mission-control';
+  const activeView = routeState.view || getDefaultViewForRole(authUser);
 
-  const navItems = useMemo(() => ([
-    { id: 'mission-control', label: 'Mission Control', icon: <LayoutDashboard size={16} /> },
-    { id: 'trends', label: 'Trends', icon: <BarChart3 size={16} /> },
-    { id: 'funnel', label: 'Funnel', icon: <Funnel size={16} /> },
-    { id: 'journey', label: 'Metrics', icon: <Route size={16} /> },
-    { id: 'explorer', label: 'Explorer', icon: <Microscope size={16} /> },
-    { id: 'copilot', label: 'Copilot', icon: <Bot size={16} /> },
-    { id: 'quality', label: 'Data Quality', icon: <ShieldCheck size={16} /> },
-  ]), []);
+  const navItems = useMemo(() => {
+    const baseItems = [
+      { id: 'mission-control', label: 'Mission Control', icon: <LayoutDashboard size={16} /> },
+      { id: 'trends', label: 'Trends', icon: <BarChart3 size={16} /> },
+      { id: 'funnel', label: 'Funnel', icon: <Funnel size={16} /> },
+      { id: 'journey', label: 'Metrics', icon: <Route size={16} /> },
+      { id: 'explorer', label: 'Explorer', icon: <Microscope size={16} /> },
+      { id: 'copilot', label: 'Copilot', icon: <Bot size={16} /> },
+      { id: 'quality', label: 'Data Quality', icon: <ShieldCheck size={16} /> },
+    ];
+
+    if (authUser?.role === 'user') {
+      return baseItems.filter((item) => item.id !== 'mission-control');
+    }
+
+    return baseItems;
+  }, [authUser?.role]);
 
   const showWrapped = authUser?.role === 'client_admin' || authUser?.role === 'user';
 
@@ -160,6 +179,7 @@ export default function AppShell() {
       });
       const payload = await res.json();
       if (!res.ok) throw new Error(payload.detail || payload.error || 'Login failed');
+      clearApiCache();
       localStorage.setItem('frammer_auth_token', payload.token);
       localStorage.setItem('frammer_auth_user', JSON.stringify(payload.user));
       setAuthToken(payload.token);
@@ -177,6 +197,7 @@ export default function AppShell() {
   };
 
   const handleLogout = () => {
+    clearApiCache();
     localStorage.removeItem('frammer_auth_token');
     localStorage.removeItem('frammer_auth_user');
     setAuthToken('');

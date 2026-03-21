@@ -51,7 +51,7 @@ export const KPI_DEFINITIONS = [
     getSubtitle: (kpis) => formatHours(kpis?.published_duration || 0)
   },
   {
-    id: 'publish_conversion',
+    id: 'publish_conversion_rate',
     title: 'PUBLISH CONVERSION RATE',
     getValue: (kpis) => formatPct(kpis?.publish_conversion_rate || 0.45),
     getSubtitle: () => 'Avg. conversion rate',

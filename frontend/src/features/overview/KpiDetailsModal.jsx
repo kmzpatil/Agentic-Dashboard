@@ -232,7 +232,7 @@ export default function KpiDetailsModal({ kpi, onClose }) {
     }
 
     switch (kpi.id) {
-      case 'publish_conversion':
+      case 'publish_conversion_rate':
       case 'processing_efficiency':
         return (
           <>
