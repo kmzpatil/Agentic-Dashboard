@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, Plus, X, Wand2 } from "lucide-react";
+import { TrendingUp, Plus, X, Wand2, Info } from "lucide-react";
 import { Line } from 'react-chartjs-2';
 import { useApi } from '../../hooks/useApi';
 import { API_BASE } from '../../lib/constants';
@@ -41,6 +41,27 @@ const STATIC_CORE_KPI_CARDS = [
     trendData: [5, 12, 7, 18, 14, 23, 20],
   },
 ];
+
+function GraphInfoButton({ description = 'Graph context and definitions will be available here.' }) {
+  return (
+    <div className="relative group">
+      <button
+        type="button"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+        aria-label="Graph information"
+        className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-neutral-700 bg-[#0f1116] text-neutral-400 transition-colors hover:border-neutral-500 hover:text-white"
+      >
+        <Info size={12} />
+      </button>
+      <div className="pointer-events-none absolute right-0 top-7 z-20 w-52 rounded-lg border border-neutral-700 bg-[#0b0d11] px-2.5 py-2 text-[11px] leading-relaxed text-neutral-300 opacity-0 shadow-xl transition-opacity group-hover:opacity-100">
+        {description}
+      </div>
+    </div>
+  );
+}
 
 function MissionRailMetricCard({ title, value, subtitle, trendData, onClick, onRemove }) {
   const points = Array.isArray(trendData) && trendData.length ? trendData : [8, 12, 10, 16, 14, 19, 17];
@@ -581,7 +602,10 @@ export default function OverviewModule({ onNavigate }) {
                       <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-neutral-400">
                         {cfg.label} — Monthly Trend
                       </div>
-                      <div className="text-[10px] text-neutral-500">{activeStat.label}</div>
+                      <div className="flex items-center gap-2">
+                        <div className="text-[10px] text-neutral-500">{activeStat.label}</div>
+                        <GraphInfoButton description="This trend chart tracks the selected metric over time for the chosen output type." />
+                      </div>
                     </div>
                     <div className="h-44">
                       {tsLabels.length > 0 ? (
@@ -600,7 +624,10 @@ export default function OverviewModule({ onNavigate }) {
 
       <section className="grid grid-cols-1 xl:grid-cols-[1.25fr_0.95fr] gap-6 xl:items-stretch">
         <div className="rounded-[24px] border border-neutral-800 bg-[#101216] p-6 flex flex-col" style={{ height: '680px' }}>
-          <div className="mb-4 text-sm font-bold uppercase tracking-[0.14em] text-neutral-200 shrink-0">Frammer AI Insights</div>
+          <div className="mb-4 flex items-center justify-between gap-2 shrink-0">
+            <div className="text-sm font-bold uppercase tracking-[0.14em] text-neutral-200">Frammer AI Insights</div>
+            <GraphInfoButton description="AI insights summarize notable patterns, risks, and opportunities from the current mission control scope." />
+          </div>
           <div className="flex flex-col gap-2.5 flex-1 min-h-0 overflow-y-auto hide-scrollbar">
             {insights.loading && [...Array(5)].map((_, i) => (
               <div key={i} className="rounded-2xl border border-neutral-700/70 bg-[#111214] px-4 py-3.5 min-h-[108px] flex flex-col justify-between">
@@ -638,21 +665,48 @@ export default function OverviewModule({ onNavigate }) {
         </div>
 
         <div className="grid grid-rows-2 gap-6" style={{ height: '680px' }}>
-          <div className="rounded-[24px] border border-neutral-800 bg-[#101216] p-5">
-            <div className="mb-4 text-sm font-bold uppercase tracking-[0.14em] text-neutral-300">Top Performers</div>
-            <div className="space-y-2">
+          <div className="rounded-[24px] border border-neutral-800 bg-[#101216] p-4 flex flex-col min-h-0">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div className="text-[13px] font-bold uppercase tracking-[0.12em] text-neutral-300">Top Performers</div>
+              <GraphInfoButton description="Bars represent conversion rate by performer for the active scope." />
+            </div>
+            <div className="space-y-1.5 flex-1 min-h-0 overflow-y-auto hide-scrollbar pr-1">
               {(() => {
                 const performers = data.topPerformers || [];
-                const maxPct = Math.max(...performers.map(i => i.conversion || 0), 1);
-                return performers.map((item) => {
+                return performers.map((item, index) => {
                   const pct = item.conversion || 0;
+                  const barWidth = Math.min(Math.max(pct, 0), 100);
                   return (
-                    <div key={item.dimension} className="flex items-center gap-3 rounded-xl border border-neutral-800 bg-[#111317] px-4 py-3">
-                      <div className="text-sm font-semibold text-white shrink-0 w-28 truncate">{item.label}</div>
-                      <div className="flex-1 h-1.5 rounded-full bg-neutral-800/80 overflow-hidden">
-                        <div className="h-full rounded-full bg-emerald-400/80" style={{ width: `${Math.min(pct, 100)}%` }} />
+                    <div
+                      key={`${item.dimension}-${item.label}`}
+                      className="rounded-xl border border-neutral-800 bg-[#0f1217] px-3 py-2.5 transition-colors hover:border-neutral-700"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="mb-1 flex items-center gap-1.5">
+                            <span className="inline-flex h-4.5 items-center rounded-full border border-neutral-700 bg-neutral-900/70 px-2 text-[9px] font-bold uppercase tracking-[0.11em] text-neutral-300">
+                              {item.dimension || 'Category'}
+                            </span>
+                            <span className="text-[9px] font-semibold uppercase tracking-[0.1em] text-neutral-500">
+                              #{index + 1}
+                            </span>
+                          </div>
+                          <div className="truncate text-[15px] font-semibold text-white leading-tight">
+                            {item.label || 'Unlabeled'}
+                          </div>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <div className="text-[10px] uppercase tracking-[0.1em] text-neutral-500">Conversion</div>
+                          <div className="text-lg font-black tabular-nums text-emerald-300 leading-tight">{formatPct(pct)}</div>
+                        </div>
                       </div>
-                      <div className="text-xs font-bold text-neutral-300 tabular-nums shrink-0">{formatPct(pct)}</div>
+
+                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-neutral-800/70">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-emerald-500/90 via-emerald-400/90 to-teal-300/90"
+                          style={{ width: `${barWidth}%` }}
+                        />
+                      </div>
                     </div>
                   );
                 });

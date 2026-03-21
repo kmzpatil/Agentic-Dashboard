@@ -183,6 +183,35 @@ export default function PipelineStrip({ data }) {
     return 'text-neutral-100';
   };
 
+  const getKpiCardTone = (level) => {
+    if (level === 'risk') {
+      return {
+        border: 'border-rose-500/40',
+        bg: 'bg-gradient-to-b from-rose-950/20 to-[#101114]',
+        badge: 'border-rose-500/40 bg-rose-500/15 text-rose-300',
+      };
+    }
+    if (level === 'watch') {
+      return {
+        border: 'border-amber-500/40',
+        bg: 'bg-gradient-to-b from-amber-950/20 to-[#101114]',
+        badge: 'border-amber-500/40 bg-amber-500/15 text-amber-300',
+      };
+    }
+    if (level === 'good') {
+      return {
+        border: 'border-emerald-500/40',
+        bg: 'bg-gradient-to-b from-emerald-950/20 to-[#101114]',
+        badge: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300',
+      };
+    }
+    return {
+      border: 'border-neutral-700/70',
+      bg: 'bg-[#101114]',
+      badge: 'border-neutral-700/70 bg-neutral-800/60 text-neutral-300',
+    };
+  };
+
   const kpis = [
     {
       label: 'Publish conversion',
@@ -245,15 +274,23 @@ export default function PipelineStrip({ data }) {
       <div>
         <div className="text-[12px] font-bold uppercase tracking-[0.16em] text-neutral-300 mb-3 text-center">Key performance indicators</div>
         <div className="mx-auto grid max-w-[1220px] grid-cols-1 gap-y-4 sm:grid-cols-2 xl:grid-cols-5 xl:gap-x-5">
-          {kpis.map((kpi) => (
-            <div key={kpi.label} className="text-center rounded-xl border border-neutral-800/70 bg-[#101114] px-3 py-3.5">
-              <div className="text-[14px] font-medium leading-snug text-neutral-200 mb-2.5">{kpi.label}</div>
-              <div className="text-[28px] font-bold leading-none font-mono text-neutral-300">
+          {kpis.map((kpi) => {
+            const tone = getKpiCardTone(kpi.level);
+            return (
+            <div key={kpi.label} className={`text-center rounded-xl border px-3 py-3.5 ${tone.border} ${tone.bg}`}>
+              <div className="mb-2 flex items-center justify-center">
+                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.11em] ${tone.badge}`}>
+                  {kpi.level === 'risk' ? 'High risk' : kpi.level === 'watch' ? 'Watch' : 'Healthy'}
+                </span>
+              </div>
+              <div className="text-[14px] font-medium leading-snug text-neutral-200 mb-2">{kpi.label}</div>
+              <div className={`text-[28px] font-bold leading-none font-mono ${getKpiTone(kpi.level)}`}>
                 {kpi.value}
               </div>
               <div className="text-[13px] text-neutral-300 mt-2">{kpi.sub}</div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>
