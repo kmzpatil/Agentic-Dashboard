@@ -11,7 +11,7 @@ from backend.queries.advanced_kpi_queries import (
     get_waste_index_details_query,
     get_interaction_lift_query,
     get_cross_dimension_entropy_query,
-    get_cdas_query,
+    get_dfs_query,
     get_month_by_month_use_rate_query,
     get_generic_trend_query,
     get_processing_efficiency_query,
@@ -58,8 +58,8 @@ async def get_advanced_kpi_details(kpi_id: str, auth: AuthContext = Depends(requ
             sql = get_interaction_lift_query(access_filter)
         elif kpi_id == "cross_dimension_entropy":
             sql = get_cross_dimension_entropy_query(access_filter)
-        elif kpi_id == "cdas":
-            sql = get_cdas_query(access_filter)
+        elif kpi_id == "dfs":
+            sql = get_dfs_query(access_filter)
         elif kpi_id == "month_by_month_use_rate":
             sql = get_month_by_month_use_rate_query(access_filter)
         else:
@@ -101,7 +101,7 @@ async def get_advanced_kpi_details(kpi_id: str, auth: AuthContext = Depends(requ
             formatted_data["teams"] = {"labels": [r["label"] for r in parsed_data.get("teams", [])], "data": [float(r.get("entropy") or 0) for r in parsed_data.get("teams", [])]}
             formatted_data["userHighestShare"] = {"labels": [r["label"] for r in parsed_data.get("user_shares", [])], "data": [float(r.get("data") or 0) for r in parsed_data.get("user_shares", [])]}
             formatted_data["teamHighestShare"] = {"labels": [r["label"] for r in parsed_data.get("team_shares", [])], "data": [float(r.get("data") or 0) for r in parsed_data.get("team_shares", [])]}
-        elif kpi_id == "cdas":
+        elif kpi_id == "dfs":
             formatted_data["inputs"] = {"labels": [r["label"] for r in parsed_data.get("inputs", [])], "data": [float(r.get("score") or 0) for r in parsed_data.get("inputs", [])]}
             formatted_data["durations"] = {
                 "labels": [r["label"] for r in parsed_data.get("inputs", [])],

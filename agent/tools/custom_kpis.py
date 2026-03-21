@@ -99,12 +99,12 @@ CUSTOM_KPIS: List[Dict[str, str]] = [
         "sql": "SELECT ca.\"Output_Type\", AVG(ca.\"Created_Duration\") / (SELECT AVG(\"Created_Duration\") FROM created_assets) AS intensity, COUNT(pp.\"Asset_ID\")::numeric / COUNT(ca.\"Asset_ID\") AS success_rate FROM created_assets ca LEFT JOIN published_posts pp ON pp.\"Asset_ID\" = ca.\"Asset_ID\" GROUP BY 1"
     },
     {
-        "id": "cdas",
+        "id": "dfs",
         "title": "DURATION FIT SCORE (DFS)",
         "definition": "Measures how closely created asset duration aligns with final published asset duration.",
         "formula": "1 - (abs(avg created duration - avg published duration) / avg created duration)",
         "significance": "High score implies high accuracy in initial AI cuts (minimal manual editing needed).",
-        "sql": "SELECT 1 - (ABS(AVG(ca.\"Created_Duration\") - AVG(pp.\"Published_Duration\")) / NULLIF(AVG(ca.\"Created_Duration\"), 0)) AS cdas FROM created_assets ca JOIN published_posts pp ON pp.\"Asset_ID\" = ca.\"Asset_ID\""
+        "sql": "SELECT 1 - (ABS(AVG(ca.\"Created_Duration\") - AVG(pp.\"Published_Duration\")) / NULLIF(AVG(ca.\"Created_Duration\"), 0)) AS dfs FROM created_assets ca JOIN published_posts pp ON pp.\"Asset_ID\" = ca.\"Asset_ID\""
     },
     {
         "id": "interaction_lift",

@@ -397,7 +397,7 @@ function TeamSeries({ data }) {
 /* Scene C2: The Efficiency Engine */
 function ClientEfficiency({ data }) {
   const eff   = Math.round(data.processing_efficiency);
-  const cdas  = Math.round(data.cdas_score);
+  const dfs  = Math.round(data.dfs_score);
 
   return (
     <div className="relative w-full h-full flex items-center justify-center"
@@ -439,7 +439,7 @@ function ClientEfficiency({ data }) {
               <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.2em', color: '#888', marginBottom: 4 }}>
                 DURATION FIT SCORE (DFS)
               </div>
-              <div style={{ fontSize: 32, fontWeight: 900, color: 'white' }}>{cdas}</div>
+              <div style={{ fontSize: 32, fontWeight: 900, color: 'white' }}>{dfs}</div>
             </div>
           </div>
         </div>
@@ -708,7 +708,7 @@ function UserSpark({ data }) {
 /* Scene U2: The Efficiency Master */
 function UserEfficiency({ data }) {
   const conv = Math.round(data.publish_conversion_rate);
-  const cdas = Math.round(data.cdas_score);
+  const dfs = Math.round(data.dfs_score);
 
   return (
     <div className="relative w-full h-full flex items-center justify-center"
@@ -742,7 +742,7 @@ function UserEfficiency({ data }) {
               <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.2em', color: '#888', marginBottom: 4 }}>
                 DURATION FIT SCORE (DFS)
               </div>
-              <div style={{ fontSize: 32, fontWeight: 900, color: 'white' }}>{cdas}</div>
+              <div style={{ fontSize: 32, fontWeight: 900, color: 'white' }}>{dfs}</div>
             </div>
           </div>
         </div>

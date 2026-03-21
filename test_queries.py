@@ -33,10 +33,10 @@ try:
     res5 = query(get_cross_dimension_entropy_query(access_filter), [])
     print("Entropy rows:", len(res5.rows))
     
-    print("Testing CDAS...")
-    from backend.queries.advanced_kpi_queries import get_cdas_query
-    res6 = query(get_cdas_query(access_filter), [])
-    print("CDAS rows:", len(res6.rows))
+    print("Testing dfs...")
+    from backend.queries.advanced_kpi_queries import get_dfs_query
+    res6 = query(get_dfs_query(access_filter), [])
+    print("dfs rows:", len(res6.rows))
     
 except Exception as e:
     print(f"Error: {e}")

@@ -403,7 +403,7 @@ async def get_wrapped(auth: AuthContext = Depends(require_auth)):
             "published_count":        int(_sf(kpis.get("published_count", 0))),
             "processing_efficiency":  round(_sf(kpis.get("processing_efficiency", 0)), 1),
             "publish_conversion_rate": round(_sf(kpis.get("publish_conversion_rate", 0)), 1),
-            "cdas_score":             round(_sf(kpis.get("cdas", 0)) * 100, 1),
+            "dfs_score":             round(_sf(kpis.get("dfs", 0)) * 100, 1),
             # Momentum
             "best_month":     str(month_row.get("month_name") or "").strip() or "—",
             "best_month_pct": _sf(month_row.get("growth_pct", 0)),

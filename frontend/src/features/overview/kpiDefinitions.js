@@ -177,9 +177,9 @@ export const KPI_DEFINITIONS = [
     }
   },
   {
-    id: 'cdas',
+    id: 'dfs',
     title: 'DURATION FIT SCORE (DFS)',
-    getValue: (kpis) => (kpis?.cdas !== undefined ? Number(kpis.cdas).toFixed(2) : '0.85'),
+    getValue: (kpis) => (kpis?.dfs !== undefined ? Number(kpis.dfs).toFixed(2) : '0.85'),
     getSubtitle: () => 'Target: 1.0',
     trendData: [0.65, 0.70, 0.75, 0.78, 0.82, 0.84, 0.85],
     definition: 'Inspired by KL Divergence, this scores how closely the duration of the created assets aligns with the duration of the final published assets.',
