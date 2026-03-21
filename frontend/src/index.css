@@ -43,13 +43,22 @@ body {
 }
 
 @keyframes fadeSlideIn {
-  0% { opacity: 0; transform: translateY(6px); }
+  0% { opacity: 0; transform: translateY(1px); }
   100% { opacity: 1; transform: translateY(0); }
+}
+
+.dot-flow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
 }
 
 .dot-flow::after {
   content: '';
-  display: inline-block;
+  display: block;
   width: 6px;
   height: 6px;
   border-radius: 50%;
