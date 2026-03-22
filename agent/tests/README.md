@@ -1,6 +1,6 @@
 # Testing Suite Directory
 
-This directory contains the Python testing logic intended to validate the core routing, security, and data integrity modifications within the Frammer AI agent and its backing Model Context Protocol (MCP) server. 
+This directory contains the Python testing logic intended to validate the core routing, security, and data integrity modifications within ATLAS and its backing Model Context Protocol (MCP) server. 
 
 ## Structure & Purpose
 

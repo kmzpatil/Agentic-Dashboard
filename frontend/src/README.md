@@ -25,12 +25,14 @@ This folder contains the app bootstrap, global styling, top-level shell, feature
   - URL query-state navigation (`view`, breakdown/filter params)
   - health pills for DB/AI/MCP status
   - top-level view switching:
-    - Mission Control
-    - Trends
+    - Mission Control (Overview)
+    - Trends (Usage)
     - Funnel
     - Explorer
-    - Copilot
-    - Labs
+    - Journey
+    - Quality
+    - ATLAS
+    - Wrapped
 
 - `index.css`
   - Tailwind directives
@@ -56,14 +58,15 @@ src/
 Feature-level modules and subdomains.
 
 Current modules:
-- `overview`
-- `usage`
-- `funnel`
-- `explorer`
-- `talk`
-- `labs`
-- `simulator`
-- `shared`
+- `overview` — KPI cards, top performers, alerts
+- `usage` — Time-series trends and anomaly detection
+- `funnel` — Pipeline visualization (upload → create → publish)
+- `explorer` — Multi-dimensional data analysis
+- `journey` — User path and engagement tracking
+- `quality` — Data quality metrics and issues
+- `talk` — ATLAS — AI analytics chat
+- `wrapped` — Period summary reports
+- `shared` — Shared/placeholder components
 
 ### `components/`
 Reusable UI components shared by multiple features.
@@ -114,8 +117,6 @@ This enables direct URLs for pre-filtered feature views.
 - `features/funnel/utils/README.md`
 - `features/explorer/README.md`
 - `features/talk/README.md`
-- `features/labs/README.md`
-- `features/simulator/README.md`
 - `features/shared/README.md`
 
 ### Components subfolders

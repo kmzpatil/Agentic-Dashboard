@@ -1,6 +1,6 @@
-# Talk Feature
+# ATLAS Feature
 
-Conversational analytics interface for asking natural-language questions about dashboard data.
+ATLAS analytics interface for asking natural-language questions about dashboard data.
 
 ## Main Module
 

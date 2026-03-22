@@ -1,7 +1,7 @@
 """
 api_server.py
 ──────────────
-FastAPI server that exposes the Frammer analytics agent.
+FastAPI server that exposes the ATLAS analytics engine.
 """
 
 import json
@@ -50,7 +50,7 @@ async def lifespan(app: FastAPI):
         logger.warning("Could not ensure conversation tables: %s", exc)
     yield
 
-app = FastAPI(title="Frammer Analytics API", version="5.0.0", lifespan=lifespan)
+app = FastAPI(title="ATLAS Analytics API", version="5.0.0", lifespan=lifespan)
 
 logger = logging.getLogger("frammer.api_server")
 

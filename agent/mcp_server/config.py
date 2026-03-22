@@ -102,7 +102,7 @@ class ServerSettings:
         database_url = resolve_database_url()
 
         return cls(
-            server_name=os.getenv("MCP_SERVER_NAME", "Frammer Analytics MCP Server"),
+            server_name=os.getenv("MCP_SERVER_NAME", "ATLAS MCP Server"),
             database_url=database_url,
             default_schema=os.getenv(
                 "DATABASE_SCHEMA",

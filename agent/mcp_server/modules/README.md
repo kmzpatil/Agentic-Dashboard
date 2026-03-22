@@ -9,7 +9,7 @@ The modules package different capabilities ranging from advanced analytical feat
 ## Available Modules
 
 ### 1. `AgentToolModule` (`agent_tools.py`)
-Exposes the primary data analysis tools utilized by the Frammer agent. It includes tools to query the database, retrieve schema semantics, and construct charts.
+Exposes the primary data analysis tools utilized by ATLAS. It includes tools to query the database, retrieve schema semantics, and construct charts.
 - **`get_schema`**: Retrieves the full database schema.
 - **`get_metric_definitions`**: Looks up business metric formulas and definitions to accurately calculate metrics.
 - **`search_relevant_schemas`**: Semantically searches for tables/columns relevant to an natural language query.

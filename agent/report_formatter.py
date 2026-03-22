@@ -109,7 +109,7 @@ def render_report_html(
     Render a structured report dict as a self-contained A4-paginated HTML file.
     This HTML can be opened in a browser and printed to PDF via Ctrl+P / Cmd+P.
     """
-    title = report.get("title", "Frammer AI Report")
+    title = report.get("title", "ATLAS Report")
     summary = report.get("executive_summary", "")
     sections = report.get("sections", [])
     recommendations = report.get("recommendations", [])
@@ -520,12 +520,12 @@ def render_report_html(
 
 <!-- Screen-only toolbar -->
 <div class="screen-toolbar">
-  <span>Frammer AI — Report Preview</span>
+  <span>ATLAS — Report Preview</span>
 </div>
 
 <!-- Fixed header (repeats on every printed page) -->
 <div class="report-page-header">
-  <span class="logo">FRAMMER AI</span>
+  <span class="logo">ATLAS</span>
   <span class="divider"></span>
   <span class="label">Analytics Report</span>
 </div>

@@ -199,14 +199,14 @@ const PDF_CSS = `
   .recommendation p { font-size: 10px; color: #374151; margin: 0; line-height: 1.5; }
 `;
 
-const PAGE_HEADER_HTML = '<div class="report-page-header"><span class="logo">FRAMMER AI</span><span class="divider"></span><span class="label">Analytics Report</span></div>';
+const PAGE_HEADER_HTML = '<div class="report-page-header"><span class="logo">ATLAS</span><span class="divider"></span><span class="label">Analytics Report</span></div>';
 
 function buildPdfDocument(reportHtml) {
   return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
-<title>Frammer Report</title>
+<title>ATLAS Report</title>
 <style>${PDF_CSS}</style>
 </head>
 <body>

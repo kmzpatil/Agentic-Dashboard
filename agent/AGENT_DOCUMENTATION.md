@@ -1,4 +1,4 @@
-# Frammer Analytics Agent — Complete Technical Documentation
+# ATLAS — Complete Technical Documentation
 
 > **Version**: 1.0 | **Architecture**: Unified ReAct Loop | **LLM Backend**: Google Gemini (native SDK) | **Framework**: Zero-framework (no LangChain)
 
@@ -48,7 +48,7 @@
 
 ## 1. Architecture Overview
 
-The Frammer Analytics Agent is a production-grade, LLM-powered data analysis system built on a **unified ReAct (Reason + Act) loop** architecture. It enables natural-language querying of a PostgreSQL database tracking a media content pipeline — from raw video upload through AI-powered asset creation to multi-platform publication.
+ATLAS is a production-grade, LLM-powered data analysis system built on a **unified ReAct (Reason + Act) loop** architecture. It enables natural-language querying of a PostgreSQL database tracking a media content pipeline — from raw video upload through AI-powered asset creation to multi-platform publication.
 
 ### Core Design Principles
 
@@ -1569,7 +1569,7 @@ actions_log = [
 
 ## Summary
 
-The Frammer Analytics Agent is an end-to-end, production-grade AI analytics system that combines:
+ATLAS is an end-to-end, production-grade AI analytics system that combines:
 
 - **Intelligent reasoning** via a 10-iteration ReAct loop with 6 specialized tools
 - **Parallel execution** via asyncio.gather for zero-latency-cost multi-query analysis

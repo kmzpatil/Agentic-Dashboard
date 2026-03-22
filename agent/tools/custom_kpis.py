@@ -1,7 +1,7 @@
 """
 Tool: get_custom_kpi_info
 Provides detailed definitions, formulas, and business significance for 
-specialized KPIs used in the Frammer Analytics platform.
+specialized KPIs used in the ATLAS analytics platform.
 """
 
 import json

@@ -666,7 +666,7 @@ export default function OverviewModule({ onNavigate }) {
       <section className="grid grid-cols-1 xl:grid-cols-[1.25fr_0.95fr] gap-6 xl:items-stretch">
         <div className="rounded-[24px] border border-neutral-800 bg-[#101216] p-6 flex flex-col" style={{ height: '680px' }}>
           <div className="mb-4 flex items-center justify-between gap-2 shrink-0">
-            <div className="text-sm font-bold uppercase tracking-[0.14em] text-neutral-200">Frammer AI Insights</div>
+            <div className="text-sm font-bold uppercase tracking-[0.14em] text-neutral-200">ATLAS Insights</div>
             <GraphInfoButton description="AI insights summarize notable patterns, risks, and opportunities from the current mission control scope." />
           </div>
           <div className="flex flex-col gap-2.5 flex-1 min-h-0 overflow-y-auto hide-scrollbar">

@@ -1,7 +1,7 @@
 """
 logger_setup.py
 ---------------
-Shared colored logging setup for the Frammer agent stack.
+Shared colored logging setup for the ATLAS agent stack.
 
 Color scheme:
   INFO     → Cyan            (normal operations)
@@ -120,7 +120,7 @@ class FrammerColorFormatter(logging.Formatter):
 
 def setup_logging(level: int = logging.INFO) -> None:
     """
-    Call once at startup to configure colored logging for the entire Frammer stack.
+    Call once at startup to configure colored logging for the entire ATLAS stack.
     Silences noisy third-party loggers to WARNING.
 
     Idempotent: checks root handler types to avoid duplicate setup even when

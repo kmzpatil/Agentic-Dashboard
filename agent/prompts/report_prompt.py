@@ -72,7 +72,7 @@ Return ONLY a JSON array (no markdown fences, no commentary, no explanation):
 """
 
 REPORT_SYNTHESIS_PROMPT = """\
-You are a senior data analyst writing a comprehensive report for Frammer AI, a media production analytics platform.
+You are a senior data analyst writing a comprehensive report for ATLAS, a media production analytics platform.
 Given analysis results from multiple queries, produce a detailed, insight-rich structured JSON report.
 
 ## Output Format

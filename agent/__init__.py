@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 
-# Frammer Agent Package
+# ATLAS Agent Package
 
 # Ensure the agent directory is in path so top-level imports works for submodules
 _agent_dir = Path(__file__).resolve().parent

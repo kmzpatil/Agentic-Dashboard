@@ -111,12 +111,12 @@ def build_insights(auth: AuthContext, surface: str = "mission-control", limit: i
                 title="Processing efficiency is healthy",
                 summary=(
                     f"Published duration is running at {efficiency:.1f}% of created duration. "
-                    "Use Copilot to break down which teams or channels are driving that efficiency."
+                    "Use ATLAS to break down which teams or channels are driving that efficiency."
                 ),
                 severity="info",
                 confidence=0.72,
                 evidence=[f"Processing efficiency: {efficiency:.1f}%"],
-                cta=_cta("Ask Copilot", "copilot", prompt="Which teams are driving processing efficiency?"),
+                cta=_cta("Ask ATLAS", "atlas", prompt="Which teams are driving processing efficiency?"),
             )
         )
 

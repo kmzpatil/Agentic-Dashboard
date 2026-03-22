@@ -1,7 +1,7 @@
 """
 memory.py
 ---------
-Working memory management for Frammer AI conversations.
+Working memory management for ATLAS conversations.
 
 Each conversation accumulates a working memory block:
   mem = mem + latest_user_query + agent_thinking_summary

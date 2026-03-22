@@ -1,7 +1,7 @@
 """
 conversations.py
 -----------------
-Conversation persistence and working memory for the Frammer AI agent.
+Conversation persistence and working memory for ATLAS.
 
 Stores conversations in PostgreSQL (same DB as analytics data).
 Implements a rolling working-memory window that compacts older turns

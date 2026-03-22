@@ -100,7 +100,7 @@ Defined in `ArtifactCanvas.jsx`:
 
 Canvas-level empty state:
 - shown when `artifacts.length === 0`
-- message prompts user to ask Copilot/open trend views
+- message prompts user to ask ATLAS/open trend views
 
 Renderer-level empty states:
 - chart: `No chart data available.`

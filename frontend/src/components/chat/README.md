@@ -1,6 +1,6 @@
 # Chat Components
 
-Reusable chat UI primitives for Frammer AI Copilot interactions.
+Reusable chat UI primitives for ATLAS interactions.
 
 ## Files
 
@@ -83,7 +83,7 @@ Markdown support:
   onChange={setInput}
   onSend={send}
   disabled={loading}
-  placeholder="Ask Frammer AI anything..."
+  placeholder="Ask ATLAS anything..."
   suggestions={suggestions}
 />
 ```
