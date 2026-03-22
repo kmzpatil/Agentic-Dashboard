@@ -199,6 +199,7 @@ export default function OverviewModule({ onNavigate }) {
     try { return JSON.parse(localStorage.getItem('mc_extra_kpis')) || []; } catch { return []; }
   });
   const [stagedKpis, setStagedKpis] = useState([]);
+  const [pendingKpiSelections, setPendingKpiSelections] = useState([]);
   const [isSelectionPanelOpen, setIsSelectionPanelOpen] = useState(false);
   const [selectedKpi, setSelectedKpi] = useState(null);
   const [activeOutputTab, setActiveOutputTab] = useState(null);
@@ -328,17 +329,23 @@ export default function OverviewModule({ onNavigate }) {
   };
 
   const handleStageKpi = (id) => {
-    if (!activeExtraKpis.includes(id) && !stagedKpis.includes(id)) {
-      setStagedKpis([...stagedKpis, id]);
-    }
+    setPendingKpiSelections((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    setStagedKpis((prev) => {
+      if (prev.includes(id) || activeExtraKpis.includes(id)) {
+        return prev;
+      }
+      return [...prev, id];
+    });
   };
 
   const handleUnstageKpi = (id) => {
+    setPendingKpiSelections(prev => prev.filter(k => k !== id));
     setStagedKpis(prev => prev.filter(k => k !== id));
   };
 
   const handlePromoteKpis = () => {
-    setActiveExtraKpis([...stagedKpis, ...activeExtraKpis]);
+    setActiveExtraKpis((prev) => [...new Set([...stagedKpis, ...prev])]);
+    setPendingKpiSelections([]);
     setStagedKpis([]);
   };
 
@@ -347,6 +354,13 @@ export default function OverviewModule({ onNavigate }) {
   };
 
   const visibleExtraKpis = KPI_DEFINITIONS.filter(kpi => activeExtraKpis.includes(kpi.id));
+  const availableKpis = KPI_DEFINITIONS.filter(
+    (kpi) =>
+      !['uploaded_count', 'created_count', 'published_count', 'publish_conversion_rate', 'waste_index'].includes(kpi.id) &&
+      !activeExtraKpis.includes(kpi.id) &&
+        !stagedKpis.includes(kpi.id) &&
+        !pendingKpiSelections.includes(kpi.id)
+  );
 
   const handleCoreKpiClick = (id) => {
     const kpi = KPI_DEFINITIONS.find(k => k.id === id);
@@ -514,21 +528,17 @@ export default function OverviewModule({ onNavigate }) {
             </button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 max-h-[400px] overflow-y-auto pr-2 hide-scrollbar">
-            {KPI_DEFINITIONS.filter(k => !['uploaded_count', 'created_count', 'published_count'].includes(k.id) && !activeExtraKpis.includes(k.id)).map(kpi => {
-              const isStaged = stagedKpis.includes(kpi.id);
-              return (
-                <KpiCard 
-                  key={kpi.id}
-                  title={kpi.title} 
-                  value={kpi.getValue(kpis)} 
-                  subtitle={kpi.getSubtitle(kpis)} 
-                  trendData={kpi.trendData}
-                  onRemove={isStaged ? () => handleUnstageKpi(kpi.id) : undefined}
-                  onAdd={!isStaged ? () => handleStageKpi(kpi.id) : undefined}
-                  onClick={() => handleStageKpi(kpi.id)}
-                />
-              );
-            })}
+            {availableKpis.map(kpi => (
+              <KpiCard 
+                key={kpi.id}
+                title={kpi.title} 
+                value={kpi.getValue(kpis)} 
+                subtitle={kpi.getSubtitle(kpis)} 
+                trendData={kpi.trendData}
+                onAdd={() => handleStageKpi(kpi.id)}
+                onClick={() => handleStageKpi(kpi.id)}
+              />
+            ))}
           </div>
         </section>
       )}

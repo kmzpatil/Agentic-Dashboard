@@ -33,37 +33,37 @@ from backend.kpi.validator import FORMULA_ATOMS, SINGLE_METRICS
 
 _ATOM_CTE_SQL: dict[str, str] = {
     "uploaded_count": """
-    SELECT date_trunc($1, to_date(sv."Upload_Date", 'YYYY-MM-DD'))::date AS period,
+    SELECT date_trunc($1, to_date(left((sv."Upload_Date")::text, 10), 'YYYY-MM-DD'))::date AS period,
            COUNT(*)::float8 AS value
     FROM scoped_videos sv
     GROUP BY 1""",
 
     "created_count": """
-    SELECT date_trunc($1, to_date(sa."Create_Date", 'YYYY-MM-DD'))::date AS period,
+    SELECT date_trunc($1, to_date(left((sa."Create_Date")::text, 10), 'YYYY-MM-DD'))::date AS period,
            COUNT(DISTINCT sa."Asset_ID")::float8 AS value
     FROM scoped_assets sa
     GROUP BY 1""",
 
     "published_count": """
-    SELECT date_trunc($1, to_date(sp."Publish_Date", 'YYYY-MM-DD'))::date AS period,
+    SELECT date_trunc($1, to_date(left((sp."Publish_Date")::text, 10), 'YYYY-MM-DD'))::date AS period,
            COUNT(DISTINCT sp."Post_ID")::float8 AS value
     FROM scoped_posts sp
     GROUP BY 1""",
 
     "uploaded_duration": """
-    SELECT date_trunc($1, to_date(sv."Upload_Date", 'YYYY-MM-DD'))::date AS period,
+    SELECT date_trunc($1, to_date(left((sv."Upload_Date")::text, 10), 'YYYY-MM-DD'))::date AS period,
            COALESCE(SUM(sv."Uploaded_Duration"), 0)::float8 AS value
     FROM scoped_videos sv
     GROUP BY 1""",
 
     "created_duration": """
-    SELECT date_trunc($1, to_date(sa."Create_Date", 'YYYY-MM-DD'))::date AS period,
+    SELECT date_trunc($1, to_date(left((sa."Create_Date")::text, 10), 'YYYY-MM-DD'))::date AS period,
            COALESCE(SUM(sa."Created_Duration"), 0)::float8 AS value
     FROM scoped_assets sa
     GROUP BY 1""",
 
     "published_duration": """
-    SELECT date_trunc($1, to_date(sp."Publish_Date", 'YYYY-MM-DD'))::date AS period,
+    SELECT date_trunc($1, to_date(left((sp."Publish_Date")::text, 10), 'YYYY-MM-DD'))::date AS period,
            COALESCE(SUM(sp."Published_Duration"), 0)::float8 AS value
     FROM scoped_posts sp
     GROUP BY 1""",

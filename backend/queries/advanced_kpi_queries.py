@@ -49,9 +49,9 @@ def get_publish_conversion_details_query(access_filter: dict) -> str:
       GROUP BY svc."Channel_Name" HAVING COUNT(DISTINCT sa."Asset_ID") > 0 ORDER BY rate DESC LIMIT 20
     ),
     time_series_rates AS (
-      SELECT to_char(to_date(sa."Create_Date", 'YYYY-MM-DD'), 'Mon') AS label,
+      SELECT to_char(to_date(left((sa."Create_Date")::text, 10), 'YYYY-MM-DD'), 'Mon') AS label,
              COUNT(DISTINCT sp."Post_ID")::float8 / NULLIF(COUNT(DISTINCT sa."Asset_ID"), 0) * 100 AS rate,
-             EXTRACT(MONTH FROM to_date(sa."Create_Date", 'YYYY-MM-DD')) AS m_num
+             EXTRACT(MONTH FROM to_date(left((sa."Create_Date")::text, 10), 'YYYY-MM-DD')) AS m_num
       FROM scoped_assets sa
       LEFT JOIN scoped_posts sp ON sa."Asset_ID" = sp."Asset_ID"
       GROUP BY 1, 3 ORDER BY 3 LIMIT 12
@@ -303,12 +303,12 @@ def get_generic_trend_query(access_filter: dict, kpi_id: str) -> str:
 
     return f'''{get_scoped_advanced_ctes(access_filter)}
     ,    time_series AS (
-      SELECT to_char(to_date({dt}, 'YYYY-MM-DD'), 'Mon') AS label,
+      SELECT to_char(to_date(left(({dt})::text, 10), 'YYYY-MM-DD'), 'Mon') AS label,
              COUNT(DISTINCT {id_col})::float8 AS rate,
-             EXTRACT(MONTH FROM to_date({dt}, 'YYYY-MM-DD')) AS m_num
+             EXTRACT(MONTH FROM to_date(left(({dt})::text, 10), 'YYYY-MM-DD')) AS m_num
       FROM {tbl}
       WHERE {dt} IS NOT NULL
-      GROUP BY EXTRACT(MONTH FROM to_date({dt}, 'YYYY-MM-DD')), to_char(to_date({dt}, 'YYYY-MM-DD'), 'Mon')
+      GROUP BY EXTRACT(MONTH FROM to_date(left(({dt})::text, 10), 'YYYY-MM-DD')), to_char(to_date(left(({dt})::text, 10), 'YYYY-MM-DD'), 'Mon')
       ORDER BY m_num LIMIT 12
     ),
     user_stats AS (
@@ -340,10 +340,10 @@ def get_generic_trend_query(access_filter: dict, kpi_id: str) -> str:
 def get_month_by_month_use_rate_query(access_filter: dict) -> str:
     return f'''{get_scoped_advanced_ctes(access_filter)}
     , time_series AS (
-        SELECT to_char(to_date(sv."Upload_Date", 'YYYY-MM-DD'), 'Mon') AS label,
+        SELECT to_char(to_date(left((sv."Upload_Date")::text, 10), 'YYYY-MM-DD'), 'Mon') AS label,
                COUNT(DISTINCT sv."Video_ID") AS current_count,
-               LAG(COUNT(DISTINCT sv."Video_ID")) OVER (ORDER BY EXTRACT(MONTH FROM to_date(sv."Upload_Date", 'YYYY-MM-DD'))) as prev_count,
-               EXTRACT(MONTH FROM to_date(sv."Upload_Date", 'YYYY-MM-DD')) AS m_num
+               LAG(COUNT(DISTINCT sv."Video_ID")) OVER (ORDER BY EXTRACT(MONTH FROM to_date(left((sv."Upload_Date")::text, 10), 'YYYY-MM-DD'))) as prev_count,
+               EXTRACT(MONTH FROM to_date(left((sv."Upload_Date")::text, 10), 'YYYY-MM-DD')) AS m_num
         FROM scoped_videos sv
         GROUP BY 1, 4 ORDER BY 4 LIMIT 12
     ),
@@ -390,9 +390,9 @@ def get_processing_efficiency_query(access_filter: dict) -> str:
       GROUP BY svc."Channel_Name" HAVING SUM(sa."Created_Duration") > 0 ORDER BY rate DESC LIMIT 20
     ),
     time_series_eff AS (
-      SELECT to_char(to_date(sa."Create_Date", 'YYYY-MM-DD'), 'Mon') AS label,
+      SELECT to_char(to_date(left((sa."Create_Date")::text, 10), 'YYYY-MM-DD'), 'Mon') AS label,
              COALESCE((SUM(sp."Published_Duration")::float8 / NULLIF(SUM(sa."Created_Duration"), 0)) * 100, 0) AS rate,
-             EXTRACT(MONTH FROM to_date(sa."Create_Date", 'YYYY-MM-DD')) AS m_num
+             EXTRACT(MONTH FROM to_date(left((sa."Create_Date")::text, 10), 'YYYY-MM-DD')) AS m_num
       FROM scoped_assets sa
       LEFT JOIN scoped_posts sp ON sa."Asset_ID" = sp."Asset_ID"
       GROUP BY 1, 3 ORDER BY 3 LIMIT 12
@@ -440,9 +440,9 @@ def get_creation_rate_query(access_filter: dict) -> str:
       GROUP BY svc."Channel_Name" HAVING COUNT(DISTINCT svc."Video_ID") > 0 ORDER BY rate DESC LIMIT 20
     ),
     time_series_cr AS (
-      SELECT to_char(to_date(sv."Upload_Date", 'YYYY-MM-DD'), 'Mon') AS label,
+      SELECT to_char(to_date(left((sv."Upload_Date")::text, 10), 'YYYY-MM-DD'), 'Mon') AS label,
              COUNT(DISTINCT sa."Asset_ID")::float8 / NULLIF(COUNT(DISTINCT sv."Video_ID"), 0) AS rate,
-             EXTRACT(MONTH FROM to_date(sv."Upload_Date", 'YYYY-MM-DD')) AS m_num
+             EXTRACT(MONTH FROM to_date(left((sv."Upload_Date")::text, 10), 'YYYY-MM-DD')) AS m_num
       FROM scoped_videos sv
       LEFT JOIN scoped_assets sa ON sv."Video_ID" = sa."Video_ID"
       GROUP BY 1, 3 ORDER BY 3 LIMIT 12
@@ -478,12 +478,12 @@ def get_upload_failure_rate_query(access_filter: dict) -> str:
       GROUP BY svc."Channel_Name" HAVING COUNT(*) > 0 ORDER BY rate DESC LIMIT 15
     ),
     time_series_fail AS (
-      SELECT to_char(to_date(vs."Upload_Date", 'YYYY-MM-DD'), 'Mon') AS label,
+      SELECT to_char(to_date(left((vs."Upload_Date")::text, 10), 'YYYY-MM-DD'), 'Mon') AS label,
              1000 * POWER((SUM(CASE WHEN vs.posts = 0 THEN 1 ELSE 0 END)::float8 / NULLIF(COUNT(*), 0)), 1.5) AS rate,
-             EXTRACT(MONTH FROM to_date(vs."Upload_Date", 'YYYY-MM-DD')) AS m_num
+             EXTRACT(MONTH FROM to_date(left((vs."Upload_Date")::text, 10), 'YYYY-MM-DD')) AS m_num
       FROM video_success vs
       WHERE vs."Upload_Date" IS NOT NULL
-      GROUP BY EXTRACT(MONTH FROM to_date(vs."Upload_Date", 'YYYY-MM-DD')), to_char(to_date(vs."Upload_Date", 'YYYY-MM-DD'), 'Mon')
+      GROUP BY EXTRACT(MONTH FROM to_date(left((vs."Upload_Date")::text, 10), 'YYYY-MM-DD')), to_char(to_date(left((vs."Upload_Date")::text, 10), 'YYYY-MM-DD'), 'Mon')
       ORDER BY m_num LIMIT 12
     )
     SELECT 

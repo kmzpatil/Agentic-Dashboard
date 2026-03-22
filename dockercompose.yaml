@@ -7,8 +7,12 @@ services:
       - .env
     environment:
       PORT: 4000
-      PGHOST: ${PGHOST:-db}
-      POSTGRES_HOST: ${POSTGRES_HOST:-db}
+      PGHOST: db
+      PGPORT: 5432
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      PGPASSWORD: ${POSTGRES_PASSWORD:-TEST}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-TEST}
     ports:
       - "4000:4000"
     restart: unless-stopped
@@ -31,10 +35,11 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-NAITIK}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-TEST}
       POSTGRES_DB: ${POSTGRES_DB:-frammer_database}
     volumes:
       - gcdata_db_data:/var/lib/postgresql/data
+      - ./database/frammer_data.sql:/docker-entrypoint-initdb.d/01-frammer_data.sql:ro
 
 volumes:
   gcdata_db_data:
