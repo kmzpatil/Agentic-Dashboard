@@ -23,7 +23,7 @@ def get_frammer_schema() -> str:
         # Optimized for performance: retrieve all columns in one go if possible
         # Otherwise fall back to the slower per-table inspection
         
-        schema_info = "Frammer AI Database Schema:\n"
+        schema_info = "ATLAS Database Schema:\n"
         
         try:
             # Try optimized PostgreSQL query
@@ -93,7 +93,7 @@ def _get_schema_fallback(db, schema) -> str:
     if not tables:
         return "No tables found in the database."
 
-    schema_info = "Frammer AI Database Schema (Fallback):\n"
+    schema_info = "ATLAS Database Schema (Fallback):\n"
     for tbl in tables:
         name = tbl["name"]
         try:

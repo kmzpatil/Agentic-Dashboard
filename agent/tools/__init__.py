@@ -1,6 +1,6 @@
 """
 tools package
-Exports all Frammer Analytics tool functions for direct import.
+Exports all ATLAS tool functions for direct import.
 """
 
 from .metric_definitions import retrieve_metric_definitions

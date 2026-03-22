@@ -694,21 +694,8 @@ export default function OverviewModule({ onNavigate }) {
       <section className="grid grid-cols-1 xl:grid-cols-[1.25fr_0.95fr] gap-6 xl:items-stretch">
         <div className="rounded-[24px] border border-neutral-800 bg-[#101216] p-6 flex flex-col" style={{ height: '680px' }}>
           <div className="mb-4 flex items-center justify-between gap-2 shrink-0">
-            <div className="text-sm font-bold uppercase tracking-[0.14em] text-neutral-200">Frammer AI Insights</div>
-            <GraphInfoButton
-              description={
-                <InfoTooltipContent
-                  eyebrow="AI Insights"
-                  summary="Highlights high-impact patterns, risks, and opportunities for the current filtered scope."
-                  bullets={[
-                    { label: 'Priority', text: 'Use insight ordering to decide what to investigate first.' },
-                    { label: 'Validation', text: 'Confirm the signal in funnel and drill-down views before action.' },
-                    { label: 'Scope', text: 'All narratives are computed from the currently selected filters.' },
-                  ]}
-                  takeaway="Treat insights as triage accelerators, then verify with supporting charts before operational changes."
-                />
-              }
-            />
+            <div className="text-sm font-bold uppercase tracking-[0.14em] text-neutral-200">ATLAS Insights</div>
+            <GraphInfoButton description="AI insights summarize notable patterns, risks, and opportunities from the current mission control scope." />
           </div>
           <div className="flex flex-col gap-2.5 flex-1 min-h-0 overflow-y-auto hide-scrollbar">
             {insights.loading && [...Array(5)].map((_, i) => (

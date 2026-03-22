@@ -1,7 +1,7 @@
 """
 agent.py
 -------------
-Frammer Analytics Agent — Unified ReAct Loop Architecture.
+ATLAS — Unified ReAct Loop Architecture.
 
 Architecture:
   The agent uses a tool-calling ReAct loop with six tools:
@@ -399,7 +399,7 @@ def explore_tool(
 # ── Unified System Prompt ────────────────────────────────────────────────────
 
 AGENT_PROMPT = """\
-You are Frammer AI, a data analyst agent for a media production platform.
+You are ATLAS, a data analyst agent for a media production platform.
 You answer questions by querying a PostgreSQL database, analyzing results from multiple angles, and presenting deep, substantive findings.
 
 ## CRITICAL: You MUST use tool calls
@@ -555,7 +555,7 @@ Current System Time: {now_str}
 """
 
 SYNTHESIZER_PROMPT = """\
-You are Frammer AI. Provide a thorough summary of the analysis results below.
+You are ATLAS. Provide a thorough summary of the analysis results below.
 
 ## Rules
 - **Thorough analysis**: Summarize the key findings with depth. Bold key numbers. Highlight the most important patterns, comparisons, and insights the data reveals.
@@ -1164,7 +1164,7 @@ async def run_agent(
         logger.info("=== CONVERSATIONAL FAST-PATH ===")
         resp = await _invoke_with_retry(
             lambda: _llm_client.ainvoke(
-                f"You are Frammer AI, a friendly analytics assistant. Respond briefly: {question}",
+                f"You are ATLAS, a friendly analytics assistant. Respond briefly: {question}",
                 label="conversational",
             ),
             label="conversational",
@@ -1463,7 +1463,7 @@ async def run_agent_stream(
         logger.info("=== STREAM CONVERSATIONAL FAST-PATH ===")
         resp = await _invoke_with_retry(
             lambda: _llm_client.ainvoke(
-                f"You are Frammer AI, a friendly analytics assistant. Respond briefly: {question}",
+                f"You are ATLAS, a friendly analytics assistant. Respond briefly: {question}",
                 label="stream-conversational",
             ),
             label="stream-conversational",
@@ -1828,7 +1828,7 @@ if __name__ == "__main__":
     import asyncio
 
     async def _cli():
-        print("-- Frammer AI (ReAct Loop) --\n")
+        print("-- ATLAS (ReAct Loop) --\n")
         while True:
             q = input("You: ").strip()
             if q.lower() in ("quit", "exit"):

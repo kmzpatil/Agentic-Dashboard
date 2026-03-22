@@ -88,7 +88,7 @@ KPI_TOOLS = [explore_tool, yield_sql]
 # ── System Prompt ─────────────────────────────────────────────────────────────
 
 KPI_AGENT_PROMPT = """\
-You are the Frammer AI Custom KPI Generator.
+You are the ATLAS Custom KPI Generator.
 Your ONLY goal is to produce a valid PostgreSQL SELECT query.
 
 ## Database Schema

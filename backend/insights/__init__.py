@@ -1,1 +1,1 @@
-"""Frammer AI insight generation and CTA routing."""
+"""ATLAS insight generation and CTA routing."""

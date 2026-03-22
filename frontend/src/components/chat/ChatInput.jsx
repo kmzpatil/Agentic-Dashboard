@@ -13,7 +13,7 @@ export default function ChatInput({
   onChange,
   onSend,
   disabled = false,
-  placeholder = 'Ask Frammer AI anything...',
+  placeholder = 'Ask ATLAS anything...',
   suggestions = DEFAULT_PROMPTS,
 }) {
   const voice = useVoiceInput({

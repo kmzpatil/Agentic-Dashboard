@@ -1,66 +1,83 @@
-# Frammer Analytics Agent Architecture
+# ATLAS — The Guide to Your Data
 
-This directory contains the root orchestration architecture for the Frammer AI Analytics Agent. It governs the entire lifecycle of an analytical request, establishing secure HTTP topologies and managing the intricate ReAct (Reasoning and Acting) loops executed by the underlying Large Language Model.
+AI-powered analytics engine using a unified ReAct (Reason + Act) loop architecture. Built directly on Google's `google-genai` SDK with zero framework dependencies (no LangChain, no LangGraph).
 
-## Subdirectory Overview
+## Architecture
 
-The repository is modularized into distinct functional boundaries to isolate operational concerns:
+The agent answers natural-language analytics questions by iteratively reasoning and executing tools against a PostgreSQL database tracking a media content pipeline (upload → create → publish).
 
-*   **`mcp_server/`**: The Model Context Protocol (MCP) server environment. Encapsulates connection pooling, query security (proactive CTE injection), Retrieval-Augmented Generation (RAG) schema indexing, and module definitions to be consumed by the FastMCP runtime.
-*   **`tools/`**: The standalone functional units (the "hands" of the agent). Contains the executable logic to run read-only PostgreSQL queries, retrieve metric formulas, fetch schemas, and translate tabular data into structured Plotly XML chart payloads.
-*   **`templates/`**: The frontend viewport. Houses `index.html`, a vanilla Single Page Application (SPA) that acts as the user interface. It dynamically renders agent-generated XML layout strings into interactive, multi-dimensional Chart.js dashboards.
-*   **`tests/`**: The validation suite. Contains rigorous `pytest` modules confirming the integrity of dynamic SQL scoping, isolated authentication boundaries, and query sanitization (e.g., stripping malicious inline SQL comments).
+### Core Design
+
+| Principle | Detail |
+|-----------|--------|
+| **Zero-framework** | Uses `google-genai` SDK directly — full control over tool calling and loop behavior |
+| **Tool-calling-first** | Every LLM response is a structured tool call (`execute_queries`, `answer`, `clarify`, etc.) |
+| **Security by default** | SQL validation + auth-scoped CTE injection for row-level security |
+| **Parallel execution** | SQL queries run via `asyncio.gather()` — multiple queries in the time of one |
+| **Feedback-driven** | Query results feed back into LLM context; failed queries trigger self-correction |
+
+### Capabilities
+
+- Natural-language SQL-backed analytics queries
+- Interactive chart generation (14+ chart types via XML dashboard format)
+- Board-level HTML report generation (A4-paginated, print-to-PDF ready)
+- Custom KPI creation from natural language or formulas
+- Multi-turn conversation persistence with memory compaction
+- Role-based data scoping (website_admin, client_admin, user)
+
+## Directory Structure
+
+```
+agent/
+├── agent.py              # Core ReAct loop engine (orchestrator)
+├── api_server.py          # FastAPI server exposing /api/chat, /api/query endpoints
+├── client.py              # Google Gemini LLM client wrapper
+├── conversations.py       # SQLAlchemy conversation persistence
+├── memory.py              # Working memory manager with auto-compaction
+├── report_formatter.py    # HTML report renderer
+├── kpi_generator.py       # KPI creation assistant
+├── analytics_routes.py    # Deterministic analytics endpoints (static KPIs)
+├── logger_setup.py        # Colorized logging setup
+├── mcp_server/            # MCP tool registry, database client, RAG schema indexing
+├── tools/                 # Tool modules (SQL query, schema, chart, KPI, metrics)
+├── prompts/               # LLM prompt templates
+├── templates/             # Report HTML templates
+└── tests/                 # pytest suite (SQL scoping, auth boundaries, query sanitization)
+```
 
 ## Core Modules
 
-The files located at the root of the `agent` directory operate as the central control plane, tying the subdirectories together into a functional API.
+### `agent.py` — The Orchestrator
+Core ReAct loop with up to 10 iterations per request. Injects database schemas, metric definitions, and auth-scoped filtering into the system prompt. Classifies intent (analytics vs. conversational) and coordinates tool execution.
 
-### 1. `agent.py` (The Orchestrator)
-The foundational logic core of the application. It constructs a `LangGraph StateGraph` to systematically route the Anthropic model (Claude 3 Haiku) through an iterative ReAct loop.
-*   **Context Injection:** Injects dynamic database schemas, SQL cardinality rules, and real-time metric definitions into the `SystemMessage` payload prior to generation.
-*   **Authentication & Security Scoping:** Intercepts authentication contexts to proactively append row-level filtering instructions to the system prompt (e.g., dynamically enforcing `Client_Name` constraints based on token roles).
-*   **Workflow Routing:** Classifies incoming natural-language prompts to determine the routing intention (Analytics vs. Conversational) and securely coordinates the invocation of external MCP tools.
-*   **Planning Constraints:** Implements a fast, low-temperature LLM planning pass (`_generate_plan`) to structure complex queries prior to autonomous tool execution.
+### `api_server.py` — API Server
+FastAPI instance with CORS middleware. Exposes `/api/chat` (streaming SSE), `/api/query` (one-shot), and conversation CRUD endpoints.
 
-### 2. `api_server.py` (The Primary Transport Layer)
-The principal `FastAPI` instance exposing the interaction endpoints.
-*   Initializes CORS middleware and manages ASGI lifecycle events, ensuring database dependencies are resolved upon worker startup.
-*   Mounts the primary LLM-driven REST endpoints (`/api/query`, `/api/chat`), acting as the ingress for the `agent.py` orchestrator.
-*   Provides RESTful conversation state endpoints (`/api/conversations/*`) connecting to the persistence layer.
+### `client.py` — LLM Client
+Google Gemini SDK wrapper with retry logic and exponential backoff for rate limits.
 
-### 3. `analytics_routes.py` (The Auxiliary Transport Layer)
-A secondary `FastAPI` sub-router designed for deterministic, low-latency UI operations.
-*   Executes hardcoded, parameterized `sqlite3` queries strictly for static UI widget populations (e.g., top-level Key Performance Indicators, generic funnel dimension breakdowns).
-*   Operates entirely outside the ReAct loop to maintain strictly bounded response times for dashboard initializations.
+### `conversations.py` — Persistence
+SQLAlchemy-backed conversation and message storage in PostgreSQL. Append-only message inserts for efficient multi-turn state.
 
-### 4. `client.py` (The LLM Interface)
-A hardened network wrapper extending the `langchain_anthropic` configuration.
-*   Guarantees operational stability by implementing deterministic exponential backoff routines specifically mitigating HTTP 429 (Rate Limit) errors.
-*   Exposes operational factory methods (`LLMClient.fast()`, `LLMClient.creative()`, `LLMClient.thinking()`) to strictly align architectural temperature parameters with the mathematical or creative requirements of the executing node.
+### `memory.py` — Context Manager
+Monitors token usage and auto-compacts conversation history when context exceeds safety thresholds via an LLM summarization pass.
 
-### 5. `conversations.py` (The Persistence Layer)
-Manages robust tracking of conversational state via `SQLAlchemy`.
-*   Materializes conversation sessions into a structured PostgreSQL schema (`conversations`, `conversation_messages`).
-*   Utilizes optimized append-only database architectures for chat messaging, guaranteeing O(1) transactional insert speeds rather than forcing the engine to deserialize/serialize heavy JSON arrays on every conversational turn.
+### `report_formatter.py` — Report Renderer
+Converts agent-generated data into styled HTML reports with charts, tables, and KPI cards. Deterministic rendering (no LLM in the render path).
 
-### 6. `memory.py` (The Context Manager)
-Manages the active contextual token window mapped to the LLM interaction layer.
-*   Continuously monitors accumulated character volume across conversation arrays.
-*   When the context exceeds structural safety constraints (`MAX_MEMORY_CHARS`), it automatically spawns an asynchronous, low-temperature LLM compaction call (`_compact_memory`) to synthetically summarize and truncate historical turns. This ensures the primary agent loop never throws a hard token-limit overflow exception while preserving critical business context.
+### `mcp_server/` — Database & Tools
+- `database.py` — DatabaseClient with query validation (forbidden keywords, single-statement enforcement) and proactive CTE injection for row-level security
+- Tool registry exposing schema inspection, SQL execution, chart generation, and metric definition tools
 
-### 7. `logger_setup.py` (The Telemetry Bus)
-Standardizes diagnostic tracing across the Frammer stack.
-*   Injects an ANSI colorized formatter (`FrammerColorFormatter`), dynamically altering log hues based on `logging.LogRecord` prefixes (e.g., LLM iteration loops vs. Tool calls).
-*   Explicitly patches excessively noisy third-party dependencies (`httpx`, `httpcore`, `openai`, `langchain`) to `WARNING` levels, ensuring that primary agent operation traces remain legible and immediately actionable in production environments.
+### `tools/` — Tool Modules
+Executable tool logic for SQL queries, schema retrieval, chart XML generation, custom KPI operations, and metric formula definitions.
 
-## Supplemental Assets
-
-*   **`frammer_data.sql` / `frammer_database.dump`**: Initial seed data blocks providing the baseline transactional structures and mock analytics data required to initialize new instances of the `DatabaseClient`.
-
-## Service Initialization
-
-The system components are designed to be aggregated and executed via standard ASGI servers. To boot the primary analytic backend locally:
+## Running Standalone
 
 ```bash
-uvicorn api_server:app --host 0.0.0.0 --port 4001
+uvicorn agent.api_server:app --host 0.0.0.0 --port 4001
 ```
+
+## Detailed Documentation
+
+See [AGENT_DOCUMENTATION.md](AGENT_DOCUMENTATION.md) for comprehensive technical documentation covering all modules, data flows, security model, and configuration reference.

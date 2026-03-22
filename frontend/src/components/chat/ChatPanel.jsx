@@ -32,7 +32,7 @@ export default function ChatPanel({ isOpen, onClose, authToken, agentOk, databas
     if (agentOk === false) {
       setMessages((prev) => [...prev, {
         role: 'assistant',
-        content: 'The Frammer agent is offline. Start the service to chat.',
+        content: 'ATLAS is offline. Start the service to chat.',
       }]);
       return;
     }
@@ -73,7 +73,7 @@ export default function ChatPanel({ isOpen, onClose, authToken, agentOk, databas
       {/* Header */}
       <div className="p-5 border-b border-neutral-900 flex items-center justify-between bg-[#050505] text-white shrink-0">
         <div className="flex items-center gap-2 font-black tracking-tight text-red-500 uppercase">
-          <MessageSquare size={18} /> FRAMMER AI COPILOT
+          <MessageSquare size={18} /> ATLAS
         </div>
         <button onClick={onClose} className="text-neutral-500 hover:text-white transition-colors bg-[#111111] p-1 rounded hover:bg-neutral-800">
           <ChevronRight size={20} />
@@ -93,7 +93,7 @@ export default function ChatPanel({ isOpen, onClose, authToken, agentOk, databas
         ))}
         {loading && (
           <div className="bg-[#161616] text-neutral-400 p-4 rounded-2xl rounded-tl-none text-sm w-5/6 border border-neutral-800 animate-pulse">
-            Frammer AI is thinking...
+            ATLAS is thinking...
           </div>
         )}
         <div ref={endRef} />
@@ -106,7 +106,7 @@ export default function ChatPanel({ isOpen, onClose, authToken, agentOk, databas
           onChange={setInput}
           onSend={send}
           disabled={loading || agentOk === false}
-          placeholder={agentOk === false ? 'Agent offline.' : 'Ask Frammer AI anything...'}
+          placeholder={agentOk === false ? 'ATLAS offline.' : 'Ask ATLAS anything...'}
         />
       </div>
     </div>

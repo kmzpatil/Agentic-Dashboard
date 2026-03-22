@@ -1,6 +1,6 @@
 # Agent Tools Repertoire
 
-This folder houses the granular, standalone functional units powering the analytical operations of the Frammer AI agent. While the `mcp_server` directory handles the transport networking and broad server coordination, this directory represents the actual "hands" of the agent—the concrete functions it triggers to fetch your data, read schemas, and plot visual insights.
+This folder houses the granular, standalone functional units powering the analytical operations of ATLAS. While the `mcp_server` directory handles the transport networking and broad server coordination, this directory represents the actual "hands" of the agent—the concrete functions it triggers to fetch your data, read schemas, and plot visual insights.
 
 ## Design Philosophy
 

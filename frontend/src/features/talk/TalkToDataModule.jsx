@@ -175,7 +175,7 @@ function AssistantMessageItem({ message, onOpenCanvas, onNavigate }) {
           <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-red-500/10">
             <Bot size={13} className="text-red-400" />
           </div>
-          <span className="text-[12px] font-semibold text-neutral-600">Frammer Copilot</span>
+          <span className="text-[12px] font-semibold text-neutral-600">ATLAS</span>
         </div>
         <div className="pl-[34px]">
           <ThinkingTrace actions={message.actions} />
@@ -193,7 +193,7 @@ function AssistantMessageItem({ message, onOpenCanvas, onNavigate }) {
           <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-amber-500/10">
             <MessageSquare size={13} className="text-amber-400" />
           </div>
-          <span className="text-[12px] font-semibold text-neutral-600">Frammer Copilot</span>
+          <span className="text-[12px] font-semibold text-neutral-600">ATLAS</span>
           <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-amber-400">
             Clarification
           </span>
@@ -228,7 +228,7 @@ function AssistantMessageItem({ message, onOpenCanvas, onNavigate }) {
         <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-red-500/10">
           <Bot size={13} className="text-red-400" />
         </div>
-        <span className="text-[12px] font-semibold text-neutral-600">Frammer Copilot</span>
+        <span className="text-[12px] font-semibold text-neutral-600">ATLAS</span>
         {intentBadge}
       </div>
       <div className="pl-[34px] text-[15px] leading-[1.75] text-neutral-300">
@@ -311,7 +311,7 @@ function StreamingIndicator({ phase, planSteps, completedSteps, reportSubQuestio
         <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-red-500/10">
           <Loader2 size={13} className="animate-spin text-red-400" />
         </div>
-        <span className="text-[12px] font-semibold text-neutral-500">Frammer Copilot</span>
+        <span className="text-[12px] font-semibold text-neutral-500">ATLAS</span>
         {isReportMode && (
           <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-red-400">Report</span>
         )}
@@ -863,7 +863,7 @@ export default function TalkToDataModule({ authToken, routeState, onNavigate }) 
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={voice.listening ? 'Listening...' : pendingClarification ? 'Reply to clarification...' : 'Ask Copilot about your data...'}
+                placeholder={voice.listening ? 'Listening...' : pendingClarification ? 'Reply to clarification...' : 'Ask ATLAS about your data...'}
                 disabled={loading}
                 className="flex-1 bg-transparent px-5 py-4 text-[15px] text-white placeholder-neutral-600 focus:outline-none disabled:opacity-50"
               />

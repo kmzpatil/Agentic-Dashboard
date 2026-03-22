@@ -1,4 +1,4 @@
-"""Utilities for building the Frammer MCP server."""
+"""Utilities for building the ATLAS MCP server."""
 
 from .config import ServerSettings
 

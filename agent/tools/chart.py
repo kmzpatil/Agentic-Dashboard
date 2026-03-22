@@ -3,7 +3,7 @@ Tool: generate_plotly_chart
 Builds an XML dashboard string from pre-fetched data records and chart
 attributes decided by the orchestrator.
 
-The XML schema follows the Frammer dashboard format:
+The XML schema follows the ATLAS dashboard format:
   <dashboard> → <meta> + <layout> → <row> → <widget>
 
 Supported widget types (auto-selected from chart_attributes.type):

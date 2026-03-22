@@ -68,7 +68,7 @@ Modal rendering is KPI-specific, with chart layouts selected by KPI id.
 - Output Types Summary
   - Tabbed output-type cards showing uploaded/created/published count and duration.
 
-- Frammer AI Insights
+- ATLAS Insights
   - Renders insight cards from insights endpoint.
 
 - Top Performers

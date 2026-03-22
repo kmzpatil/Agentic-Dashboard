@@ -96,8 +96,8 @@ def _suggested_actions(message: str, filters: dict[str, Any] | None, artifacts: 
             InsightAction(
                 type="follow_up",
                 label="Ask with current filters",
-                target="copilot",
-                filter_state={"view": "copilot", "filters": filters},
+                target="atlas",
+                filter_state={"view": "atlas", "filters": filters},
             )
         )
 
@@ -221,7 +221,7 @@ async def chat(
             ds, arts = build_assistant_artifacts(
                 rows,
                 sql=getattr(result, "sql", "") or "",
-                title="Copilot",
+                title="ATLAS",
             )
             all_datasets.extend(ds)
             all_artifacts.extend(arts)

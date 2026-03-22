@@ -63,7 +63,7 @@ def health_check():
         ),
         "assistant": ServiceStatus(
             ok=assistant_ok,
-            detail="Copilot runtime ready" if assistant_ok else "Copilot degraded",
+            detail="ATLAS runtime ready" if assistant_ok else "ATLAS degraded",
             configured=config.ai.configured,
             error=assistant_error,
         ),

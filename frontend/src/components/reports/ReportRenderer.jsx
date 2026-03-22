@@ -206,7 +206,7 @@ function buildPdfDocument(reportHtml) {
 <html>
 <head>
 <meta charset="utf-8">
-<title>Frammer Report</title>
+<title>ATLAS Report</title>
 <style>${PDF_CSS}</style>
 </head>
 <body>

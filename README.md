@@ -1,17 +1,17 @@
 # Frammer (gcdata)
 
-Unified full-stack analytics platform with an AI-powered assistant, KPI engine, and PostgreSQL-backed APIs.
+Unified full-stack analytics platform with ATLAS AI engine, KPI engine, and PostgreSQL-backed APIs.
 
 ## Repository Structure
 
 ```
 .
 ├── backend/            # FastAPI API server (Python)
-│   ├── routes/         # 21 route modules (funnel, explorer, KPI, quality, etc.)
+│   ├── routes/         # 20 route modules (funnel, explorer, KPI, quality, etc.)
 │   ├── queries/        # SQL query builders
 │   ├── analytics/      # Analytics services (overview, trends, artifacts)
 │   ├── kpi/            # Custom KPI DSL parser, compiler, and validator
-│   ├── assistant/      # AI assistant service
+│   ├── assistant/      # ATLAS service
 │   ├── insights/       # Insights generation
 │   ├── auth/           # JWT token handling
 │   ├── middleware/      # Auth middleware and RBAC

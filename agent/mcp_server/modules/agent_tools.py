@@ -1,7 +1,7 @@
 """
 agent_tools.py
 --------------
-MCP Tool Module that exposes all 5 Frammer agent tools through the MCP server:
+MCP Tool Module that exposes all 5 ATLAS tools through the MCP server:
   - get_schema
   - get_metric_definitions
   - search_relevant_schemas

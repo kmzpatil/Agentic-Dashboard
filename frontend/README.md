@@ -1,6 +1,6 @@
 # Frammer Frontend
 
-React + Vite dashboard UI for Frammer analytics. This frontend talks to the Python FastAPI backend (served from the repo-level `backend` package) and renders multiple analytics surfaces such as Overview, Funnel, Usage Trends, Explorer, Labs, and Talk to Data.
+React + Vite dashboard UI for Frammer analytics. This frontend talks to the Python FastAPI backend (served from the repo-level `backend` package) and renders multiple analytics surfaces such as Overview, Funnel, Usage Trends, Explorer, Labs, and ATLAS.
 
 ## What Is In This Folder
 
@@ -117,14 +117,15 @@ src/
 
 ### Features
 
-- `src/features/overview`
-- `src/features/usage`
-- `src/features/funnel`
-- `src/features/explorer`
-- `src/features/talk`
-- `src/features/labs`
-- `src/features/simulator`
-- `src/features/shared`
+- `src/features/overview` — KPI cards, top performers, alerts
+- `src/features/usage` — Time-series trends and anomaly detection
+- `src/features/funnel` — Pipeline visualization (upload → create → publish)
+- `src/features/explorer` — Multi-dimensional data analysis
+- `src/features/journey` — User path and engagement tracking
+- `src/features/quality` — Data quality metrics and issues
+- `src/features/talk` — ATLAS — AI analytics chat
+- `src/features/wrapped` — Period summary reports
+- `src/features/shared` — Shared/placeholder components
 
 ### Shared Layers
 
@@ -157,8 +158,6 @@ src/
 - `src/features/funnel/utils/README.md`
 - `src/features/explorer/README.md`
 - `src/features/talk/README.md`
-- `src/features/labs/README.md`
-- `src/features/simulator/README.md`
 - `src/features/shared/README.md`
 
 ## API Surface (Frontend-consumed)
