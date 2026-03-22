@@ -105,9 +105,22 @@ def create_kpi(
     if mode == "formula":
         dsl = parse_formula_mode(expression, time_granularity)
     elif mode == "natural_language":
-        dsl = parse_nl_mode(expression, time_granularity)
-        # Ensure time_granularity from request overrides LLM output if needed
-        dsl.setdefault("time_granularity", time_granularity)
+        import sys
+        from pathlib import Path
+        agent_dir = str(Path(__file__).resolve().parent.parent.parent / "agent")
+        if agent_dir not in sys.path:
+            sys.path.insert(0, agent_dir)
+        from kpi_generator import generate_kpi_sql
+        
+        result = generate_kpi_sql(expression, time_granularity)
+
+        dsl = {
+            "type": "raw_sql",
+            "sql": result["sql"],
+            "formula": result.get("formula", expression),
+            "time_granularity": time_granularity,
+            "filters": []
+        }
     else:
         raise ValueError(f"Unknown mode '{mode}'. Must be 'formula' or 'natural_language'.")
 
@@ -138,15 +151,28 @@ def create_kpi(
 
 # ── List ──────────────────────────────────────────────────────────────────────
 
-def list_kpis() -> list[dict[str, Any]]:
-    """Return all KPI definitions ordered by creation date (newest first)."""
-    ensure_kpi_table()
-    sql = """
-    SELECT id, name, description, dsl_json::text, created_at::text
-    FROM kpi_definitions
-    ORDER BY created_at DESC;
+def list_kpis(created_by: str | None = None) -> list[dict[str, Any]]:
+    """Return KPI definitions ordered by creation date (newest first).
+
+    Args:
+        created_by: If provided, only return KPIs created by this user.
     """
-    result = query(sql)
+    ensure_kpi_table()
+    if created_by:
+        sql = """
+        SELECT id, name, description, dsl_json::text, created_at::text
+        FROM kpi_definitions
+        WHERE created_by = $1
+        ORDER BY created_at DESC;
+        """
+        result = query(sql, [created_by])
+    else:
+        sql = """
+        SELECT id, name, description, dsl_json::text, created_at::text
+        FROM kpi_definitions
+        ORDER BY created_at DESC;
+        """
+        result = query(sql)
     rows = []
     for row in result.rows:
         dsl = json.loads(row["dsl_json"]) if isinstance(row["dsl_json"], str) else row["dsl_json"]

@@ -216,15 +216,7 @@ export default function KpiDetailsModal({ kpi, onClose }) {
                 </div>
               </div>
 
-              {/* DSL info */}
-              {data?.dsl_json && (
-                <div className="rounded-xl bg-[#0a0a0a] border border-neutral-800/50 p-3">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 mb-1">DSL Definition</div>
-                  <pre className="text-[11px] text-neutral-500 font-mono overflow-auto max-h-20">
-                    {JSON.stringify(data.dsl_json, null, 2)}
-                  </pre>
-                </div>
-              )}
+              {/* DSL info removed — formula is shown in the header */}
             </div>
           )}
         </>

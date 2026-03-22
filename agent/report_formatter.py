@@ -325,21 +325,34 @@ def render_report_html(
   }}
   @page {{ size: A4; margin: 18mm 16mm 16mm 16mm; }}
 
-  /* ── Fixed header repeats on every printed page ── */
+  /* ── Page header / letterhead ── */
   .report-page-header {{
-    position: fixed; top: 0; left: 0; right: 0;
     display: flex; align-items: center; gap: 10px;
     padding: 0 0 8px 0;
     border-bottom: 2px solid #ef4444;
     background: #fff;
     height: 36px;
   }}
+  @media screen {{
+    .report-page-header {{
+      position: sticky; top: 0; z-index: 50;
+      padding: 8px 16px;
+    }}
+  }}
+  @media print {{
+    /* Don't use position:fixed — it overlaps content on page breaks.
+       The header shows once at the top; the @page top margin keeps
+       subsequent pages clear. */
+    .report-page-header {{
+      position: static;
+    }}
+  }}
   .report-page-header .logo {{ font-size: 18px; font-weight: 800; color: #ef4444; letter-spacing: -0.02em; }}
   .report-page-header .divider {{ width: 1px; height: 16px; background: #d1d5db; }}
   .report-page-header .label {{ font-size: 11px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: #9ca3af; }}
 
-  /* ── Push content below fixed header ── */
-  .report {{ padding: 48px; max-width: 900px; margin: 0 auto; }}
+  /* ── Report content ── */
+  .report {{ padding: 24px 48px 48px 48px; max-width: 900px; margin: 0 auto; }}
   .report::after {{ content: ''; display: block; height: 10px; }}
 
   /* ── Page break control ── */
@@ -417,12 +430,15 @@ def render_report_html(
     margin: 10px 0; padding: 12px 14px;
     background: #fafbfc; border: 1px solid #f0f0f0; border-radius: 8px;
     page-break-inside: avoid;
+    overflow: hidden;
   }}
   .chart-title {{ font-size: 14px; font-weight: 700; color: #374151; margin-bottom: 8px; }}
   .chart-canvas-wrapper {{
-    position: relative; width: 100%; max-height: 260px;
+    position: relative; width: 100%; height: 280px;
   }}
-  .chart-canvas-wrapper canvas {{ max-height: 260px; }}
+  .chart-canvas-wrapper canvas {{
+    position: absolute; top: 0; left: 0; width: 100% !important; height: 100% !important;
+  }}
 
   /* ── Findings ── */
   .findings {{ display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }}
@@ -562,7 +578,7 @@ document.addEventListener('DOMContentLoaded', function() {{
     const isPie = cfg.is_pie;
     const options = {{
       responsive: true,
-      maintainAspectRatio: true,
+      maintainAspectRatio: false,
       indexAxis: cfg.indexAxis || 'x',
       plugins: {{
         legend: {{
