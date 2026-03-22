@@ -82,6 +82,7 @@ export default function AppShell() {
   const [loginError, setLoginError] = useState('');
   const [loginSubmitting, setLoginSubmitting] = useState(false);
   const [routeState, setRouteState] = useState(readRouteState);
+  const [wrappedOpen, setWrappedOpen] = useState(false);
 
   useEffect(() => {
     const onPopState = () => setRouteState(readRouteState());
@@ -176,7 +177,7 @@ export default function AppShell() {
       setLoginPassword('');
       const role = payload.user?.role;
       if (role === 'client_admin' || role === 'user') {
-        navigate({ view: 'wrapped' });
+        setWrappedOpen(true);
       }
     } catch (error) {
       setLoginError(error.message || 'Login failed');
@@ -286,10 +287,10 @@ export default function AppShell() {
             {/* Year Wrapped shortcut — client_admin and user only */}
             {showWrapped && (
               <button
-                onClick={() => navigate({ view: 'wrapped' })}
+                onClick={() => setWrappedOpen(true)}
                 title="Year Wrapped"
                 className={`flex items-center justify-center rounded-full border transition-colors ${
-                  activeView === 'wrapped'
+                  wrappedOpen
                     ? 'border-indigo-500 bg-indigo-500/10 text-indigo-400'
                     : 'border-neutral-800 bg-[#111111] text-neutral-500 hover:border-indigo-500/50 hover:text-indigo-400'
                 }`}
@@ -331,20 +332,17 @@ export default function AppShell() {
         </div>
       </nav>
 
-      <main className="flex-1 overflow-hidden">
-        {/* Mount OverviewModule hidden during wrapped so it prefetches before the user continues */}
-        {(activeView === 'mission-control' || activeView === 'wrapped') && (
-          <div className={activeView !== 'mission-control' ? 'hidden' : 'w-full h-full'}>
-            <OverviewModule routeState={routeState} onNavigate={navigate} />
-          </div>
-        )}
+      <main className="flex-1 overflow-hidden relative">
+        {(activeView === 'mission-control' || wrappedOpen) && <OverviewModule routeState={routeState} onNavigate={navigate} />}
         {activeView === 'trends' && <UsageTrendsModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'funnel' && <FunnelModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'journey' && <UserJourneyModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'explorer' && <ExplorerModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'copilot' && <TalkToDataModule authToken={authToken} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'quality' && <DataQualityModule authUser={authUser} />}
-        {activeView === 'wrapped' && <WrappedModule onNavigate={navigate} />}
+
+        {/* Wrapped overlay — renders on top of whatever view is active */}
+        {wrappedOpen && <WrappedModule onClose={() => setWrappedOpen(false)} />}
       </main>
     </div>
   );

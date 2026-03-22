@@ -193,7 +193,7 @@ function ClientMomentum({ data }) {
 
   return (
     <div className="relative w-full h-full flex items-center justify-center overflow-hidden"
-         style={{ background: 'linear-gradient(135deg, #0a0a0a 0%, #0f0f0f 100%)' }}>
+         style={{ background: 'transparent' }}>
       {/* Decorative SVG curves */}
       <svg style={{ position: 'absolute', top: 0, right: 0, opacity: 0.18, pointerEvents: 'none' }}
            width="520" height="320" viewBox="0 0 520 320">
@@ -347,7 +347,7 @@ function TeamSeries({ data }) {
 
   return (
     <div className="relative w-full h-full flex flex-col items-center justify-center"
-         style={{ background: '#0a0a0a' }}>
+         style={{ background: 'transparent' }}>
       <div style={{ maxWidth: 820, width: '90%' }}>
         <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.22em', color: '#6366f1', marginBottom: 8 }}>
           THE TIMELINE
@@ -402,7 +402,7 @@ function ClientContentDNA({ data }) {
 
   return (
     <div className="relative w-full h-full flex flex-col items-center justify-center"
-         style={{ background: '#0a0a0a' }}>
+         style={{ background: 'transparent' }}>
       {/* Donut + personality */}
       <div style={{ position: 'relative', marginBottom: 24 }}>
         <PlatformDonut platforms={platforms} />
@@ -466,7 +466,7 @@ function ClientFunnel({ data }) {
 
   return (
     <div className="relative w-full h-full flex items-center justify-center"
-         style={{ background: '#0a0a0a' }}>
+         style={{ background: 'transparent' }}>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 40, maxWidth: 720, width: '90%' }}>
         {/* Bars */}
         <div style={{ display: 'flex', gap: 80, alignItems: 'flex-end' }}>
@@ -523,7 +523,7 @@ function ClientChampions({ data, onShare }) {
 
   return (
     <div className="relative w-full h-full flex flex-col items-center justify-center"
-         style={{ background: '#0a0a0a' }}>
+         style={{ background: 'transparent' }}>
       <div style={{ maxWidth: 700, width: '90%' }}>
         <h2 style={{ fontSize: 40, fontWeight: 900, color: 'white', textAlign: 'center', marginBottom: 12 }}>
           The Champions
@@ -601,7 +601,7 @@ function UserSpark({ data }) {
 
   return (
     <div className="relative w-full h-full flex items-center justify-center overflow-hidden"
-         style={{ background: 'linear-gradient(135deg, #0a0a0a 0%, #0f0f0f 100%)' }}>
+         style={{ background: 'transparent' }}>
       <svg style={{ position: 'absolute', top: 0, right: 0, opacity: 0.15, pointerEvents: 'none' }}
            width="480" height="300" viewBox="0 0 480 300">
         <path d="M480,0 Q280,60 240,130 Q200,200 0,300" fill="none" stroke="#6366f1" strokeWidth="2" strokeDasharray="8 6"/>
@@ -663,7 +663,7 @@ function UserHiddenGem({ data }) {
 
   return (
     <div className="relative w-full h-full flex items-center justify-center"
-         style={{ background: '#0a0a0a' }}>
+         style={{ background: 'transparent' }}>
       <div style={{ textAlign: 'center', maxWidth: 520 }}>
         {/* Trading card */}
         <div style={{
@@ -710,15 +710,15 @@ function UserHiddenGem({ data }) {
 /* ─────────────────────────────────────────────────────────────────────────────
    Main WrappedModule
 ───────────────────────────────────────────────────────────────────────────── */
-export default function WrappedModule({ onNavigate }) {
+export default function WrappedModule({ onClose }) {
   const [data,    setData]    = useState(null);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState(null);
   const [scene,   setScene]   = useState(0);
 
   const exit = useCallback(() => {
-    if (onNavigate) onNavigate({ view: 'mission-control' });
-  }, [onNavigate]);
+    if (onClose) onClose();
+  }, [onClose]);
 
   /* Fetch wrapped data — stale-while-revalidate with localStorage cache */
   useEffect(() => {
@@ -793,10 +793,18 @@ export default function WrappedModule({ onNavigate }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [go, isLast, exit]);
 
+  /* Overlay wrapper style — covers everything */
+  const overlayStyle = {
+    position: 'fixed', inset: 0, zIndex: 50,
+    background: 'rgba(10, 10, 10, 0.7)',
+    backdropFilter: 'blur(12px)',
+    WebkitBackdropFilter: 'blur(12px)',
+  };
+
   /* ── Loading ── */
   if (loading) {
     return (
-      <div className="w-full h-full flex items-center justify-center" style={{ background: '#0a0a0a' }}>
+      <div style={overlayStyle} className="flex items-center justify-center">
         <div style={{ textAlign: 'center' }}>
           <div style={{
             width: 48, height: 48, border: '3px solid #1e1e1e',
@@ -813,7 +821,7 @@ export default function WrappedModule({ onNavigate }) {
   /* ── Error ── */
   if (error) {
     return (
-      <div className="w-full h-full flex items-center justify-center" style={{ background: '#0a0a0a' }}>
+      <div style={overlayStyle} className="flex items-center justify-center">
         <div style={{ color: '#ef4444', textAlign: 'center' }}>
           <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Failed to load Wrapped</div>
           <div style={{ color: '#666', fontSize: 13 }}>{error}</div>
@@ -834,7 +842,7 @@ export default function WrappedModule({ onNavigate }) {
 
   /* ── Slides ── */
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', background: '#0a0a0a' }}>
+    <div style={{ ...overlayStyle, overflow: 'hidden' }}>
 
       {/* ✕ Exit button — top-right, always visible */}
       <button
