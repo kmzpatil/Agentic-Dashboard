@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { Line } from 'react-chartjs-2';
 import '../../lib/chartSetup';
 import {
@@ -7,6 +7,7 @@ import {
   LayoutDashboard, TrendingUp, Link2Off, Gauge, Loader2
 } from 'lucide-react';
 import { API_BASE } from '../../lib/constants';
+import InfoTooltipContent from '../../components/common/InfoTooltipContent';
 
 // ── Hardcoded realistic quality data (matches live DB checks) ──
 const QUALITY_OVERVIEW = {
@@ -215,6 +216,252 @@ const TABLE_COLOR_MAP = {
   clients: '#a3a3a3',
 };
 
+const QUALITY_FORMULA_REFERENCE = [
+  {
+    id: '1',
+    title: 'Health Score (Overview Ring)',
+    formula: 'Health Score = (1 - (Total Issues / Total Rows Across All Tables)) x 100',
+    details: [
+      'Total Issues = NULL Violations + Duplicate PKs + FK Violations + Negative Values + Invalid Dates + Unknown Values + Suspicious Users + Dead Ends',
+      'Total Rows = COUNT(raw_videos) + COUNT(created_assets) + COUNT(published_posts) + COUNT(post_distribution) + COUNT(users) + COUNT(channels) + COUNT(raw_video_channel) + COUNT(clients)',
+    ],
+  },
+  {
+    id: '2',
+    title: 'Per-Table Health (Inner Ring)',
+    formula: 'Table Health = (1 - (Issues in Table / Rows in Table)) x 100',
+    details: [
+      'Example: raw_videos Health = (1 - (issues in raw_videos / COUNT(raw_videos))) x 100',
+    ],
+  },
+  {
+    id: '3',
+    title: 'NULL Violation Count',
+    formula: 'For each required column: COUNT(*) WHERE column IS NULL',
+    details: [
+      'Required columns: raw_videos(Video_ID, User_ID, Uploaded_Date, Uploaded_Duration), created_assets(Asset_ID, Video_ID, Created_Date, Created_Duration), published_posts(Post_ID, Asset_ID, Published_Date, Published_Duration), post_distribution(Distribution_ID, Post_ID, Platform), users(User_ID, Name, Email, Team_Name), channels(Channel_Name), raw_video_channel(Video_ID, Channel_Name), clients(Client_ID)',
+    ],
+  },
+  {
+    id: '4',
+    title: 'Duplicate PK Count',
+    formula: 'Duplicate PKs = COUNT(*) - COUNT(DISTINCT primary_key)',
+    details: [
+      'Applied per table (Video_ID, Asset_ID, Post_ID, Distribution_ID, User_ID).',
+    ],
+  },
+  {
+    id: '5',
+    title: 'FK Violation Count (Orphans)',
+    formula: 'LEFT JOIN child to parent; count rows WHERE parent PK IS NULL AND child FK IS NOT NULL',
+    details: [
+      'users -> raw_videos, raw_videos -> created_assets, created_assets -> published_posts, published_posts -> post_distribution, channels -> raw_video_channel, raw_videos -> raw_video_channel',
+      'Total Orphans = sum of all relationship-level orphan counts.',
+    ],
+  },
+  {
+    id: '6',
+    title: 'Negative Value Count',
+    formula: 'For each numeric column: COUNT(*) WHERE column < 0',
+    details: [
+      'Columns tracked: Uploaded_Duration/Count, Created_Duration/Count, Published_Duration/Count.',
+    ],
+  },
+  {
+    id: '7',
+    title: 'Invalid Date Count',
+    formula: "COUNT(*) WHERE date NOT matching 'YYYY-MM-DD' OR date < '2020-01-01' OR date > CURRENT_DATE + 1 day",
+    details: [
+      'Applied on Uploaded_Date, Created_Date, Published_Date.',
+    ],
+  },
+  {
+    id: '8',
+    title: 'Unknown Value Count',
+    formula: "COUNT(*) WHERE LOWER(column) IN ('unknown', 'n/a', 'none', 'null', '')",
+    details: [
+      'Dimension columns: raw_videos(Input_Type, Language), users(Team_Name, Email), channels(Channel_Name), post_distribution(Platform).',
+    ],
+  },
+  {
+    id: '9',
+    title: 'Contamination Rate',
+    formula: 'Contamination % = (Unknown Values + NULL Violations in dimension columns) / Total Dimension Cell Count x 100',
+    details: [
+      'Total Dimension Cell Count = (rows raw_videos x 2) + (rows users x 2) + (rows post_distribution x 1) + (rows channels x 1).',
+    ],
+  },
+  {
+    id: '10',
+    title: 'Contamination Heatmap Cell',
+    formula: "Cell % = COUNT(NULL or unknown-like values in table.column) / COUNT(*) from table x 100",
+    details: [
+      "Unknown-like values include: 'unknown', 'n/a', 'none', ''.",
+    ],
+  },
+  {
+    id: '11',
+    title: 'Dead End Detection',
+    formula: 'Dead End if SUM(Uploaded_Count) > 0 AND SUM(Published_Count) = 0 for a dimension value',
+    details: [
+      'Applied across dimensions such as Language, Input_Type, Channel, Platform.',
+    ],
+  },
+  {
+    id: '12',
+    title: 'Suspicious User Detection',
+    formula: "Flag user if any rule matches: risky email keyword OR Created_Count > Uploaded_Count OR Uploaded_Count > 50 with Published_Count = 0 OR non-company email domain",
+    details: [
+      "Keywords: test, delete, mock, qa, dummy. Allowed domains: '@frammer.com', '@frammer.ai'.",
+    ],
+  },
+  {
+    id: '13',
+    title: 'Quality Score Trend (90-Day)',
+    formula: 'Daily Score = (1 - (issues detected that day / total rows that day)) x 100',
+    details: [
+      'Plot the last 90 daily values with a fixed 90% target line.',
+    ],
+  },
+  {
+    id: '14',
+    title: 'Activity Logger Metrics (1h)',
+    formula: "Total Ops = COUNT(*) where timestamp > NOW() - 1 hour; Inserts/Updates/Deletes/Errors are operation-level filtered counts in same window",
+    details: [
+      "Inserts: operation='INSERT', Updates: operation='UPDATE', Deletes: operation='DELETE', Errors: status='ERROR'.",
+    ],
+  },
+  {
+    id: '15',
+    title: 'Broken Reference Chain Visual Severity',
+    formula: 'Link color: green(0), amber(1-10), red(>10); line thickness = MIN(12, MAX(2, orphan_count / 5))',
+    details: [
+      'Badge value shows exact orphan count per FK relationship.',
+    ],
+  },
+  {
+    id: '16',
+    title: 'Issue Severity Classification',
+    formula: 'Critical = duplicate PK or critical FK/suspicious-user conditions; Warning = NULL-required/negative/FK non-critical; Info = unknown, parseable invalid date, low-volume dead ends',
+    details: [],
+  },
+];
+
+const QUALITY_FORMULA_GUIDE = {
+  '1': {
+    math: 'Health % = (1 - issues/rows) x 100',
+    definition: 'This is the overall data quality score.',
+    instruction: 'If this drops, open issue types and see what increased.',
+  },
+  '2': {
+    math: 'Table Health % = (1 - table_issues/table_rows) x 100',
+    definition: 'This shows quality score for each table.',
+    instruction: 'Find the lowest table score first and fix that table.',
+  },
+  '3': {
+    math: 'NULL count = number of required blank cells',
+    definition: 'Counts required fields that are blank.',
+    instruction: 'Fix these first so records are complete.',
+  },
+  '4': {
+    math: 'Duplicate IDs = total IDs - unique IDs',
+    definition: 'Counts duplicate IDs that should be unique.',
+    instruction: 'Treat this as high priority to avoid wrong reporting.',
+  },
+  '5': {
+    math: 'Orphans = child rows with missing parent row',
+    definition: 'Counts broken links between related tables.',
+    instruction: 'Start with red links because they are the most severe.',
+  },
+  '6': {
+    math: 'Negative count = values < 0',
+    definition: 'Counts negative numbers where they should not exist.',
+    instruction: 'Check data input and calculations for those fields.',
+  },
+  '7': {
+    math: 'Invalid date count = wrong format or out-of-range date',
+    definition: 'Counts dates that look wrong or out of range.',
+    instruction: 'Standardize date format and block bad dates at input.',
+  },
+  '8': {
+    math: 'Unknown count = blank/unknown/n-a/none values',
+    definition: 'Counts placeholder values like Unknown or N/A.',
+    instruction: 'Replace placeholders with real values where possible.',
+  },
+  '9': {
+    math: 'Contamination % = bad dimension cells/total dimension cells x 100',
+    definition: 'Shows how much key text data is blank or placeholder.',
+    instruction: 'Lower contamination to improve dashboard trust.',
+  },
+  '10': {
+    math: 'Cell % = bad cells in this column/table rows x 100',
+    definition: 'Shows contamination by table and column.',
+    instruction: 'Start cleanup from the darkest cells.',
+  },
+  '11': {
+    math: 'Dead end = uploads > 0 and published = 0',
+    definition: 'Finds paths where uploads happen but nothing gets published.',
+    instruction: 'Use this to find workflow bottlenecks.',
+  },
+  '12': {
+    math: 'Flag if any rule is true (rule1 OR rule2 OR rule3 OR rule4)',
+    definition: 'Flags accounts with unusual behavior.',
+    instruction: 'Review critical accounts first.',
+  },
+  '13': {
+    math: 'Daily quality % = (1 - daily_issues/daily_rows) x 100',
+    definition: 'Shows quality trend over the last 90 days.',
+    instruction: 'Watch long-term direction, not single-day spikes.',
+  },
+  '14': {
+    math: '1h counts = operations in last 1 hour',
+    definition: 'Shows recent system activity and errors.',
+    instruction: 'Use this during monitoring and troubleshooting.',
+  },
+  '15': {
+    math: 'Line width = min(12, max(2, orphans/5))',
+    definition: 'Visual style (color/thickness) shows how bad broken links are.',
+    instruction: 'Use color and thickness to prioritize quickly.',
+  },
+  '16': {
+    math: 'Priority order = Critical > Warning > Info',
+    definition: 'Groups issues by importance: Critical, Warning, Info.',
+    instruction: 'Fix in this order: Critical, then Warning, then Info.',
+  },
+};
+
+function FormulaReferenceTooltip() {
+  return (
+    <div className="space-y-2.5">
+      <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-amber-400">Data Quality Help Guide</div>
+      <p className="text-[11px] leading-relaxed text-neutral-300">
+        Quick explanation of each metric in simple language.
+      </p>
+      <div className="space-y-2">
+        {QUALITY_FORMULA_REFERENCE.map((item) => (
+          <div key={item.id} className="rounded-lg border border-neutral-800/70 bg-[#090909] p-2.5">
+            <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-neutral-200">
+              {item.id}. {item.title}
+            </div>
+            <p className="mt-1.5 text-[10px] leading-relaxed text-amber-300">
+              <span className="font-semibold text-amber-200">Math:</span>{' '}
+              {QUALITY_FORMULA_GUIDE[item.id]?.math}
+            </p>
+            <p className="mt-1.5 text-[10px] leading-relaxed text-neutral-300">
+              <span className="font-semibold text-neutral-200">Definition:</span>{' '}
+              {QUALITY_FORMULA_GUIDE[item.id]?.definition}
+            </p>
+            <p className="mt-1 text-[10px] leading-relaxed text-neutral-400">
+              <span className="font-semibold text-neutral-300">Instruction:</span>{' '}
+              {QUALITY_FORMULA_GUIDE[item.id]?.instruction}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Shared components ──
 const Panel = ({ children, className = '' }) => (
   <div className={`rounded-2xl border border-neutral-800 bg-[#0D0D0D] p-5 transition-all duration-200 hover:border-neutral-700 ${className}`}>{children}</div>
@@ -223,6 +470,76 @@ const Panel = ({ children, className = '' }) => (
 const Badge = ({ children, className = '' }) => (
   <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${className}`}>{children}</span>
 );
+
+function FormulaInfoButton({
+  tooltip,
+  ariaLabel = 'Formula details',
+  align = 'right',
+  widthClass = 'w-[min(22rem,calc(100vw-2rem))]',
+  buttonClassName = '',
+  tooltipClassName = '',
+}) {
+  const [open, setOpen] = useState(false);
+  const closeTimerRef = useRef(null);
+  const alignmentClass = align === 'left'
+    ? 'left-0'
+    : align === 'center'
+      ? 'left-1/2 -translate-x-1/2'
+      : 'right-0';
+
+  const clearCloseTimer = () => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  };
+
+  const openTooltip = () => {
+    clearCloseTimer();
+    setOpen(true);
+  };
+
+  const closeTooltipWithDelay = () => {
+    clearCloseTimer();
+    closeTimerRef.current = setTimeout(() => setOpen(false), 160);
+  };
+
+  useEffect(() => {
+    return () => clearCloseTimer();
+  }, []);
+
+  return (
+    <div
+      className="relative inline-flex"
+      onFocusCapture={openTooltip}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          setOpen(false);
+        }
+      }}
+    >
+      <button
+        type="button"
+        aria-label={ariaLabel}
+        onMouseEnter={openTooltip}
+        onMouseLeave={closeTooltipWithDelay}
+        onFocus={openTooltip}
+        className={`inline-flex h-5 w-5 items-center justify-center rounded-full border border-neutral-700 bg-neutral-900 text-[9px] font-black tracking-tight text-neutral-300 transition-colors duration-200 hover:border-amber-500/60 hover:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/20 ${buttonClassName}`}
+      >
+        <span className="leading-none">fx</span>
+      </button>
+      <div
+        onMouseEnter={openTooltip}
+        onMouseLeave={closeTooltipWithDelay}
+        className={`absolute top-full z-50 mt-2 max-w-[calc(100vw-2rem)] rounded-xl border border-neutral-700 bg-[#0d0d0d] p-4 shadow-2xl transition-all duration-150 ${alignmentClass} ${widthClass} break-words whitespace-normal text-[11px] leading-relaxed text-neutral-300 ${tooltipClassName} ${
+          open ? 'pointer-events-auto translate-y-0 opacity-100' : 'pointer-events-none translate-y-1 opacity-0'
+        }`}
+      >
+        {tooltip}
+      </div>
+    </div>
+  );
+}
 
 function FlipCard({ front, back, className = '' }) {
   const [flipped, setFlipped] = useState(false);
@@ -355,6 +672,23 @@ function QualityTrendsChart() {
       <div className="mb-3 flex items-center gap-2">
         <TrendingUp className="h-3.5 w-3.5 text-emerald-400" strokeWidth={2.5} />
         <span className="text-sm font-bold text-white">Quality Score Trend</span>
+        <FormulaInfoButton
+          ariaLabel="Quality score trend formula"
+          align="left"
+          widthClass="w-[min(24rem,calc(100vw-2rem))]"
+          tooltip={
+            <InfoTooltipContent
+              eyebrow="How This Works"
+              summary="This chart shows whether data quality is getting better or worse."
+              bullets={[
+                { label: 'Simple math', text: 'Quality % = (1 - issues/rows) x 100' },
+                { label: 'Higher is better', text: 'A higher score means fewer data issues.' },
+                { label: 'Time range', text: 'You are seeing the last 90 days.' },
+                { label: 'Target', text: 'The dashed line is the quality goal (90%).' },
+              ]}
+            />
+          }
+        />
         <span className="ml-1 text-[10px] text-neutral-500">90-day rolling average against 90% target</span>
       </div>
       <div className="flex-1 min-h-0" style={{ minHeight: 200 }}>
@@ -688,7 +1022,17 @@ export default function DataQualityModule({ authUser }) {
             <ShieldCheck className="h-4 w-4 text-emerald-400" />
           </div>
           <div>
-            <h2 className="text-sm font-bold text-white">Data Quality & Governance</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-bold text-white">Data Quality & Governance</h2>
+              <FormulaInfoButton
+                ariaLabel="Complete data quality formula reference"
+                align="left"
+                widthClass="w-[min(34rem,calc(100vw-2rem))]"
+                buttonClassName="h-5 w-5"
+                tooltipClassName="max-h-[72vh] overflow-y-auto"
+                tooltip={<FormulaReferenceTooltip />}
+              />
+            </div>
             <p className="text-[11px] text-neutral-500">Monitor integrity, debug pipelines, and ensure clean analytics.</p>
           </div>
         </div>
@@ -856,6 +1200,23 @@ export default function DataQualityModule({ authUser }) {
                   <h3 className="flex items-center gap-2 text-sm font-bold text-white">
                     <div className="rounded-lg bg-violet-500/10 p-1.5"><HelpCircle className="h-3.5 w-3.5 text-violet-400" /></div>
                     Value Contamination Matrix
+                    <FormulaInfoButton
+                      ariaLabel="Contamination formulas"
+                      align="left"
+                      widthClass="w-[min(24rem,calc(100vw-2rem))]"
+                      tooltip={
+                        <InfoTooltipContent
+                          eyebrow="How This Works"
+                          summary="Contamination means important text fields are blank or generic values."
+                          bullets={[
+                            { label: 'Simple math', text: 'Contamination % = bad cells/total cells x 100' },
+                            { label: 'Examples', text: "Blank, Unknown, N/A, None." },
+                            { label: 'Cell value', text: 'Shows what percent of rows are bad in that column.' },
+                            { label: 'What to do', text: 'Start cleaning columns with the highest percentages.' },
+                          ]}
+                        />
+                      }
+                    />
                   </h3>
                   <span className="text-[10px] font-medium uppercase tracking-wider text-neutral-400">% of "Unknown" or NULL values</span>
                 </div>
@@ -866,6 +1227,23 @@ export default function DataQualityModule({ authUser }) {
                   <h3 className="flex items-center gap-2 text-sm font-bold text-white">
                     <div className="rounded-lg bg-amber-500/10 p-1.5"><Unlink className="h-3.5 w-3.5 text-amber-400" /></div>
                     Broken Reference Chains
+                    <FormulaInfoButton
+                      ariaLabel="Foreign key orphan formulas"
+                      align="left"
+                      widthClass="w-[min(24rem,calc(100vw-2rem))]"
+                      tooltip={
+                        <InfoTooltipContent
+                          eyebrow="How This Works"
+                          summary="This map shows broken parent-child links (orphans)."
+                          bullets={[
+                            { label: 'Simple math', text: 'Orphans = child rows with missing parent rows' },
+                            { label: 'Broken link', text: 'A child row points to a parent row that does not exist.' },
+                            { label: 'Colors', text: 'Green is good, amber needs attention, red is urgent.' },
+                            { label: 'Thickness', text: 'Thicker lines mean more broken records.' },
+                          ]}
+                        />
+                      }
+                    />
                   </h3>
                   <span className="text-[10px] font-medium uppercase tracking-wider text-neutral-400">Foreign Key Violations</span>
                 </div>
@@ -888,6 +1266,23 @@ export default function DataQualityModule({ authUser }) {
                 <div className="mb-3 flex items-center gap-2">
                   <div className="rounded-lg bg-amber-500/10 p-1.5"><RouteOff className="h-3.5 w-3.5 text-amber-400" /></div>
                   <h3 className="text-sm font-bold text-white">Dead End Paths</h3>
+                  <FormulaInfoButton
+                    ariaLabel="Dead end detection formula"
+                    align="left"
+                    widthClass="w-[min(24rem,calc(100vw-2rem))]"
+                    tooltip={
+                      <InfoTooltipContent
+                        eyebrow="How This Works"
+                        summary="Dead ends are paths where content gets uploaded but never published."
+                        bullets={[
+                          { label: 'Simple math', text: 'Dead end = uploads > 0 and published = 0' },
+                          { label: 'Meaning', text: 'Work started, but no output reached publish.' },
+                          { label: 'Where checked', text: 'Language, input type, channel, platform, and more.' },
+                          { label: 'Card count', text: 'Total number of blocked paths.' },
+                        ]}
+                      />
+                    }
+                  />
                   <Badge className="ml-auto shrink-0 border border-amber-500/20 bg-amber-500/10 text-amber-400">{totalDeadEnds}</Badge>
                 </div>
                 {/* This div takes up all remaining space and scrolls */}
@@ -922,6 +1317,24 @@ export default function DataQualityModule({ authUser }) {
                 <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-white">
                   <div className="rounded-lg bg-pink-500/10 p-1.5"><UserX className="h-3.5 w-3.5 text-pink-400" /></div>
                   Suspicious Accounts
+                  <FormulaInfoButton
+                    ariaLabel="Suspicious user detection formulas"
+                    align="left"
+                    widthClass="w-[min(24rem,calc(100vw-2rem))]"
+                    tooltip={
+                      <InfoTooltipContent
+                        eyebrow="How This Works"
+                        summary="An account is flagged when any suspicious pattern is detected."
+                        bullets={[
+                          { label: 'Simple math', text: 'Flagged if any rule is true (rule1 OR rule2 OR rule3 OR rule4)' },
+                          { label: 'Test-like account', text: 'Email looks like test or dummy usage.' },
+                          { label: 'Impossible activity', text: 'Created count is higher than uploaded count.' },
+                          { label: 'High effort, no result', text: 'Many uploads but no published output.' },
+                          { label: 'Unapproved email', text: 'Email is outside allowed company domains.' },
+                        ]}
+                      />
+                    }
+                  />
                   <Badge className="ml-auto border border-red-500/20 bg-red-500/10 text-red-400">{(data.suspicious_users || []).length}</Badge>
                 </h3>
                 <div className="flex-1 space-y-2 overflow-y-auto pr-1">
@@ -1014,10 +1427,57 @@ export default function DataQualityModule({ authUser }) {
                     <tr>
                       <th className="w-10 border-b border-neutral-800/60 p-3" />
                       <th className="border-b border-neutral-800/60 p-3 text-[10px] font-bold uppercase tracking-wider text-neutral-400">Table</th>
-                      <th className="border-b border-neutral-800/60 p-3 text-[10px] font-bold uppercase tracking-wider text-neutral-400">Check Type</th>
+                      <th className="border-b border-neutral-800/60 p-3 text-[10px] font-bold uppercase tracking-wider text-neutral-400">
+                        <div className="flex items-center gap-1.5">
+                          <span>Check Type</span>
+                          <FormulaInfoButton
+                            ariaLabel="Check type counting formulas"
+                            align="left"
+                            widthClass="w-[min(24rem,calc(100vw-2rem))]"
+                            buttonClassName="h-4 w-4 border-neutral-600 bg-neutral-900/90 text-[8px]"
+                            tooltip={
+                              <InfoTooltipContent
+                                eyebrow="How Counts Are Made"
+                                summary="Each issue type has a simple rule."
+                                bullets={[
+                                  { label: 'Simple math', text: 'Count = number of rows matching that issue rule' },
+                                  { label: 'NULL', text: 'Required field is blank.' },
+                                  { label: 'Duplicate ID', text: 'An ID appears more than once.' },
+                                  { label: 'Broken link', text: 'A related record is missing.' },
+                                  { label: 'Negative value', text: 'A number is below zero when it should not be.' },
+                                  { label: 'Invalid date', text: 'Date format or date range is not valid.' },
+                                  { label: 'Unknown value', text: "Value is generic text like 'unknown' or 'n/a'." },
+                                ]}
+                              />
+                            }
+                          />
+                        </div>
+                      </th>
                       <th className="border-b border-neutral-800/60 p-3 text-[10px] font-bold uppercase tracking-wider text-neutral-400">Column</th>
                       <th className="border-b border-neutral-800/60 p-3 text-[10px] font-bold uppercase tracking-wider text-neutral-400">Count</th>
-                      <th className="border-b border-neutral-800/60 p-3 text-[10px] font-bold uppercase tracking-wider text-neutral-400">Severity</th>
+                      <th className="border-b border-neutral-800/60 p-3 text-[10px] font-bold uppercase tracking-wider text-neutral-400">
+                        <div className="flex items-center gap-1.5">
+                          <span>Severity</span>
+                          <FormulaInfoButton
+                            ariaLabel="Issue severity classification formula"
+                            align="left"
+                            widthClass="w-[min(24rem,calc(100vw-2rem))]"
+                            buttonClassName="h-4 w-4 border-neutral-600 bg-neutral-900/90 text-[8px]"
+                            tooltip={
+                              <InfoTooltipContent
+                                eyebrow="How Severity Is Set"
+                                summary="Severity helps prioritize what to fix first."
+                                bullets={[
+                                  { label: 'Simple rule', text: 'Priority order is Critical > Warning > Info' },
+                                  { label: 'Critical', text: 'High impact. Fix immediately.' },
+                                  { label: 'Warning', text: 'Important issue. Fix soon.' },
+                                  { label: 'Info', text: 'Low impact cleanup item.' },
+                                ]}
+                              />
+                            }
+                          />
+                        </div>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
