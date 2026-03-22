@@ -3,7 +3,7 @@ import { Doughnut, Line, Bar } from 'react-chartjs-2';
 import {
   X, AlertTriangle, Download, Image as ImageIcon,
   CircleDot, ChevronDown, SlidersHorizontal, History,
-  Maximize2, Minimize2, RotateCcw, Zap, Settings2, Info,
+  Maximize2, Minimize2, RotateCcw, Zap, Settings2,
 } from 'lucide-react';
 import { useApi } from '../../hooks/useApi';
 import { API_BASE } from '../../lib/constants';
@@ -12,6 +12,8 @@ import { buildFilterParams, toOptionList, enumerateDates } from '../../lib/filte
 import { detectAnomalies } from '../../lib/anomalyDetection';
 import FloatingDropdown from '../../components/common/FloatingDropdown';
 import DateRangeSlider from '../../components/common/DateRangeSlider';
+import HoverInfoButton from '../../components/common/HoverInfoButton';
+import InfoTooltipContent from '../../components/common/InfoTooltipContent';
 
 // ─── Anomaly insight helper ──────────────────────────────────────────────────
 function getAnomalyInsight(anomaly) {
@@ -174,24 +176,27 @@ function GranularityPills({ value, onChange }) {
   );
 }
 
-function SectionInfoButton({ description = 'Context and definitions will be available here.' }) {
+function SectionInfoButton({ description }) {
+  const tooltip = description || (
+    <InfoTooltipContent
+      eyebrow="Section Context"
+      summary="Describes metric intent, derivation logic, and how to interpret movement."
+      bullets={[
+        { label: 'Definition', text: 'What this panel measures and why it matters.' },
+        { label: 'Reading guide', text: 'How to interpret high, low, and changing values.' },
+      ]}
+      takeaway="Use this context to avoid misreading normal variance as a true signal."
+    />
+  );
+
   return (
-    <div className="relative group">
-      <button
-        type="button"
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-        }}
-        aria-label="Section information"
-        className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-neutral-700 bg-[#0f1116] text-neutral-400 transition-colors hover:border-neutral-500 hover:text-white"
-      >
-        <Info size={13} />
-      </button>
-      <div className="pointer-events-none absolute right-0 top-8 z-20 w-72 rounded-lg border border-neutral-700 bg-[#0b0d11] px-3 py-2 text-[11px] leading-relaxed text-neutral-300 opacity-0 shadow-xl transition-opacity group-hover:opacity-100">
-        {description}
-      </div>
-    </div>
+    <HoverInfoButton
+      ariaLabel="Section information"
+      widthClass="w-80"
+      buttonClassName="h-7 w-7 text-[11px]"
+      tooltipClassName="text-[11px] leading-relaxed"
+      tooltip={tooltip}
+    />
   );
 }
 
@@ -1071,8 +1076,29 @@ export default function UserJourneyModule({ authUser }) {
                   <div className="flex items-center gap-2">
                     <SectionInfoButton
                       description={pipelineTab === 'conversion'
-                        ? 'Pipeline Conversion summarizes how content moves from upload to publish to distribution, with headline rates and top-performing context.'
-                        : 'Sensitivity Analysis lets you simulate changes to core inputs and see projected KPI impact across engagement, reach, and pipeline efficiency.'}
+                        ? (
+                          <InfoTooltipContent
+                            eyebrow="Pipeline Conversion"
+                            summary="Tracks how work progresses from uploads to published posts to distributions."
+                            bullets={[
+                              { label: 'Stage efficiency', text: 'Gauges show drop-off and throughput at each major pipeline step.' },
+                              { label: 'Performance cues', text: 'Highlights surface strongest platforms and content pathways.' },
+                              { label: 'Bottlenecks', text: 'Large stage gaps signal where conversion friction is accumulating.' },
+                            ]}
+                            takeaway="Use this tab to decide whether to optimize creation, publishing, or distribution next."
+                          />
+                        ) : (
+                          <InfoTooltipContent
+                            eyebrow="Sensitivity Analysis"
+                            summary="A controlled what-if model for testing how input shifts may change downstream KPIs."
+                            bullets={[
+                              { label: 'Inputs', text: 'Adjust core drivers and observe projected deltas across KPIs.' },
+                              { label: 'Interpretation', text: 'Treat outputs as directional planning estimates, not causal proof.' },
+                              { label: 'Application', text: 'Use it to compare scenarios before committing execution resources.' },
+                            ]}
+                            takeaway="Validate high-impact scenarios against historical behavior before rollout."
+                          />
+                        )}
                     />
                     {pipelineTab === 'sensitivity' && (
                       <KpiToggle items={SENS_KPIS} active={visibleSensKpis} onToggle={toggleSensKpi} />

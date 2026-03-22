@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { Chart } from 'react-chartjs-2';
 import FunnelViewContextStrip from './FunnelViewContextStrip';
+import HoverInfoButton from '../../../components/common/HoverInfoButton';
+import InfoTooltipContent from '../../../components/common/InfoTooltipContent';
 
 const C = {
   c1: '#8b5cf6', c2: '#60a5fa', c3: '#34d399', c4: '#f97316',
@@ -17,18 +19,13 @@ const CardTitle = ({ title, desc, infoTooltip }) => (
     <div className="flex items-center justify-between gap-2">
       <h3 className="text-[15px] font-semibold text-white">{title}</h3>
       {infoTooltip ? (
-        <div className="group relative">
-          <button
-            type="button"
-            className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-neutral-700/80 text-[10px] font-semibold text-neutral-400 transition-colors hover:border-neutral-600 hover:text-neutral-200"
-            aria-label={`More information about ${title}`}
-          >
-            i
-          </button>
-          <div className="pointer-events-none absolute right-0 top-full z-20 mt-2 hidden w-80 rounded-lg border border-neutral-800 bg-[#0f0f10] p-2.5 text-[11px] text-neutral-300 shadow-2xl group-hover:block group-focus-within:block">
-            {infoTooltip}
-          </div>
-        </div>
+        <HoverInfoButton
+          ariaLabel={`More information about ${title}`}
+          widthClass="w-80"
+          buttonClassName="h-5 w-5 text-[10px] font-semibold"
+          tooltipClassName="p-3 text-[11px] text-neutral-300"
+          tooltip={infoTooltip}
+        />
       ) : null}
     </div>
     {desc && <p className="mt-1 text-[12px] text-neutral-500 leading-relaxed">{desc}</p>}
@@ -631,7 +628,18 @@ export default function ChannelEfficiencyTab({ authUser, data, breakdown, filter
             <CardTitle
               title="Volume vs yield"
               desc="Switch between channel and team distributions with shared risk highlighting."
-              infoTooltip="Scatter chart where x-axis is assigned videos and y-axis is yield percentage. Points in the lower-right risk zone represent high volume but low yield entities."
+              infoTooltip={
+                <InfoTooltipContent
+                  eyebrow="Volume vs Yield"
+                  summary="This scatter compares scale versus efficiency: x-axis is assigned videos and y-axis is yield percentage."
+                  bullets={[
+                    { label: 'Risk zone', text: 'Lower-right points are high-volume but low-yield entities.' },
+                    { label: 'Threshold logic', text: 'Flagging uses high-volume and low-yield percentile cutoffs.' },
+                    { label: 'Operational meaning', text: 'These entities consume capacity while producing weak publish return.' },
+                  ]}
+                  takeaway="Prioritize flagged entities for workflow fixes, assignment rebalancing, or content-fit review."
+                />
+              }
             />
             <div className="mb-2 inline-flex w-fit self-start rounded-md border border-neutral-800 bg-black/30 p-0.5">
               {scatterViewOptions.map((option) => {
@@ -701,7 +709,18 @@ export default function ChannelEfficiencyTab({ authUser, data, breakdown, filter
             <CardTitle
               title="Absolute waste"
               desc="Ranked by waste slots."
-              infoTooltip="Waste slots = assigned videos - published outputs. Higher waste indicates more assigned work that did not result in published output."
+              infoTooltip={
+                <InfoTooltipContent
+                  eyebrow="Absolute Waste"
+                  summary="Waste slots are assigned videos minus published outputs, showing absolute production leakage."
+                  bullets={[
+                    { label: 'Concentration', text: 'Rank and top-share indicate whether waste is localized or broad.' },
+                    { label: 'Severity', text: 'Higher values represent more assigned effort that never reached publish.' },
+                    { label: 'Root causes', text: 'Persistent waste often points to process friction or capacity mismatch.' },
+                  ]}
+                  takeaway="Use concentration plus trend direction to target interventions at the right level."
+                />
+              }
             />
             <div className="mb-2 inline-flex w-fit self-start rounded-md border border-neutral-800 bg-black/30 p-0.5">
               {wasteViewOptions.map((option) => {
@@ -780,7 +799,18 @@ export default function ChannelEfficiencyTab({ authUser, data, breakdown, filter
           <CardTitle
             title="Publish lag distribution"
             desc="Days from asset creation to first published post."
-            infoTooltip="Distribution of how long it takes assets to become published posts. Bars to the right indicate slower publish turnaround."
+            infoTooltip={
+              <InfoTooltipContent
+                eyebrow="Publish Lag"
+                summary="Histogram of days from asset creation to first published post."
+                bullets={[
+                  { label: 'Fast flow', text: 'A left-heavy shape indicates quicker turnaround.' },
+                  { label: 'Backlog signal', text: 'A growing right tail suggests delayed publishing or queue buildup.' },
+                  { label: 'Change tracking', text: 'Compare shape shifts to evaluate whether process updates reduced lag.' },
+                ]}
+                takeaway="Monitor tail behavior, not only averages, to catch hidden cycle-time risk."
+              />
+            }
           />
           <div className="h-[185px] md:h-[200px]">
             <Chart type="bar" data={publishLagData} options={publishLagOptions} />
@@ -792,7 +822,18 @@ export default function ChannelEfficiencyTab({ authUser, data, breakdown, filter
           <CardTitle
             title="Team efficiency comparison"
             desc="Upload to asset ratio and asset to publish ratio by team."
-            infoTooltip="Compares two efficiency ratios per team: upload-to-asset conversion and asset-to-publish conversion. Taller bars indicate stronger conversion performance."
+            infoTooltip={
+              <InfoTooltipContent
+                eyebrow="Team Efficiency"
+                summary="Compares two stage efficiencies per team: upload-to-asset conversion and asset-to-publish conversion."
+                bullets={[
+                  { label: 'Balanced strength', text: 'Teams high on both bars are healthy end-to-end.' },
+                  { label: 'Gap diagnosis', text: 'Large bar gaps reveal whether friction is in creation or publishing.' },
+                  { label: 'Action path', text: 'Use stage imbalance to choose targeted coaching or workflow fixes.' },
+                ]}
+                takeaway="Treat this as a stage-diagnostic view, not just a leaderboard."
+              />
+            }
           />
           <div className="mb-2 flex flex-wrap items-center gap-2 text-[10px] text-neutral-400">
             <div className="inline-flex items-center gap-1.5 rounded-md border border-neutral-800 bg-black/30 px-2 py-1">
