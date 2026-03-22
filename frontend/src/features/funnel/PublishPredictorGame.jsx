@@ -532,7 +532,12 @@ export default function PublishPredictorGame({ authUser }) {
             )}
             <button
               onClick={() => setShowInfo((v) => !v)}
-              className={`p-2 rounded-lg border transition-colors ${showInfo ? "border-red-500/40 bg-red-500/10 text-red-400" : "border-neutral-800 text-neutral-500 hover:text-white"}`}
+              aria-label={showInfo ? "Hide model information" : "Show model information"}
+              className={`inline-flex h-7 w-7 items-center justify-center rounded-full border bg-neutral-800 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 ${
+                showInfo
+                  ? "border-amber-500/60 text-amber-400 ring-amber-500/20"
+                  : "border-neutral-700 text-neutral-400 hover:border-amber-500/50 hover:text-amber-400 focus-visible:border-amber-500/60 focus-visible:ring-amber-500/20"
+              }`}
             >
               <Info size={14} />
             </button>

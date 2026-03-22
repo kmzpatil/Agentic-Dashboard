@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, Plus, X, Wand2, Info } from "lucide-react";
+import { TrendingUp, Plus, X, Wand2 } from "lucide-react";
 import { Line } from 'react-chartjs-2';
 import { useApi } from '../../hooks/useApi';
 import { API_BASE } from '../../lib/constants';
 import { formatHours, formatNumber, formatPct } from '../../lib/formatters';
 import KpiCard from '../../components/common/KpiCard';
+import HoverInfoButton from '../../components/common/HoverInfoButton';
+import InfoTooltipContent from '../../components/common/InfoTooltipContent';
 import { OverviewSkeleton, Skeleton } from '../../components/common/Skeleton';
 import InsightCard from '../../components/insights/InsightCard';
 import KpiDetailsModal from './KpiDetailsModal';
@@ -44,24 +46,27 @@ function buildCoreKpiCards(kpis, monthlyTrends) {
   }));
 }
 
-function GraphInfoButton({ description = 'Graph context and definitions will be available here.' }) {
+function GraphInfoButton({ description }) {
+  const tooltip = description || (
+    <InfoTooltipContent
+      eyebrow="Chart Context"
+      summary="This panel explains what the chart measures, how values are computed, and how to interpret movement."
+      bullets={[
+        { label: 'Definition', text: 'What exactly the metric represents in this view.' },
+        { label: 'Interpretation', text: 'How to read increases, decreases, and unusual shifts.' },
+      ]}
+      takeaway="Use this context before acting on outliers or trend changes."
+    />
+  );
+
   return (
-    <div className="relative group">
-      <button
-        type="button"
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-        }}
-        aria-label="Graph information"
-        className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-neutral-700 bg-[#0f1116] text-neutral-400 transition-colors hover:border-neutral-500 hover:text-white"
-      >
-        <Info size={12} />
-      </button>
-      <div className="pointer-events-none absolute right-0 top-7 z-20 w-52 rounded-lg border border-neutral-700 bg-[#0b0d11] px-2.5 py-2 text-[11px] leading-relaxed text-neutral-300 opacity-0 shadow-xl transition-opacity group-hover:opacity-100">
-        {description}
-      </div>
-    </div>
+    <HoverInfoButton
+      ariaLabel="Graph information"
+      widthClass="w-80"
+      buttonClassName="h-6 w-6 text-[11px]"
+      tooltipClassName="text-[11px] leading-relaxed"
+      tooltip={tooltip}
+    />
   );
 }
 
@@ -639,7 +644,20 @@ export default function OverviewModule({ onNavigate }) {
                       </div>
                       <div className="flex items-center gap-2">
                         <div className="text-[10px] text-neutral-500">{activeStat.label}</div>
-                        <GraphInfoButton description="This trend chart tracks the selected metric over time for the chosen output type." />
+                        <GraphInfoButton
+                          description={
+                            <InfoTooltipContent
+                              eyebrow="Monthly Trend"
+                              summary="Shows month-over-month movement for the selected metric and output type."
+                              bullets={[
+                                { label: 'Direction', text: 'Slope indicates whether performance is improving or declining.' },
+                                { label: 'Volatility', text: 'Larger swings suggest unstable behavior or seasonality effects.' },
+                                { label: 'Inflections', text: 'Sudden bends can indicate campaign impact, behavior change, or data issues.' },
+                              ]}
+                              takeaway="Correlate inflection months with launches, policy changes, or ingestion events before deciding interventions."
+                            />
+                          }
+                        />
                       </div>
                     </div>
                     <div className="h-44">
@@ -661,7 +679,20 @@ export default function OverviewModule({ onNavigate }) {
         <div className="rounded-[24px] border border-neutral-800 bg-[#101216] p-6 flex flex-col" style={{ height: '680px' }}>
           <div className="mb-4 flex items-center justify-between gap-2 shrink-0">
             <div className="text-sm font-bold uppercase tracking-[0.14em] text-neutral-200">Frammer AI Insights</div>
-            <GraphInfoButton description="AI insights summarize notable patterns, risks, and opportunities from the current mission control scope." />
+            <GraphInfoButton
+              description={
+                <InfoTooltipContent
+                  eyebrow="AI Insights"
+                  summary="Highlights high-impact patterns, risks, and opportunities for the current filtered scope."
+                  bullets={[
+                    { label: 'Priority', text: 'Use insight ordering to decide what to investigate first.' },
+                    { label: 'Validation', text: 'Confirm the signal in funnel and drill-down views before action.' },
+                    { label: 'Scope', text: 'All narratives are computed from the currently selected filters.' },
+                  ]}
+                  takeaway="Treat insights as triage accelerators, then verify with supporting charts before operational changes."
+                />
+              }
+            />
           </div>
           <div className="flex flex-col gap-2.5 flex-1 min-h-0 overflow-y-auto hide-scrollbar">
             {insights.loading && [...Array(5)].map((_, i) => (
@@ -703,7 +734,20 @@ export default function OverviewModule({ onNavigate }) {
           <div className="rounded-[24px] border border-neutral-800 bg-[#101216] p-4 flex flex-col min-h-0">
             <div className="mb-3 flex items-center justify-between gap-2">
               <div className="text-[13px] font-bold uppercase tracking-[0.12em] text-neutral-300">Top Performers</div>
-              <GraphInfoButton description="Bars represent conversion rate by performer for the active scope." />
+              <GraphInfoButton
+                description={
+                  <InfoTooltipContent
+                    eyebrow="Top Performers"
+                    summary="Bars compare conversion rate by top entities in the active scope and selected dimension."
+                    bullets={[
+                      { label: 'Efficiency', text: 'Higher bars indicate stronger conversion performance.' },
+                      { label: 'Sample size', text: 'Low-volume entities can look strong; always sanity-check scale.' },
+                      { label: 'Comparability', text: 'Interpret ranking within the same filter context and time window.' },
+                    ]}
+                    takeaway="Pair conversion with underlying volume before prioritizing coaching or resource shifts."
+                  />
+                }
+              />
             </div>
             <div className="space-y-1.5 flex-1 min-h-0 overflow-y-auto hide-scrollbar pr-1">
               {(() => {
@@ -754,7 +798,20 @@ export default function OverviewModule({ onNavigate }) {
           <div className="rounded-[24px] border border-amber-700/30 bg-[#15120f] p-5 overflow-y-auto hide-scrollbar">
             <div className="mb-4 flex items-center justify-between gap-2">
               <div className="text-sm font-bold uppercase tracking-[0.14em] text-amber-300">Alerts</div>
-              <GraphInfoButton description="Alert cards flag noteworthy changes that may need action. Click an alert to jump to funnel analysis with the relevant breakdown pre-applied." />
+              <GraphInfoButton
+                description={
+                  <InfoTooltipContent
+                    eyebrow="Alerts"
+                    summary="Flags noteworthy shifts such as threshold breaches, emerging risks, or unusual metric movement."
+                    bullets={[
+                      { label: 'Shortcut', text: 'Clicking an alert opens funnel analysis with a pre-applied breakdown.' },
+                      { label: 'Purpose', text: 'Designed to speed up root-cause validation, not replace investigation.' },
+                      { label: 'Decision', text: 'Use alert context to choose mitigation, escalation, or watch-and-monitor.' },
+                    ]}
+                    takeaway="Resolve alerts by confirming cause first, then applying targeted funnel-level actions."
+                  />
+                }
+              />
             </div>
             <div className="space-y-3">
               {(data.alerts || []).map((alert) => (
