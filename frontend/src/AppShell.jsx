@@ -209,7 +209,7 @@ export default function AppShell() {
         <div className="w-full max-w-md rounded-3xl border border-neutral-800 bg-[#101010] p-8 shadow-[0_30px_120px_rgba(0,0,0,0.55)]">
           <div className="mb-6">
             <div className="text-[11px] font-bold uppercase tracking-[0.25em] text-neutral-500">Frammer Analytics OS</div>
-            <h1 className="mt-2 text-3xl font-black tracking-tight text-red-500">ATLAS</h1>
+            <h1 className="mt-2 text-3xl font-black tracking-tight text-red-500">FRAMMER AI</h1>
             <p className="mt-2 text-sm text-neutral-500">Sign in to open Mission Control.</p>
           </div>
           <form className="space-y-4" onSubmit={handleLogin}>
@@ -256,7 +256,7 @@ export default function AppShell() {
       <header className="border-b border-neutral-900 bg-[#050505] px-6 py-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0">
-            <h1 className="text-2xl font-black tracking-tight text-red-500">ATLAS</h1>
+            <h1 className="text-2xl font-black tracking-tight text-red-500">FRAMMER AI</h1>
           </div>
 
           <div className="flex items-center gap-3">

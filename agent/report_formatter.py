@@ -525,7 +525,7 @@ def render_report_html(
 
 <!-- Fixed header (repeats on every printed page) -->
 <div class="report-page-header">
-  <span class="logo">ATLAS</span>
+  <span class="logo">FRAMMER AI</span>
   <span class="divider"></span>
   <span class="label">Analytics Report</span>
 </div>
