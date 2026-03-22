@@ -69,8 +69,8 @@ def validate_dsl(dsl: dict[str, Any]) -> None:
     Raises ValueError with a human-readable message on any violation.
     """
     kpi_type = dsl.get("type")
-    if kpi_type not in ("single_metric", "formula"):
-        raise ValueError(f"Invalid DSL type '{kpi_type}'. Must be 'single_metric' or 'formula'.")
+    if kpi_type not in ("single_metric", "formula", "raw_sql"):
+        raise ValueError(f"Invalid DSL type '{kpi_type}'. Must be 'single_metric', 'formula', or 'raw_sql'.")
 
     granularity = dsl.get("time_granularity", "month")
     if granularity not in VALID_GRANULARITIES:
@@ -80,8 +80,10 @@ def validate_dsl(dsl: dict[str, Any]) -> None:
 
     if kpi_type == "single_metric":
         _validate_single_metric(dsl)
-    else:
+    elif kpi_type == "formula":
         _validate_formula(dsl)
+    elif kpi_type == "raw_sql":
+        _validate_raw_sql(dsl)
 
     _validate_filters(dsl.get("filters", []))
 
@@ -129,6 +131,11 @@ def _validate_formula(dsl: dict[str, Any]) -> None:
     for atom in operands:
         if atom not in formula:
             raise ValueError(f"Operand '{atom}' listed in 'operands' but not found in 'formula'.")
+
+def _validate_raw_sql(dsl: dict[str, Any]) -> None:
+    sql = dsl.get("sql", "").strip()
+    if not sql:
+        raise ValueError("DSL type 'raw_sql' requires a non-empty 'sql' field.")
 
 
 def _validate_filters(filters: list[Any]) -> None:

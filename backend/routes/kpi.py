@@ -77,7 +77,7 @@ async def list_kpis(auth: AuthContext = Depends(require_auth)):
     Ordered newest first.
     """
     try:
-        records = kpi_service.list_kpis()
+        records = kpi_service.list_kpis(created_by=auth.username)
         return {"kpis": records}
     except Exception as exc:
         logger.error("KPI list failed: %s", exc)

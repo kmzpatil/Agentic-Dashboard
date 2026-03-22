@@ -299,23 +299,29 @@ export default function OverviewModule({ onNavigate }) {
     }
   };
 
-  // Persist custom KPI records to localStorage (store serializable data only)
-  useEffect(() => {
-    const serializable = customKpis.map(k => ({
-      id: k.kpi_db_id, name: k.name, description: k.description, dsl_json: k.dsl_json,
-    }));
-    localStorage.setItem('mc_custom_kpis', JSON.stringify(serializable));
-  }, [customKpis]);
+  // No longer persisting to localStorage — server is the source of truth
 
-  // Restore custom KPIs from localStorage on mount
+  // Fetch custom KPIs from server on mount (scoped to logged-in user)
   useEffect(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem('mc_custom_kpis'));
-      if (!Array.isArray(saved) || saved.length === 0) return;
-      const restored = saved.map(r => buildCustomKpiObj(r, null));
-      setCustomKpis(restored);
-      saved.forEach(r => _fetchAndPatchKpi(r, `custom_${r.id}`));
-    } catch { /* ignore corrupted data */ }
+    const fetchCustomKpis = async () => {
+      try {
+        const token = localStorage.getItem('frammer_auth_token');
+        if (!token) return;
+        const res = await fetch(`${API_BASE}/kpi/list`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const { kpis: records } = await res.json();
+        if (!Array.isArray(records) || records.length === 0) {
+          setCustomKpis([]);
+          return;
+        }
+        const restored = records.map(r => buildCustomKpiObj(r, null));
+        setCustomKpis(restored);
+        records.forEach(r => _fetchAndPatchKpi(r, `custom_${r.id}`));
+      } catch { /* ignore — fall back to empty */ }
+    };
+    fetchCustomKpis();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleAddMore = () => {

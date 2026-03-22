@@ -91,6 +91,8 @@ def compile_dsl(dsl: dict[str, Any], access_filter: dict[str, Any]) -> str:
         return _compile_single_metric(dsl, access_filter)
     elif kpi_type == "formula":
         return _compile_formula(dsl, access_filter)
+    elif kpi_type == "raw_sql":
+        return _compile_raw_sql(dsl, access_filter)
     else:
         raise ValueError(f"Unknown DSL type: {kpi_type}")
 
@@ -130,6 +132,29 @@ def _compile_single_metric(dsl: dict[str, Any], access_filter: dict[str, Any]) -
     """
     metric = dsl["metric"]
     return get_metric_query(metric, access_filter)
+
+
+def _compile_raw_sql(dsl: dict[str, Any], access_filter: dict[str, Any]) -> str:
+    """
+    Wrap agent-generated raw SQL with the scoped base CTEs to enforce auth rules.
+    Replaces references to raw_videos, created_assets, published_posts with 
+    their scoped equivalents.
+    """
+    base_ctes = _scoped_base_ctes(access_filter)
+    raw_sql = dsl.get("sql", "")
+    
+    # Secure the agent's SQL by redirecting raw table reads to the auth CTEs
+    safe_sql = re.sub(r'\braw_videos\b', 'scoped_videos', raw_sql, flags=re.IGNORECASE)
+    safe_sql = re.sub(r'\bcreated_assets\b', 'scoped_assets', safe_sql, flags=re.IGNORECASE)
+    safe_sql = re.sub(r'\bpublished_posts\b', 'scoped_posts', safe_sql, flags=re.IGNORECASE)
+
+    # If agent SQL starts with WITH, merge CTEs into single WITH block
+    stripped = safe_sql.lstrip()
+    if re.match(r'(?i)^WITH\s', stripped):
+        agent_ctes_and_body = re.sub(r'(?i)^WITH\s+', '', stripped, count=1)
+        return f"WITH {base_ctes},\n{agent_ctes_and_body}"
+    else:
+        return f"WITH {base_ctes}\n{safe_sql}"
 
 
 def _compile_formula(dsl: dict[str, Any], access_filter: dict[str, Any]) -> str:
