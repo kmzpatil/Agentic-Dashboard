@@ -18,11 +18,10 @@ import { API_BASE } from "../../lib/constants";
 // ── SVG Gauge ────────────────────────────────────────────────────────────────
 
 function ProbabilityGauge({ value }) {
-  const r = 80;
-  const cx = 100,
-    cy = 100;
+  const r  = 80;
+  const cx = 100, cy = 100;
   const circumference = Math.PI * r;
-  const v = Math.max(0, Math.min(100, value));
+  const v      = Math.max(0, Math.min(100, value));
   const offset = circumference * (1 - v / 100);
 
   const color =
@@ -93,6 +92,10 @@ function ProbabilityGauge({ value }) {
 }
 
 const formatFeatureName = (feature) => {
+  if (feature === "Input_Type") return "Input Type";
+  if (feature === "Output_Type") return "Output Type";
+  if (feature === "Client_Name") return "Client";
+  if (feature === "Assigned_Channel") return "Channel";
   if (feature.startsWith("Input_Type_"))
     return `Input: ${feature.replace("Input_Type_", "").toUpperCase()}`;
   if (feature.startsWith("Output_Type_"))
@@ -241,30 +244,28 @@ function formatDurationCap(seconds) {
 // ── Main Component ───────────────────────────────────────────────────────────
 
 export default function PublishPredictorGame({ authUser }) {
-  const role = authUser?.role || "user";
-  const isAdmin = role === "website_admin";
+  const role        = authUser?.role || "user";
+  const isAdmin     = role === "website_admin";
   const lockedClient = !isAdmin ? authUser?.clientName || "" : "";
 
   const [options, setOptions] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState(null);
+  const [result,  setResult]  = useState(null);
+  const [error,   setError]   = useState(null);
   const [showInfo, setShowInfo] = useState(false);
 
-  // form
-  const [client, setClient] = useState("");
-  const [channel, setChannel] = useState("");
-  const [inputType, setInputType] = useState("");
-  const [language, setLanguage] = useState("");
-  const [outputType, setOutputType] = useState("");
-  const [uploadedDuration, setUploadedDuration] = useState(3000);
-  const [createdDuration, setCreatedDuration] = useState(1500);
-  const [uploadToCreateDays, setUploadToCreateDays] = useState(1);
-  const [uploadedDurationOverflow, setUploadedDurationOverflow] =
-    useState(false);
-  const [createdDurationOverflow, setCreatedDurationOverflow] = useState(false);
-  const [uploadToCreateDaysOverflow, setUploadToCreateDaysOverflow] =
-    useState(false);
+  // form state
+  const [client,      setClient]      = useState("");
+  const [channel,     setChannel]     = useState("");
+  const [inputType,   setInputType]   = useState("");
+  const [language,    setLanguage]    = useState("");
+  const [outputType,  setOutputType]  = useState("");
+  const [uploadedDuration,     setUploadedDuration]     = useState(3000);
+  const [createdDuration,      setCreatedDuration]      = useState(1500);
+  const [uploadToCreateDays,   setUploadToCreateDays]   = useState(1);
+  const [uploadedDurationOverflow,   setUploadedDurationOverflow]   = useState(false);
+  const [createdDurationOverflow,    setCreatedDurationOverflow]    = useState(false);
+  const [uploadToCreateDaysOverflow, setUploadToCreateDaysOverflow] = useState(false);
 
   const debounceRef = useRef(null);
 
@@ -284,28 +285,34 @@ export default function PublishPredictorGame({ authUser }) {
         const timeout = setTimeout(() => controller.abort(), 180_000);
         const res = await fetch(`${API_BASE}/publish-predictor/options`, {
           headers: authHeaders,
-          signal: controller.signal,
+          signal:  controller.signal,
         });
         clearTimeout(timeout);
         const data = await res.json();
         if (!res.ok)
           throw new Error(data?.error || `Server returned ${res.status}`);
         if (cancelled) return;
+
         setOptions(data);
+
         if (isAdmin) {
           if (data.clients?.length) setClient(data.clients[0]);
         } else {
           setClient(lockedClient || data.clients?.[0] || "");
         }
-        if (data.input_types?.length) setInputType(data.input_types[0]);
-        if (data.languages?.length) setLanguage(data.languages[0]);
+        if (data.input_types?.length)  setInputType(data.input_types[0]);
+        if (data.languages?.length)    setLanguage(data.languages[0]);
         if (data.output_types?.length) setOutputType(data.output_types[0]);
+
         setUploadedDuration(
           Math.round((data.max_uploaded_duration || 15000) / 3),
         );
         setCreatedDuration(
           Math.round((data.max_created_duration || 10000) / 3),
         );
+        // Initialise days slider to 1 regardless of cap — 1 day is a
+        // sensible default and the cap will update once options arrive.
+        setUploadToCreateDays(1);
       } catch (err) {
         if (!cancelled) {
           const msg =
@@ -323,6 +330,7 @@ export default function PublishPredictorGame({ authUser }) {
     };
   }, [authHeaders, isAdmin, lockedClient]);
 
+  // Lock non-admin back to their assigned client if it drifts
   useEffect(() => {
     if (!isAdmin && lockedClient && client !== lockedClient) {
       setClient(lockedClient);
@@ -337,13 +345,22 @@ export default function PublishPredictorGame({ authUser }) {
   }, [options, selectedClient]);
 
   const normalizedImpacts = useMemo(() => {
+    const grouped = Array.isArray(result?.grouped_shap_impacts)
+      ? result.grouped_shap_impacts
+      : [];
     const raw = Array.isArray(result?.shap_impacts) ? result.shap_impacts : [];
-    const prepared = raw.map((item) => {
+    const source = grouped.length > 0 ? grouped : raw;
+
+    const prepared = source.map((item) => {
       const impact = Number(item?.impact || 0);
+      const probabilityContribution = Number(
+        item?.probability_contribution ?? impact,
+      );
       return {
-        feature: String(item?.feature || "Unknown"),
+        feature:   String(item?.feature || "Unknown"),
         impact,
-        absImpact: Math.abs(impact),
+        probabilityContribution,
+        absImpact: Math.abs(probabilityContribution),
       };
     });
 
@@ -366,9 +383,13 @@ export default function PublishPredictorGame({ authUser }) {
     }
   }, [availableChannels]);
 
+  // ── Slider caps ───────────────────────────────────────────────────────────
   const uploadedDurationCap = Number(options?.max_uploaded_duration || 15000);
-  const createdDurationCap = Number(options?.max_created_duration || 10000);
-  const daysCap = 10;
+  const createdDurationCap  = Number(options?.max_created_duration  || 10000);
+
+  // FIX: daysCap is now dynamic from the API (95th percentile of training data)
+  // rather than the old hardcoded constant of 10.
+  const daysCap = Number(options?.max_upload_to_create_days || 30);
 
   const effectiveUploadedDuration = uploadedDurationOverflow
     ? uploadedDurationCap
@@ -408,13 +429,13 @@ export default function PublishPredictorGame({ authUser }) {
           ...authHeaders,
         },
         body: JSON.stringify({
-          client_name: selectedClient,
-          assigned_channel: channel,
-          input_type: inputType,
+          client_name:           selectedClient,
+          assigned_channel:      channel,
+          input_type:            inputType,
           language,
-          output_type: outputType,
-          uploaded_duration: effectiveUploadedDuration,
-          created_duration: effectiveCreatedDuration,
+          output_type:           outputType,
+          uploaded_duration:     effectiveUploadedDuration,
+          created_duration:      effectiveCreatedDuration,
           upload_to_create_days: effectiveUploadToCreateDays,
         }),
       });
@@ -498,21 +519,7 @@ export default function PublishPredictorGame({ authUser }) {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-500/10 border border-red-500/20">
-            <Target size={18} className="text-red-500" />
-          </div>
-          <div>
-            <h3 className="text-sm font-black uppercase tracking-[0.12em] text-white">
-              Publish Oracle
-            </h3>
-            <p className="text-[11px] text-neutral-500 mt-0.5">
-              Interactive what-if simulation — tweak asset attributes and watch
-              publish probability change in real time
-            </p>
-          </div>
-        </div>
+      <div className="flex items-center justify-end flex-wrap gap-3">
 
         {isAdmin && (
           <div className="flex items-center gap-2">
@@ -552,9 +559,12 @@ export default function PublishPredictorGame({ authUser }) {
             How it works
           </h4>
           <p className="text-xs text-neutral-400 leading-relaxed">
-            A <strong className="text-white">RandomForest classifier</strong>{" "}
-            (100 decision trees, balanced class weights) is trained on
-            historical pipeline data. It learns patterns across{" "}
+            A{" "}
+            <strong className="text-white">
+              calibrated RandomForest classifier
+            </strong>{" "}
+            (300 decision trees, isotonic calibration, balanced class weights)
+            is trained on historical pipeline data. It learns patterns across{" "}
             <strong className="text-neutral-200">
               client, channel, content type, language, and duration
             </strong>{" "}
@@ -562,7 +572,7 @@ export default function PublishPredictorGame({ authUser }) {
           </p>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             {[
-              ["100", "Decision Trees"],
+              ["300", "Decision Trees"],
               [
                 `${options?.total_samples ? (options.total_samples / 1000).toFixed(0) + "K" : "—"}`,
                 "Training Rows",
@@ -586,8 +596,10 @@ export default function PublishPredictorGame({ authUser }) {
             ))}
           </div>
           <p className="text-[10px] text-neutral-600">
-            Target classes: <span className="text-neutral-400">Published</span>{" "}
-            and <span className="text-neutral-400">Not Published</span>.
+            Target classes:{" "}
+            <span className="text-neutral-400">Published</span> and{" "}
+            <span className="text-neutral-400">Not Published</span>.
+            Probabilities are isotonic-calibrated for a realistic 0–100% range.
           </p>
         </div>
       )}
@@ -741,6 +753,34 @@ export default function PublishPredictorGame({ authUser }) {
         <div className="lg:col-span-3 space-y-4">
           {/* Gauge */}
           <div className="rounded-2xl border border-neutral-800 bg-[#0a0a0a] p-4 flex flex-col items-center">
+            <div className="w-full mb-2 flex items-center justify-between">
+              <h4 className="text-[10px] font-bold uppercase tracking-[0.15em] text-neutral-500">
+                Publish Probability
+              </h4>
+              <div className="relative group/info">
+                <button
+                  type="button"
+                  aria-label="Publish probability info"
+                  className="flex h-4 w-4 items-center justify-center rounded-full border border-neutral-700 bg-neutral-800 text-[9px] font-black text-neutral-400 hover:border-amber-500/50 hover:text-amber-400 transition-colors"
+                >
+                  i
+                </button>
+                <div className="pointer-events-none absolute right-0 top-6 z-50 w-80 rounded-xl border border-neutral-700 bg-[#0d0d0d] p-4 text-xs text-neutral-400 opacity-0 shadow-2xl transition-opacity duration-200 group-hover/info:opacity-100">
+                  <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-amber-400">
+                    What is Publish Probability?
+                  </div>
+                  <p className="leading-relaxed mb-2">
+                    The model estimates the chance that an asset will be published, based on learned historical patterns.
+                  </p>
+                  <ul className="space-y-1.5">
+                    <li><span className="text-blue-400 font-bold">Signal Source</span> — client, channel, content type, language, and duration inputs.</li>
+                    <li><span className="text-green-400 font-bold">Calibration</span> — isotonic calibration adjusts raw forest votes into better real-world probabilities.</li>
+                    <li><span className="text-red-400 font-bold">Interpretation</span> — use it to compare scenarios; it is directional guidance, not a guarantee.</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
             {result ? (
               <ProbabilityGauge
                 value={Number(result.publish_probability || 0)}
@@ -776,9 +816,33 @@ export default function PublishPredictorGame({ authUser }) {
           {/* RCA stats */}
           {result && (
             <div className="rounded-2xl border border-neutral-800 bg-[#0a0a0a] p-4">
-              <h4 className="text-[10px] font-bold uppercase tracking-[0.15em] text-neutral-500 mb-3">
-                RCA Stats (Normalized Contribution)
-              </h4>
+              <div className="mb-3 flex items-center justify-between">
+                <h4 className="text-[10px] font-bold uppercase tracking-[0.15em] text-neutral-500">
+                  RCA Stats (Normalized Contribution)
+                </h4>
+                <div className="relative group/info">
+                  <button
+                    type="button"
+                    aria-label="RCA stats info"
+                    className="flex h-4 w-4 items-center justify-center rounded-full border border-neutral-700 bg-neutral-800 text-[9px] font-black text-neutral-400 hover:border-amber-500/50 hover:text-amber-400 transition-colors"
+                  >
+                    i
+                  </button>
+                  <div className="pointer-events-none absolute right-0 top-6 z-50 w-80 rounded-xl border border-neutral-700 bg-[#0d0d0d] p-4 text-xs text-neutral-400 opacity-0 shadow-2xl transition-opacity duration-200 group-hover/info:opacity-100">
+                    <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-amber-400">
+                      What is RCA (Normalized Contribution)?
+                    </div>
+                    <p className="leading-relaxed mb-2">
+                      RCA ranks the strongest drivers behind this prediction using SHAP-based marginal probability effects.
+                    </p>
+                    <ul className="space-y-1.5">
+                      <li><span className="text-blue-400 font-bold">Normalized Contribution</span> — each feature is scaled from absolute Δprobability so all shown drivers sum to ~100%.</li>
+                      <li><span className="text-green-400 font-bold">Positive Δprobability</span> — pushes publish probability higher.</li>
+                      <li><span className="text-red-400 font-bold">Negative Δprobability</span> — pushes publish probability lower.</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
               {!normalizedImpacts.length ? (
                 <div className="text-sm text-neutral-600 italic py-4 text-center">
                   SHAP diagnostics unavailable for this prediction.
@@ -786,8 +850,9 @@ export default function PublishPredictorGame({ authUser }) {
               ) : (
                 <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                   {normalizedImpacts.map((item, idx) => {
-                    const impact = Number(item.impact || 0);
-                    const positive = impact >= 0;
+                    const impact   = Number(item.impact || 0);
+                    const deltaP   = Number(item.probabilityContribution || 0);
+                    const positive = deltaP >= 0;
                     return (
                       <div
                         key={`${item.feature}-${idx}`}
@@ -825,7 +890,10 @@ export default function PublishPredictorGame({ authUser }) {
                           </div>
                           <div className="text-[10px] text-neutral-500 tabular-nums">
                             {positive ? "+" : ""}
-                            {impact.toFixed(3)} SHAP
+                            {(deltaP * 100).toFixed(2)}pp
+                            <span className="ml-1 text-neutral-600">
+                              ({impact.toFixed(3)} SHAP)
+                            </span>
                           </div>
                         </div>
                       </div>
