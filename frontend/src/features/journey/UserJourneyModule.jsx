@@ -98,7 +98,7 @@ function StatCard({ title, value, subtitle, trendData }) {
           <div className="text-xs font-bold tracking-wider text-neutral-500 mb-1">{title}</div>
           <div className="text-3xl font-black text-white tracking-tight">{value}</div>
         </div>
-        <div className="text-[12px] text-neutral-400 mt-2">{subtitle}</div>
+        <div className="text-[10px] text-neutral-400 ">{subtitle}</div>
       </div>
       {chartData && (
         <div className="w-24 h-16 ml-4 mt-2 shrink-0 overflow-hidden">
