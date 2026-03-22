@@ -184,19 +184,19 @@ def _series_query(filt: dict) -> str:
     return f'''
     {_scoped_ctes(filt)}
     , upload_periods AS (
-      SELECT date_trunc($1, to_date("Upload_Date", 'YYYY-MM-DD'))::date AS period,
+      SELECT date_trunc($1, to_date(left(("Upload_Date")::text, 10), 'YYYY-MM-DD'))::date AS period,
              COUNT(*)::bigint AS uploaded_videos
       FROM scoped_videos
       GROUP BY 1
     ),
     publish_periods AS (
-      SELECT date_trunc($1, to_date("Publish_Date", 'YYYY-MM-DD'))::date AS period,
+      SELECT date_trunc($1, to_date(left(("Publish_Date")::text, 10), 'YYYY-MM-DD'))::date AS period,
              COUNT(*)::bigint AS published_posts
       FROM scoped_posts
       GROUP BY 1
     ),
     distribution_periods AS (
-      SELECT date_trunc($1, to_date("Publish_Date", 'YYYY-MM-DD'))::date AS period,
+      SELECT date_trunc($1, to_date(left(("Publish_Date")::text, 10), 'YYYY-MM-DD'))::date AS period,
              COUNT(DISTINCT "Distribution_ID")::bigint AS distributions,
              COALESCE(SUM(views), 0)::bigint AS views,
              COALESCE(SUM(likes), 0)::bigint AS likes,
@@ -274,7 +274,7 @@ def _recent_rows_query(filt: dict) -> str:
     SELECT
       sd."Distribution_ID" AS distribution_id,
       sd."Post_ID" AS post_id,
-      to_date(sd."Publish_Date", 'YYYY-MM-DD')::date AS publish_date,
+      to_date(left((sd."Publish_Date")::text, 10), 'YYYY-MM-DD')::date AS publish_date,
       COALESCE(sd."Published_Platform", 'Unknown') AS platform,
       COALESCE(sd."Channel_Name", 'Unknown') AS channel_name,
       COALESCE(sa."Output_Type", 'Unknown') AS output_type,

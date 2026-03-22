@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, Plus, X, Wand2, Info } from "lucide-react";
+import { TrendingUp, Plus, X, Wand2 } from "lucide-react";
 import { Line } from 'react-chartjs-2';
 import { useApi } from '../../hooks/useApi';
 import { API_BASE } from '../../lib/constants';
 import { formatHours, formatNumber, formatPct } from '../../lib/formatters';
 import KpiCard from '../../components/common/KpiCard';
+import HoverInfoButton from '../../components/common/HoverInfoButton';
+import InfoTooltipContent from '../../components/common/InfoTooltipContent';
 import { OverviewSkeleton, Skeleton } from '../../components/common/Skeleton';
 import InsightCard from '../../components/insights/InsightCard';
 import KpiDetailsModal from './KpiDetailsModal';
@@ -44,24 +46,27 @@ function buildCoreKpiCards(kpis, monthlyTrends) {
   }));
 }
 
-function GraphInfoButton({ description = 'Graph context and definitions will be available here.' }) {
+function GraphInfoButton({ description }) {
+  const tooltip = description || (
+    <InfoTooltipContent
+      eyebrow="Chart Context"
+      summary="This panel explains what the chart measures, how values are computed, and how to interpret movement."
+      bullets={[
+        { label: 'Definition', text: 'What exactly the metric represents in this view.' },
+        { label: 'Interpretation', text: 'How to read increases, decreases, and unusual shifts.' },
+      ]}
+      takeaway="Use this context before acting on outliers or trend changes."
+    />
+  );
+
   return (
-    <div className="relative group">
-      <button
-        type="button"
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-        }}
-        aria-label="Graph information"
-        className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-neutral-700 bg-[#0f1116] text-neutral-400 transition-colors hover:border-neutral-500 hover:text-white"
-      >
-        <Info size={12} />
-      </button>
-      <div className="pointer-events-none absolute right-0 top-7 z-20 w-52 rounded-lg border border-neutral-700 bg-[#0b0d11] px-2.5 py-2 text-[11px] leading-relaxed text-neutral-300 opacity-0 shadow-xl transition-opacity group-hover:opacity-100">
-        {description}
-      </div>
-    </div>
+    <HoverInfoButton
+      ariaLabel="Graph information"
+      widthClass="w-80"
+      buttonClassName="h-6 w-6 text-[11px]"
+      tooltipClassName="text-[11px] leading-relaxed"
+      tooltip={tooltip}
+    />
   );
 }
 
@@ -194,6 +199,7 @@ export default function OverviewModule({ onNavigate }) {
     try { return JSON.parse(localStorage.getItem('mc_extra_kpis')) || []; } catch { return []; }
   });
   const [stagedKpis, setStagedKpis] = useState([]);
+  const [pendingKpiSelections, setPendingKpiSelections] = useState([]);
   const [isSelectionPanelOpen, setIsSelectionPanelOpen] = useState(false);
   const [selectedKpi, setSelectedKpi] = useState(null);
   const [activeOutputTab, setActiveOutputTab] = useState(null);
@@ -329,17 +335,23 @@ export default function OverviewModule({ onNavigate }) {
   };
 
   const handleStageKpi = (id) => {
-    if (!activeExtraKpis.includes(id) && !stagedKpis.includes(id)) {
-      setStagedKpis([...stagedKpis, id]);
-    }
+    setPendingKpiSelections((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    setStagedKpis((prev) => {
+      if (prev.includes(id) || activeExtraKpis.includes(id)) {
+        return prev;
+      }
+      return [...prev, id];
+    });
   };
 
   const handleUnstageKpi = (id) => {
+    setPendingKpiSelections(prev => prev.filter(k => k !== id));
     setStagedKpis(prev => prev.filter(k => k !== id));
   };
 
   const handlePromoteKpis = () => {
-    setActiveExtraKpis([...stagedKpis, ...activeExtraKpis]);
+    setActiveExtraKpis((prev) => [...new Set([...stagedKpis, ...prev])]);
+    setPendingKpiSelections([]);
     setStagedKpis([]);
   };
 
@@ -348,6 +360,13 @@ export default function OverviewModule({ onNavigate }) {
   };
 
   const visibleExtraKpis = KPI_DEFINITIONS.filter(kpi => activeExtraKpis.includes(kpi.id));
+  const availableKpis = KPI_DEFINITIONS.filter(
+    (kpi) =>
+      !['uploaded_count', 'created_count', 'published_count', 'publish_conversion_rate', 'waste_index'].includes(kpi.id) &&
+      !activeExtraKpis.includes(kpi.id) &&
+        !stagedKpis.includes(kpi.id) &&
+        !pendingKpiSelections.includes(kpi.id)
+  );
 
   const handleCoreKpiClick = (id) => {
     const kpi = KPI_DEFINITIONS.find(k => k.id === id);
@@ -515,21 +534,17 @@ export default function OverviewModule({ onNavigate }) {
             </button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 max-h-[400px] overflow-y-auto pr-2 hide-scrollbar">
-            {KPI_DEFINITIONS.filter(k => !['uploaded_count', 'created_count', 'published_count'].includes(k.id) && !activeExtraKpis.includes(k.id)).map(kpi => {
-              const isStaged = stagedKpis.includes(kpi.id);
-              return (
-                <KpiCard 
-                  key={kpi.id}
-                  title={kpi.title} 
-                  value={kpi.getValue(kpis)} 
-                  subtitle={kpi.getSubtitle(kpis)} 
-                  trendData={kpi.trendData}
-                  onRemove={isStaged ? () => handleUnstageKpi(kpi.id) : undefined}
-                  onAdd={!isStaged ? () => handleStageKpi(kpi.id) : undefined}
-                  onClick={() => handleStageKpi(kpi.id)}
-                />
-              );
-            })}
+            {availableKpis.map(kpi => (
+              <KpiCard 
+                key={kpi.id}
+                title={kpi.title} 
+                value={kpi.getValue(kpis)} 
+                subtitle={kpi.getSubtitle(kpis)} 
+                trendData={kpi.trendData}
+                onAdd={() => handleStageKpi(kpi.id)}
+                onClick={() => handleStageKpi(kpi.id)}
+              />
+            ))}
           </div>
         </section>
       )}
@@ -645,7 +660,20 @@ export default function OverviewModule({ onNavigate }) {
                       </div>
                       <div className="flex items-center gap-2">
                         <div className="text-[10px] text-neutral-500">{activeStat.label}</div>
-                        <GraphInfoButton description="This trend chart tracks the selected metric over time for the chosen output type." />
+                        <GraphInfoButton
+                          description={
+                            <InfoTooltipContent
+                              eyebrow="Monthly Trend"
+                              summary="Shows month-over-month movement for the selected metric and output type."
+                              bullets={[
+                                { label: 'Direction', text: 'Slope indicates whether performance is improving or declining.' },
+                                { label: 'Volatility', text: 'Larger swings suggest unstable behavior or seasonality effects.' },
+                                { label: 'Inflections', text: 'Sudden bends can indicate campaign impact, behavior change, or data issues.' },
+                              ]}
+                              takeaway="Correlate inflection months with launches, policy changes, or ingestion events before deciding interventions."
+                            />
+                          }
+                        />
                       </div>
                     </div>
                     <div className="h-44">
@@ -709,7 +737,20 @@ export default function OverviewModule({ onNavigate }) {
           <div className="rounded-[24px] border border-neutral-800 bg-[#101216] p-4 flex flex-col min-h-0">
             <div className="mb-3 flex items-center justify-between gap-2">
               <div className="text-[13px] font-bold uppercase tracking-[0.12em] text-neutral-300">Top Performers</div>
-              <GraphInfoButton description="Bars represent conversion rate by performer for the active scope." />
+              <GraphInfoButton
+                description={
+                  <InfoTooltipContent
+                    eyebrow="Top Performers"
+                    summary="Bars compare conversion rate by top entities in the active scope and selected dimension."
+                    bullets={[
+                      { label: 'Efficiency', text: 'Higher bars indicate stronger conversion performance.' },
+                      { label: 'Sample size', text: 'Low-volume entities can look strong; always sanity-check scale.' },
+                      { label: 'Comparability', text: 'Interpret ranking within the same filter context and time window.' },
+                    ]}
+                    takeaway="Pair conversion with underlying volume before prioritizing coaching or resource shifts."
+                  />
+                }
+              />
             </div>
             <div className="space-y-1.5 flex-1 min-h-0 overflow-y-auto hide-scrollbar pr-1">
               {(() => {
@@ -760,7 +801,20 @@ export default function OverviewModule({ onNavigate }) {
           <div className="rounded-[24px] border border-amber-700/30 bg-[#15120f] p-5 overflow-y-auto hide-scrollbar">
             <div className="mb-4 flex items-center justify-between gap-2">
               <div className="text-sm font-bold uppercase tracking-[0.14em] text-amber-300">Alerts</div>
-              <GraphInfoButton description="Alert cards flag noteworthy changes that may need action. Click an alert to jump to funnel analysis with the relevant breakdown pre-applied." />
+              <GraphInfoButton
+                description={
+                  <InfoTooltipContent
+                    eyebrow="Alerts"
+                    summary="Flags noteworthy shifts such as threshold breaches, emerging risks, or unusual metric movement."
+                    bullets={[
+                      { label: 'Shortcut', text: 'Clicking an alert opens funnel analysis with a pre-applied breakdown.' },
+                      { label: 'Purpose', text: 'Designed to speed up root-cause validation, not replace investigation.' },
+                      { label: 'Decision', text: 'Use alert context to choose mitigation, escalation, or watch-and-monitor.' },
+                    ]}
+                    takeaway="Resolve alerts by confirming cause first, then applying targeted funnel-level actions."
+                  />
+                }
+              />
             </div>
             <div className="space-y-3">
               {(data.alerts || []).map((alert) => (

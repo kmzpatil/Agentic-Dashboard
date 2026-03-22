@@ -38,6 +38,7 @@ import {
   ChartSkeleton,
   Skeleton,
 } from "../../components/common/Skeleton";
+import HoverInfoButton from "../../components/common/HoverInfoButton";
 
 const METRIC_GROUPS = [
   {
@@ -2257,24 +2258,43 @@ export default function UsageTrendsModule({
               <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-300">
                 STL Decomposition
               </h3>
-              {/* Info button with hover tooltip */}
-              <div className="relative group/info">
-                <button className="flex h-4 w-4 items-center justify-center rounded-full border border-neutral-700 bg-neutral-800 text-[9px] font-black text-neutral-400 hover:border-amber-500/50 hover:text-amber-400 transition-colors">
-                  i
-                </button>
-                <div className="pointer-events-none absolute left-1/2 top-6 z-50 w-72 -translate-x-1/2 rounded-xl border border-neutral-700 bg-[#0d0d0d] p-4 text-xs text-neutral-400 opacity-0 shadow-2xl transition-opacity duration-200 group-hover/info:opacity-100">
-                  <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-amber-400">What is STL?</div>
-                  <p className="leading-relaxed mb-2">
-                    <strong className="text-neutral-200">STL</strong> (Seasonal-Trend decomposition using LOESS) breaks a time series into three independent components:
-                  </p>
-                  <ul className="space-y-1.5">
-                    <li><span className="text-blue-400 font-bold">Trend</span> — the long-run direction of the metric, smoothed over time.</li>
-                    <li><span className="text-green-400 font-bold">Seasonal</span> — repeating periodic patterns (e.g. weekly or monthly cycles).</li>
-                    <li><span className="text-red-400 font-bold">Residual</span> — what remains after removing trend and seasonality; large residuals indicate anomalies or noise.</li>
-                  </ul>
-                  <p className="mt-2 leading-relaxed text-neutral-500">Use this to distinguish genuine growth from seasonal cycles, and to spot irregular events.</p>
-                </div>
-              </div>
+              <HoverInfoButton
+                ariaLabel="What is STL decomposition?"
+                align="center"
+                widthClass="w-80"
+                buttonClassName="h-4 w-4 text-[9px] font-black"
+                tooltip={
+                  <div className="space-y-3">
+                    <div className="text-[11px] font-black uppercase tracking-[0.12em] text-amber-400">
+                      What is STL?
+                    </div>
+                    <p className="leading-relaxed text-neutral-400">
+                      <strong className="text-neutral-200">STL</strong> (Seasonal-Trend decomposition using LOESS) breaks a time series into three independent components:
+                    </p>
+                    <p className="leading-relaxed text-neutral-400">
+                      <span className="font-bold text-blue-400">Trend</span> - the long-run direction of the metric, smoothed over time.
+                    </p>
+                    <p className="leading-relaxed text-neutral-400">
+                      <span className="font-bold text-green-400">Seasonal</span> - repeating periodic patterns (for example weekly or monthly cycles).
+                    </p>
+                    <p className="leading-relaxed text-neutral-400">
+                      <span className="font-bold text-red-400">Residual</span> - what remains after removing trend and seasonality; large residuals indicate anomalies or noise.
+                    </p>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-neutral-300">
+                      How to read
+                    </div>
+                    <p className="leading-relaxed text-neutral-500">
+                      If movement is mostly in <span className="text-blue-300">Trend</span>, the shift is structural. If it is mostly in <span className="text-green-300">Seasonal</span>, it is cyclical.
+                    </p>
+                    <p className="leading-relaxed text-neutral-500">
+                      If spikes appear in <span className="text-red-300">Residual</span>, investigate one-off events, outages, or data anomalies.
+                    </p>
+                    <p className="leading-relaxed text-neutral-500">
+                      Use this to distinguish genuine growth from seasonal cycles, and to spot irregular events.
+                    </p>
+                  </div>
+                }
+              />
             </div>
           </div>
           <p className="mb-5 text-[11px] text-neutral-500 leading-relaxed">

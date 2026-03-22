@@ -77,14 +77,14 @@ Open `.env` and set the following:
 **Database:**
 ```env
 PGHOST=127.0.0.1
-PGPORT=5432
+PGPORT=55433
 PGUSER=postgres
 PGDATABASE=frammer_database
 PGPASSWORD=<your-password>
 
 # Docker aliases (must match the PG* values above)
 POSTGRES_HOST=127.0.0.1
-POSTGRES_PORT=5432
+POSTGRES_PORT=55433
 POSTGRES_USER=postgres
 POSTGRES_DB=frammer_database
 POSTGRES_PASSWORD=<your-password>
@@ -146,12 +146,10 @@ Brings up PostgreSQL, the FastAPI backend, and the Nginx-served frontend.
 docker compose up -d --build
 ```
 
-Seed the database (first time only):
-
-```bash
-docker compose run --rm api python /app/database/bootstrap_postgres.py
-docker compose run --rm api python -m backend.db.seed_auth_users
-```
+The stack now bootstraps automatically:
+- `db` runs `database/frammer_data.sql` on first volume initialization.
+- `api` runs `database/docker_db_init.py` before Uvicorn startup.
+- auth users are seeded automatically when needed.
 
 Open the app:
 - UI: http://localhost:8080
@@ -177,6 +175,13 @@ docker compose down
 - The `api` container connects to the `db` service internally (`PGHOST=db`).
 - The `web` container proxies `/api/*` and `/mcp/*` to the `api` container via Nginx.
 - Database data is persisted in the `gcdata_db_data` Docker volume.
+- If you changed bootstrap SQL or got an empty/partial initial import, recreate the volume once:
+
+```bash
+docker compose down -v
+docker compose up -d --build
+```
+
 - To use an external PostgreSQL instead of the container, remove the `db` service and update `PGHOST` / `POSTGRES_HOST` in `.env`.
 
 ---
@@ -188,6 +193,8 @@ Uses a local Python venv, Node, and a local PostgreSQL cluster managed by the re
 ```bash
 ./run.sh
 ```
+
+`run.sh` is the recommended entrypoint and delegates to `run.py` (cross-platform runner).
 
 This will:
 1. Create a Python virtual environment (`.venv/`)
@@ -212,38 +219,6 @@ Open the app:
 | `--frontend-only` | Start only the Vite dev server |
 | `--prod-build` | Build the frontend production bundle and exit |
 
-### Manual Step-by-Step (Local)
-
-If you prefer not to use `run.sh`:
-
-```bash
-# 1. Create venv and install Python deps
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# 2. Install frontend deps
-cd frontend && npm install && cd ..
-
-# 3. Load env
-source .env
-
-# 4. Start local Postgres (or use your own)
-python database/local_postgres.py start
-
-# 5. Bootstrap the database (first time)
-python database/bootstrap_postgres.py
-
-# 6. Seed demo users (first time)
-python -m backend.db.seed_auth_users
-
-# 7. Start the backend
-uvicorn backend.main:app --host 0.0.0.0 --port 4000 --reload --reload-dir backend
-
-# 8. Start the frontend (in another terminal)
-cd frontend && npx vite --host 0.0.0.0
-```
-
 ---
 
 ## Environment Variables Reference
@@ -263,7 +238,7 @@ cd frontend && npx vite --host 0.0.0.0
 | Variable | Default | Description |
 |---|---|---|
 | `PGHOST` | `127.0.0.1` | PostgreSQL host |
-| `PGPORT` | `5432` | PostgreSQL port |
+| `PGPORT` | `55433` | PostgreSQL port |
 | `PGUSER` | `postgres` | PostgreSQL user |
 | `PGDATABASE` | `frammer_database` | Database name |
 | `PGPASSWORD` | - | Database password |
@@ -276,7 +251,7 @@ Docker aliases: `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_DB`
 | Variable | Default | Description |
 |---|---|---|
 | `LOCAL_POSTGRES_HOST` | `127.0.0.1` | Local cluster host |
-| `LOCAL_POSTGRES_PORT` | `5432` | Local cluster port |
+| `LOCAL_POSTGRES_PORT` | `55433` | Local cluster port |
 | `LOCAL_POSTGRES_USER` | `postgres` | Local cluster user |
 | `LOCAL_POSTGRES_DB` | `frammer_database` | Local cluster database |
 
@@ -294,13 +269,6 @@ Docker aliases: `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_DB`
 
 | Variable | Default | Description |
 |---|---|---|
-| `AI_PROVIDER` | `anthropic` | AI provider (`anthropic`, `azure-openai`, `google`) |
-| `ANTHROPIC_API_KEY` | - | Anthropic API key |
-| `ANTHROPIC_MODEL` | `claude-haiku-4-5-20251001` | Anthropic model |
-| `AZURE_OPENAI_ENDPOINT` | - | Azure OpenAI endpoint URL |
-| `AZURE_OPENAI_API_KEY` | - | Azure OpenAI API key |
-| `AZURE_DEPLOYMENT` | `o4-mini` | Azure deployment name |
-| `AZURE_OPENAI_API_VERSION` | `2025-01-01-preview` | Azure API version |
 | `GOOGLE_API_KEY` | - | Google AI API key |
 
 ### Auth / JWT

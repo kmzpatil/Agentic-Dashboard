@@ -8,6 +8,8 @@ import {
   Microscope,
   ShieldCheck,
   Sparkles,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import './lib/chartSetup';
 import { API_BASE, customStyles } from './lib/constants';
@@ -79,9 +81,11 @@ export default function AppShell() {
   const [authLoading, setAuthLoading] = useState(Boolean(localStorage.getItem('frammer_auth_token')));
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [loginShowPassword, setLoginShowPassword] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [loginSubmitting, setLoginSubmitting] = useState(false);
   const [routeState, setRouteState] = useState(readRouteState);
+  const [wrappedOpen, setWrappedOpen] = useState(false);
 
   useEffect(() => {
     const onPopState = () => setRouteState(readRouteState());
@@ -176,7 +180,7 @@ export default function AppShell() {
       setLoginPassword('');
       const role = payload.user?.role;
       if (role === 'client_admin' || role === 'user') {
-        navigate({ view: 'wrapped' });
+        setWrappedOpen(true);
       }
     } catch (error) {
       setLoginError(error.message || 'Login failed');
@@ -193,6 +197,7 @@ export default function AppShell() {
     setAuthUser(null);
     setLoginUsername('');
     setLoginPassword('');
+    setLoginShowPassword(false);
   };
 
   if (authLoading) {
@@ -208,9 +213,9 @@ export default function AppShell() {
       <div className="flex h-screen w-full items-center justify-center bg-[#050505] px-4 text-white">
         <div className="w-full max-w-md rounded-3xl border border-neutral-800 bg-[#101010] p-8 shadow-[0_30px_120px_rgba(0,0,0,0.55)]">
           <div className="mb-6">
-            <div className="text-[11px] font-bold uppercase tracking-[0.25em] text-neutral-500">Frammer Analytics OS</div>
+            <div className="text-[11px] font-bold uppercase tracking-[0.25em] text-neutral-500">Welcome back</div>
             <h1 className="mt-2 text-3xl font-black tracking-tight text-red-500">FRAMMER AI</h1>
-            <p className="mt-2 text-sm text-neutral-500">Sign in to open Mission Control.</p>
+            <p className="mt-2 text-sm text-neutral-500">Frammer Analytics OS</p>
           </div>
           <form className="space-y-4" onSubmit={handleLogin}>
             <div>
@@ -226,14 +231,24 @@ export default function AppShell() {
             </div>
             <div>
               <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-neutral-500">Password</label>
-              <input
-                type="password"
-                value={loginPassword}
-                onChange={(event) => setLoginPassword(event.target.value)}
-                className="w-full rounded-2xl border border-neutral-700 bg-[#0A0A0A] px-4 py-3 text-white placeholder-neutral-600 focus:border-red-500 focus:outline-none"
-                placeholder="••••••••"
-                required
-              />
+              <div className="relative">
+                <input
+                  type={loginShowPassword ? 'text' : 'password'}
+                  value={loginPassword}
+                  onChange={(event) => setLoginPassword(event.target.value)}
+                  className="w-full rounded-2xl border border-neutral-700 bg-[#0A0A0A] px-4 py-3 pr-12 text-white placeholder-neutral-600 focus:border-red-500 focus:outline-none"
+                  placeholder="••••••••"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setLoginShowPassword((prev) => !prev)}
+                  aria-label={loginShowPassword ? 'Hide password' : 'Show password'}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1.5 text-neutral-500 transition-colors hover:text-neutral-300"
+                >
+                  {loginShowPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
             </div>
             {loginError && <div className="text-sm text-red-400">{loginError}</div>}
             <button
@@ -286,10 +301,10 @@ export default function AppShell() {
             {/* Year Wrapped shortcut — client_admin and user only */}
             {showWrapped && (
               <button
-                onClick={() => navigate({ view: 'wrapped' })}
+                onClick={() => setWrappedOpen(true)}
                 title="Year Wrapped"
                 className={`flex items-center justify-center rounded-full border transition-colors ${
-                  activeView === 'wrapped'
+                  wrappedOpen
                     ? 'border-indigo-500 bg-indigo-500/10 text-indigo-400'
                     : 'border-neutral-800 bg-[#111111] text-neutral-500 hover:border-indigo-500/50 hover:text-indigo-400'
                 }`}
@@ -331,20 +346,17 @@ export default function AppShell() {
         </div>
       </nav>
 
-      <main className="flex-1 overflow-hidden">
-        {/* Mount OverviewModule hidden during wrapped so it prefetches before the user continues */}
-        {(activeView === 'mission-control' || activeView === 'wrapped') && (
-          <div className={activeView !== 'mission-control' ? 'hidden' : 'w-full h-full'}>
-            <OverviewModule routeState={routeState} onNavigate={navigate} />
-          </div>
-        )}
+      <main className="flex-1 overflow-hidden relative">
+        {(activeView === 'mission-control' || wrappedOpen) && <OverviewModule routeState={routeState} onNavigate={navigate} />}
         {activeView === 'trends' && <UsageTrendsModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'funnel' && <FunnelModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'journey' && <UserJourneyModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'explorer' && <ExplorerModule authUser={authUser} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'atlas' && <TalkToDataModule authToken={authToken} routeState={routeState} onNavigate={navigate} />}
         {activeView === 'quality' && <DataQualityModule authUser={authUser} />}
-        {activeView === 'wrapped' && <WrappedModule onNavigate={navigate} />}
+
+        {/* Wrapped overlay — renders on top of whatever view is active */}
+        {wrappedOpen && <WrappedModule onClose={() => setWrappedOpen(false)} />}
       </main>
     </div>
   );

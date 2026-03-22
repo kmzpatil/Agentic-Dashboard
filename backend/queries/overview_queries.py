@@ -194,7 +194,7 @@ def get_output_type_timeseries_query(access_filter: dict) -> str:
     , monthly AS (
         SELECT
             sa."Output_Type"                              AS output_type,
-            to_char(to_date(sa."Create_Date",'YYYY-MM-DD'),'YYYY-MM') AS period,
+            to_char(to_date(left((sa."Create_Date")::text, 10), 'YYYY-MM-DD'),'YYYY-MM') AS period,
             COUNT(DISTINCT sv."Video_ID")::int             AS uploaded,
             COUNT(DISTINCT sa."Asset_ID")::int             AS created,
             COUNT(DISTINCT sp."Post_ID")::int              AS published
@@ -204,7 +204,7 @@ def get_output_type_timeseries_query(access_filter: dict) -> str:
         WHERE sa."Output_Type" IS NOT NULL
           AND sa."Create_Date" IS NOT NULL
         GROUP BY sa."Output_Type",
-                 to_char(to_date(sa."Create_Date",'YYYY-MM-DD'),'YYYY-MM')
+                 to_char(to_date(left((sa."Create_Date")::text, 10), 'YYYY-MM-DD'),'YYYY-MM')
     )
     SELECT * FROM monthly ORDER BY output_type, period;
     '''
@@ -212,26 +212,26 @@ def get_output_type_timeseries_query(access_filter: dict) -> str:
 def get_kpi_sparklines_query(access_filter: dict) -> str:
     return f'''{get_scoped_ctes(access_filter)}
     , daily_uploaded AS (
-      SELECT to_date("Upload_Date", 'YYYY-MM-DD') AS dt, COUNT(*)::float8 AS val FROM scoped_videos GROUP BY 1
+      SELECT to_date(left(("Upload_Date")::text, 10), 'YYYY-MM-DD') AS dt, COUNT(*)::float8 AS val FROM scoped_videos GROUP BY 1
     ),
     daily_processed AS (
-      SELECT to_date("Create_Date", 'YYYY-MM-DD') AS dt, COUNT(DISTINCT "Video_ID")::float8 AS val FROM scoped_assets GROUP BY 1
+      SELECT to_date(left(("Create_Date")::text, 10), 'YYYY-MM-DD') AS dt, COUNT(DISTINCT "Video_ID")::float8 AS val FROM scoped_assets GROUP BY 1
     ),
     daily_created AS (
-      SELECT to_date("Create_Date", 'YYYY-MM-DD') AS dt, COUNT(*)::float8 AS val FROM scoped_assets GROUP BY 1
+      SELECT to_date(left(("Create_Date")::text, 10), 'YYYY-MM-DD') AS dt, COUNT(*)::float8 AS val FROM scoped_assets GROUP BY 1
     ),
     daily_published AS (
-      SELECT to_date("Publish_Date", 'YYYY-MM-DD') AS dt, COUNT(*)::float8 AS val FROM scoped_posts GROUP BY 1
+      SELECT to_date(left(("Publish_Date")::text, 10), 'YYYY-MM-DD') AS dt, COUNT(*)::float8 AS val FROM scoped_posts GROUP BY 1
     ),
     all_dates AS (
       SELECT generate_series(CURRENT_DATE - INTERVAL '13 days', CURRENT_DATE, '1 day')::date AS dt
     ),
     seed_counts AS (
       SELECT
-        (SELECT COUNT(*)::float8 FROM scoped_videos WHERE to_date("Upload_Date", 'YYYY-MM-DD') < CURRENT_DATE - INTERVAL '13 days') as uploaded_seed,
-        (SELECT COUNT(DISTINCT "Video_ID")::float8 FROM scoped_assets WHERE to_date("Create_Date", 'YYYY-MM-DD') < CURRENT_DATE - INTERVAL '13 days') as processed_seed,
-        (SELECT COUNT(*)::float8 FROM scoped_assets WHERE to_date("Create_Date", 'YYYY-MM-DD') < CURRENT_DATE - INTERVAL '13 days') as created_seed,
-        (SELECT COUNT(*)::float8 FROM scoped_posts WHERE to_date("Publish_Date", 'YYYY-MM-DD') < CURRENT_DATE - INTERVAL '13 days') as published_seed
+        (SELECT COUNT(*)::float8 FROM scoped_videos WHERE to_date(left(("Upload_Date")::text, 10), 'YYYY-MM-DD') < CURRENT_DATE - INTERVAL '13 days') as uploaded_seed,
+        (SELECT COUNT(DISTINCT "Video_ID")::float8 FROM scoped_assets WHERE to_date(left(("Create_Date")::text, 10), 'YYYY-MM-DD') < CURRENT_DATE - INTERVAL '13 days') as processed_seed,
+        (SELECT COUNT(*)::float8 FROM scoped_assets WHERE to_date(left(("Create_Date")::text, 10), 'YYYY-MM-DD') < CURRENT_DATE - INTERVAL '13 days') as created_seed,
+        (SELECT COUNT(*)::float8 FROM scoped_posts WHERE to_date(left(("Publish_Date")::text, 10), 'YYYY-MM-DD') < CURRENT_DATE - INTERVAL '13 days') as published_seed
     )
     SELECT 
       ad.dt,

@@ -355,7 +355,7 @@ def get_kpis_query(filter_data: dict) -> str:
       COALESCE(
         (
           SELECT AVG(
-            to_date(sp."Publish_Date", 'YYYY-MM-DD')::date - to_date(sa."Create_Date", 'YYYY-MM-DD')::date
+            to_date(left((sp."Publish_Date")::text, 10), 'YYYY-MM-DD')::date - to_date(left((sa."Create_Date")::text, 10), 'YYYY-MM-DD')::date
           )::float8
           FROM scoped_posts sp
           JOIN scoped_assets sa ON sa."Asset_ID" = sp."Asset_ID"
@@ -488,7 +488,7 @@ def get_publish_lag_distribution_query(filter_data: dict) -> str:
     lag_data AS (
       SELECT
         pp."Post_ID",
-        (to_date(pp."Publish_Date", 'YYYY-MM-DD')::date - to_date(ca."Create_Date", 'YYYY-MM-DD')::date) AS lag_days
+        (to_date(left((pp."Publish_Date")::text, 10), 'YYYY-MM-DD')::date - to_date(left((ca."Create_Date")::text, 10), 'YYYY-MM-DD')::date) AS lag_days
       FROM published_posts pp
       JOIN created_assets ca ON ca."Asset_ID" = pp."Asset_ID"
       JOIN filtered_videos fv ON fv."Video_ID" = ca."Video_ID"
