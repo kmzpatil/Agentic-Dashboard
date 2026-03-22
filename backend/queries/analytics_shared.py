@@ -7,49 +7,49 @@ import pandas as pd
 
 METRIC_SQL = {
     "uploaded_count": '''
-    SELECT date_trunc($1, to_date("Upload_Date", 'YYYY-MM-DD'))::date AS period, COUNT(*)::float8 AS value
+    SELECT date_trunc($1, to_date(left(("Upload_Date")::text, 10), 'YYYY-MM-DD'))::date AS period, COUNT(*)::float8 AS value
     FROM raw_videos
     GROUP BY 1
     ORDER BY 1;
   ''',
     "created_count": '''
-    SELECT date_trunc($1, to_date("Create_Date", 'YYYY-MM-DD'))::date AS period, COUNT(*)::float8 AS value
+    SELECT date_trunc($1, to_date(left(("Create_Date")::text, 10), 'YYYY-MM-DD'))::date AS period, COUNT(*)::float8 AS value
     FROM created_assets
     GROUP BY 1
     ORDER BY 1;
   ''',
     "published_count": '''
-    SELECT date_trunc($1, to_date("Publish_Date", 'YYYY-MM-DD'))::date AS period, COUNT(*)::float8 AS value
+    SELECT date_trunc($1, to_date(left(("Publish_Date")::text, 10), 'YYYY-MM-DD'))::date AS period, COUNT(*)::float8 AS value
     FROM published_posts
     GROUP BY 1
     ORDER BY 1;
   ''',
     "uploaded_duration": '''
-    SELECT date_trunc($1, to_date("Upload_Date", 'YYYY-MM-DD'))::date AS period, COALESCE(SUM("Uploaded_Duration"), 0)::float8 AS value
+    SELECT date_trunc($1, to_date(left(("Upload_Date")::text, 10), 'YYYY-MM-DD'))::date AS period, COALESCE(SUM("Uploaded_Duration"), 0)::float8 AS value
     FROM raw_videos
     GROUP BY 1
     ORDER BY 1;
   ''',
     "created_duration": '''
-    SELECT date_trunc($1, to_date("Create_Date", 'YYYY-MM-DD'))::date AS period, COALESCE(SUM("Created_Duration"), 0)::float8 AS value
+    SELECT date_trunc($1, to_date(left(("Create_Date")::text, 10), 'YYYY-MM-DD'))::date AS period, COALESCE(SUM("Created_Duration"), 0)::float8 AS value
     FROM created_assets
     GROUP BY 1
     ORDER BY 1;
   ''',
     "published_duration": '''
-    SELECT date_trunc($1, to_date("Publish_Date", 'YYYY-MM-DD'))::date AS period, COALESCE(SUM("Published_Duration"), 0)::float8 AS value
+    SELECT date_trunc($1, to_date(left(("Publish_Date")::text, 10), 'YYYY-MM-DD'))::date AS period, COALESCE(SUM("Published_Duration"), 0)::float8 AS value
     FROM published_posts
     GROUP BY 1
     ORDER BY 1;
   ''',
     "publish_conversion_rate": '''
     WITH created AS (
-      SELECT date_trunc($1, to_date("Create_Date", 'YYYY-MM-DD'))::date AS period, COUNT(*)::float8 AS created_count
+      SELECT date_trunc($1, to_date(left(("Create_Date")::text, 10), 'YYYY-MM-DD'))::date AS period, COUNT(*)::float8 AS created_count
       FROM created_assets
       GROUP BY 1
     ),
     published AS (
-      SELECT date_trunc($1, to_date("Publish_Date", 'YYYY-MM-DD'))::date AS period, COUNT(*)::float8 AS published_count
+      SELECT date_trunc($1, to_date(left(("Publish_Date")::text, 10), 'YYYY-MM-DD'))::date AS period, COUNT(*)::float8 AS published_count
       FROM published_posts
       GROUP BY 1
     )
@@ -61,12 +61,12 @@ METRIC_SQL = {
   ''',
     "creation_rate": '''
     WITH uploaded AS (
-      SELECT date_trunc($1, to_date("Upload_Date", 'YYYY-MM-DD'))::date AS period, COUNT(*)::float8 AS uploaded_count
+      SELECT date_trunc($1, to_date(left(("Upload_Date")::text, 10), 'YYYY-MM-DD'))::date AS period, COUNT(*)::float8 AS uploaded_count
       FROM raw_videos
       GROUP BY 1
     ),
     created AS (
-      SELECT date_trunc($1, to_date("Create_Date", 'YYYY-MM-DD'))::date AS period, COUNT(*)::float8 AS created_count
+      SELECT date_trunc($1, to_date(left(("Create_Date")::text, 10), 'YYYY-MM-DD'))::date AS period, COUNT(*)::float8 AS created_count
       FROM created_assets
       GROUP BY 1
     )
@@ -78,12 +78,12 @@ METRIC_SQL = {
   ''',
     "processing_efficiency": '''
     WITH created AS (
-      SELECT date_trunc($1, to_date("Create_Date", 'YYYY-MM-DD'))::date AS period, COALESCE(SUM("Created_Duration"), 0)::float8 AS created_duration
+      SELECT date_trunc($1, to_date(left(("Create_Date")::text, 10), 'YYYY-MM-DD'))::date AS period, COALESCE(SUM("Created_Duration"), 0)::float8 AS created_duration
       FROM created_assets
       GROUP BY 1
     ),
     published AS (
-      SELECT date_trunc($1, to_date("Publish_Date", 'YYYY-MM-DD'))::date AS period, COALESCE(SUM("Published_Duration"), 0)::float8 AS published_duration
+      SELECT date_trunc($1, to_date(left(("Publish_Date")::text, 10), 'YYYY-MM-DD'))::date AS period, COALESCE(SUM("Published_Duration"), 0)::float8 AS published_duration
       FROM published_posts
       GROUP BY 1
     )
@@ -95,13 +95,13 @@ METRIC_SQL = {
   ''',
     "waste_index": '''
     WITH created AS (
-      SELECT date_trunc($1, to_date("Create_Date", 'YYYY-MM-DD'))::date AS period,
+      SELECT date_trunc($1, to_date(left(("Create_Date")::text, 10), 'YYYY-MM-DD'))::date AS period,
       COALESCE(AVG("Created_Duration"), 0)::float8 AS avg_created_duration
       FROM created_assets
       GROUP BY 1
     ),
     published AS (
-      SELECT date_trunc($1, to_date("Publish_Date", 'YYYY-MM-DD'))::date AS period,
+      SELECT date_trunc($1, to_date(left(("Publish_Date")::text, 10), 'YYYY-MM-DD'))::date AS period,
       COALESCE(AVG("Published_Duration"), 0)::float8 AS avg_published_duration
       FROM published_posts
       GROUP BY 1
@@ -360,49 +360,49 @@ def get_metric_query(
 
     metric_sql = {
         "uploaded_count": f'''{scoped_videos_cte}
-      SELECT date_trunc($1, to_date(sv."Upload_Date", 'YYYY-MM-DD'))::date AS period, COUNT(*)::float8 AS value
+      SELECT date_trunc($1, to_date(left((sv."Upload_Date")::text, 10), 'YYYY-MM-DD'))::date AS period, COUNT(*)::float8 AS value
       FROM scoped_videos sv
       GROUP BY 1
       ORDER BY 1;
     ''',
         "created_count": f'''{scoped_videos_cte}
-      SELECT date_trunc($1, to_date(sa."Create_Date", 'YYYY-MM-DD'))::date AS period, COUNT(DISTINCT sa."Asset_ID")::float8 AS value
+      SELECT date_trunc($1, to_date(left((sa."Create_Date")::text, 10), 'YYYY-MM-DD'))::date AS period, COUNT(DISTINCT sa."Asset_ID")::float8 AS value
       FROM scoped_assets sa
       GROUP BY 1
       ORDER BY 1;
     ''',
         "published_count": f'''{scoped_videos_cte}
-      SELECT date_trunc($1, to_date(sp."Publish_Date", 'YYYY-MM-DD'))::date AS period, COUNT(DISTINCT sp."Post_ID")::float8 AS value
+      SELECT date_trunc($1, to_date(left((sp."Publish_Date")::text, 10), 'YYYY-MM-DD'))::date AS period, COUNT(DISTINCT sp."Post_ID")::float8 AS value
       FROM scoped_posts sp
       GROUP BY 1
       ORDER BY 1;
     ''',
         "uploaded_duration": f'''{scoped_videos_cte}
-      SELECT date_trunc($1, to_date(sv."Upload_Date", 'YYYY-MM-DD'))::date AS period, COALESCE(SUM(sv."Uploaded_Duration"), 0)::float8 AS value
+      SELECT date_trunc($1, to_date(left((sv."Upload_Date")::text, 10), 'YYYY-MM-DD'))::date AS period, COALESCE(SUM(sv."Uploaded_Duration"), 0)::float8 AS value
       FROM scoped_videos sv
       GROUP BY 1
       ORDER BY 1;
     ''',
         "created_duration": f'''{scoped_videos_cte}
-      SELECT date_trunc($1, to_date(sa."Create_Date", 'YYYY-MM-DD'))::date AS period, COALESCE(SUM(sa."Created_Duration"), 0)::float8 AS value
+      SELECT date_trunc($1, to_date(left((sa."Create_Date")::text, 10), 'YYYY-MM-DD'))::date AS period, COALESCE(SUM(sa."Created_Duration"), 0)::float8 AS value
       FROM scoped_assets sa
       GROUP BY 1
       ORDER BY 1;
     ''',
         "published_duration": f'''{scoped_videos_cte}
-      SELECT date_trunc($1, to_date(sp."Publish_Date", 'YYYY-MM-DD'))::date AS period, COALESCE(SUM(sp."Published_Duration"), 0)::float8 AS value
+      SELECT date_trunc($1, to_date(left((sp."Publish_Date")::text, 10), 'YYYY-MM-DD'))::date AS period, COALESCE(SUM(sp."Published_Duration"), 0)::float8 AS value
       FROM scoped_posts sp
       GROUP BY 1
       ORDER BY 1;
     ''',
         "publish_conversion_rate": f'''{scoped_videos_cte}
       , created AS (
-        SELECT date_trunc($1, to_date(sa."Create_Date", 'YYYY-MM-DD'))::date AS period, COUNT(DISTINCT sa."Asset_ID")::float8 AS created_count
+        SELECT date_trunc($1, to_date(left((sa."Create_Date")::text, 10), 'YYYY-MM-DD'))::date AS period, COUNT(DISTINCT sa."Asset_ID")::float8 AS created_count
         FROM scoped_assets sa
         GROUP BY 1
       ),
       published AS (
-        SELECT date_trunc($1, to_date(sp."Publish_Date", 'YYYY-MM-DD'))::date AS period, COUNT(DISTINCT sp."Post_ID")::float8 AS published_count
+        SELECT date_trunc($1, to_date(left((sp."Publish_Date")::text, 10), 'YYYY-MM-DD'))::date AS period, COUNT(DISTINCT sp."Post_ID")::float8 AS published_count
         FROM scoped_posts sp
         GROUP BY 1
       )
@@ -414,12 +414,12 @@ def get_metric_query(
     ''',
         "creation_rate": f'''{scoped_videos_cte}
       , uploaded AS (
-        SELECT date_trunc($1, to_date(sv."Upload_Date", 'YYYY-MM-DD'))::date AS period, COUNT(*)::float8 AS uploaded_count
+        SELECT date_trunc($1, to_date(left((sv."Upload_Date")::text, 10), 'YYYY-MM-DD'))::date AS period, COUNT(*)::float8 AS uploaded_count
         FROM scoped_videos sv
         GROUP BY 1
       ),
       created AS (
-        SELECT date_trunc($1, to_date(sa."Create_Date", 'YYYY-MM-DD'))::date AS period, COUNT(DISTINCT sa."Asset_ID")::float8 AS created_count
+        SELECT date_trunc($1, to_date(left((sa."Create_Date")::text, 10), 'YYYY-MM-DD'))::date AS period, COUNT(DISTINCT sa."Asset_ID")::float8 AS created_count
         FROM scoped_assets sa
         GROUP BY 1
       )
@@ -431,12 +431,12 @@ def get_metric_query(
     ''',
         "processing_efficiency": f'''{scoped_videos_cte}
       , created AS (
-        SELECT date_trunc($1, to_date(sa."Create_Date", 'YYYY-MM-DD'))::date AS period, COALESCE(SUM(sa."Created_Duration"), 0)::float8 AS created_duration
+        SELECT date_trunc($1, to_date(left((sa."Create_Date")::text, 10), 'YYYY-MM-DD'))::date AS period, COALESCE(SUM(sa."Created_Duration"), 0)::float8 AS created_duration
         FROM scoped_assets sa
         GROUP BY 1
       ),
       published AS (
-        SELECT date_trunc($1, to_date(sp."Publish_Date", 'YYYY-MM-DD'))::date AS period, COALESCE(SUM(sp."Published_Duration"), 0)::float8 AS published_duration
+        SELECT date_trunc($1, to_date(left((sp."Publish_Date")::text, 10), 'YYYY-MM-DD'))::date AS period, COALESCE(SUM(sp."Published_Duration"), 0)::float8 AS published_duration
         FROM scoped_posts sp
         GROUP BY 1
       )
@@ -448,13 +448,13 @@ def get_metric_query(
     ''',
         "waste_index": f'''{scoped_videos_cte}
       , created AS (
-        SELECT date_trunc($1, to_date(sa."Create_Date", 'YYYY-MM-DD'))::date AS period,
+        SELECT date_trunc($1, to_date(left((sa."Create_Date")::text, 10), 'YYYY-MM-DD'))::date AS period,
         COALESCE(AVG(sa."Created_Duration"), 0)::float8 AS avg_created_duration
         FROM scoped_assets sa
         GROUP BY 1
       ),
       published AS (
-        SELECT date_trunc($1, to_date(sp."Publish_Date", 'YYYY-MM-DD'))::date AS period,
+        SELECT date_trunc($1, to_date(left((sp."Publish_Date")::text, 10), 'YYYY-MM-DD'))::date AS period,
         COALESCE(AVG(sp."Published_Duration"), 0)::float8 AS avg_published_duration
         FROM scoped_posts sp
         GROUP BY 1

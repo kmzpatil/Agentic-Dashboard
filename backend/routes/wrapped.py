@@ -154,8 +154,8 @@ def _best_month_query(access_filter: dict) -> str:
     ctes = get_scoped_advanced_ctes(access_filter)
     return f"""{ctes}
     , monthly AS (
-        SELECT to_char(to_date(sv."Upload_Date", 'YYYY-MM-DD'), 'FMMonth') AS month_name,
-               EXTRACT(MONTH FROM to_date(sv."Upload_Date", 'YYYY-MM-DD'))  AS m_num,
+        SELECT to_char(to_date(left((sv."Upload_Date")::text, 10), 'YYYY-MM-DD'), 'FMMonth') AS month_name,
+               EXTRACT(MONTH FROM to_date(left((sv."Upload_Date")::text, 10), 'YYYY-MM-DD'))  AS m_num,
                COUNT(DISTINCT sv."Video_ID") AS uploads
         FROM scoped_videos sv
         WHERE sv."Upload_Date" IS NOT NULL
@@ -286,20 +286,20 @@ def _monthly_timeline_query(access_filter: dict) -> str:
     ctes = get_scoped_advanced_ctes(access_filter)
     return f"""{ctes}
     , uploaded_m AS (
-        SELECT EXTRACT(MONTH FROM to_date(sv."Upload_Date",  'YYYY-MM-DD'))::int AS m,
-               to_char(to_date(sv."Upload_Date",  'YYYY-MM-DD'), 'Mon') AS lbl,
+        SELECT EXTRACT(MONTH FROM to_date(left((sv."Upload_Date")::text, 10), 'YYYY-MM-DD'))::int AS m,
+               to_char(to_date(left((sv."Upload_Date")::text, 10), 'YYYY-MM-DD'), 'Mon') AS lbl,
                COUNT(DISTINCT sv."Video_ID") AS cnt
         FROM scoped_videos sv WHERE sv."Upload_Date"  IS NOT NULL GROUP BY 1, 2
     ),
     created_m AS (
-        SELECT EXTRACT(MONTH FROM to_date(sa."Create_Date",  'YYYY-MM-DD'))::int AS m,
-               to_char(to_date(sa."Create_Date",  'YYYY-MM-DD'), 'Mon') AS lbl,
+        SELECT EXTRACT(MONTH FROM to_date(left((sa."Create_Date")::text, 10), 'YYYY-MM-DD'))::int AS m,
+               to_char(to_date(left((sa."Create_Date")::text, 10), 'YYYY-MM-DD'), 'Mon') AS lbl,
                COUNT(DISTINCT sa."Asset_ID") AS cnt
         FROM scoped_assets sa WHERE sa."Create_Date"  IS NOT NULL GROUP BY 1, 2
     ),
     published_m AS (
-        SELECT EXTRACT(MONTH FROM to_date(sp."Publish_Date", 'YYYY-MM-DD'))::int AS m,
-               to_char(to_date(sp."Publish_Date", 'YYYY-MM-DD'), 'Mon') AS lbl,
+        SELECT EXTRACT(MONTH FROM to_date(left((sp."Publish_Date")::text, 10), 'YYYY-MM-DD'))::int AS m,
+               to_char(to_date(left((sp."Publish_Date")::text, 10), 'YYYY-MM-DD'), 'Mon') AS lbl,
                COUNT(DISTINCT sp."Post_ID") AS cnt
         FROM scoped_posts sp WHERE sp."Publish_Date" IS NOT NULL GROUP BY 1, 2
     ),

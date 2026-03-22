@@ -22,6 +22,18 @@ def ensure_auth_schema() -> None:
     query(sql)
 
 
+def table_exists(table_name: str) -> bool:
+    exists = query("SELECT to_regclass($1) AS table_name", [f"public.{table_name}"])
+    if not exists.rows:
+        return False
+    return bool(exists.rows[0].get("table_name"))
+
+
+def table_has_rows(table_name: str) -> bool:
+    result = query(f'SELECT 1 FROM "{table_name}" LIMIT 1')
+    return result.row_count > 0
+
+
 def get_client_name() -> str:
     requested = os.getenv("AUTH_CLIENT_ADMIN_CLIENT_NAME")
     if requested:
@@ -187,8 +199,6 @@ def run() -> None:
     try:
         ensure_auth_schema()
 
-        client_name = get_client_name()
-
         upsert_user(
             username=os.getenv("AUTH_WEBSITE_ADMIN_USERNAME", "website_admin"),
             password_hash=_hash_password(os.getenv("AUTH_WEBSITE_ADMIN_PASSWORD", "Admin@12345")),
@@ -196,6 +206,18 @@ def run() -> None:
             client_name=None,
             user_id=None,
         )
+
+        has_clients = table_exists("clients") and table_has_rows("clients")
+        has_users = table_exists("users") and table_has_rows("users")
+        if not has_clients or not has_users:
+            print(
+                "Analytics client/user data not available yet. "
+                "Seeded website_admin only."
+            )
+            print(f"website_admin username: {os.getenv('AUTH_WEBSITE_ADMIN_USERNAME', 'website_admin')}")
+            return
+
+        client_name = get_client_name()
 
         client_admin_configs = iter_client_admin_configs(client_name)
         for config_item in client_admin_configs:
