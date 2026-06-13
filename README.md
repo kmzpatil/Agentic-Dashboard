@@ -1,6 +1,16 @@
-# Frammer (gcdata)
+# Frammer Dashboard & AI Engine
 
-Unified full-stack analytics platform with ATLAS AI engine, KPI engine, and PostgreSQL-backed APIs.
+Unified full-stack analytics platform featuring the **ATLAS AI engine**, a custom KPI parsing framework, and PostgreSQL-backed microservices.
+
+## Architecture & System Overview
+
+Frammer is designed around a decoupled, service-oriented architecture:
+1. **Frontend (React + Vite)**: A state-of-the-art interactive dashboard rendering real-time metrics, custom-defined charts (bar, line, scatter, sankey, treemap), data quality heatmaps, and a voice-enabled conversational chat interface (ATLAS).
+2. **Backend (FastAPI)**: A high-performance Python service exposing RESTful APIs, JWT role-based security boundaries (Website Admin, Client Admin, User), and an ML pipeline for post-publication forecasting.
+3. **ATLAS Agent (ReAct Loop)**: An autonomous AI agent powered directly by the Google Gemini SDK using a custom ReAct (Reasoning + Acting) loop. The agent dynamically decides which SQL queries to execute, validates results, generates analytical summaries, and creates interactive dashboards.
+4. **Database Scoping Engine**: A secure virtual partitioning layer. Both the FastAPI query builders and the agent's MCP DatabaseClient automatically inject row-level filter Common Table Expressions (CTEs) into SQL queries based on JWT claims to ensure strict tenant isolation.
+
+---
 
 ## Repository Structure
 
@@ -30,7 +40,7 @@ Unified full-stack analytics platform with ATLAS AI engine, KPI engine, and Post
 │   └── vite.config.js  # Vite dev server + API proxy
 │
 ├── agent/              # AI agent services
-│   ├── agent.py        # LangGraph orchestration engine
+│   ├── agent.py        # Core ReAct loop engine (orchestrator)
 │   ├── mcp_server/     # FastMCP tool registry and modules
 │   ├── tools/          # SQL query, schema, chart, KPI tools
 │   ├── prompts/        # Agent prompt templates
@@ -42,14 +52,12 @@ Unified full-stack analytics platform with ATLAS AI engine, KPI engine, and Post
 │   ├── migrations/             # SQL migrations
 │   └── simulator/              # Data simulation engine
 │
-├── Orchestrator/       # Orchestration utilities
 ├── docker-compose.yml  # Full Docker stack (API + Web + DB)
 ├── Dockerfile.api      # Python/FastAPI container
 ├── Dockerfile.web      # Node build + Nginx container
 ├── requirements.txt    # Python dependencies
 ├── run.sh              # Local dev bootstrap script
-├── .env.example        # Environment variable template
-└── docker.md           # Docker deployment guide
+└── .env.example        # Environment variable template
 ```
 
 ## Prerequisites
@@ -174,7 +182,7 @@ docker compose down
 - The `db` service exposes port `5432` on the host. If your host already runs PostgreSQL on that port, stop it or change the port mapping in `docker-compose.yml`.
 - The `api` container connects to the `db` service internally (`PGHOST=db`).
 - The `web` container proxies `/api/*` and `/mcp/*` to the `api` container via Nginx.
-- Database data is persisted in the `gcdata_db_data` Docker volume.
+- Database data is persisted in the `frammer_db_data` Docker volume.
 - If you changed bootstrap SQL or got an empty/partial initial import, recreate the volume once:
 
 ```bash

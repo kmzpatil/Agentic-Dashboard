@@ -38,8 +38,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-TEST}
       POSTGRES_DB: ${POSTGRES_DB:-frammer_database}
     volumes:
-      - gcdata_db_data:/var/lib/postgresql/data
+      - frammer_db_data:/var/lib/postgresql/data
       - ./database/frammer_data.sql:/docker-entrypoint-initdb.d/01-frammer_data.sql:ro
 
 volumes:
-  gcdata_db_data:
+  frammer_db_data:

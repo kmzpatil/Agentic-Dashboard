@@ -15,7 +15,6 @@ The `database` folder contains all database-facing assets for GC Data:
 database/
 |- __init__.py
 |- bootstrap_postgres.py
-|- db_api.py
 |- frammer_data.sql
 |- frammer_database.sql
 |- local_postgres.py
@@ -45,7 +44,6 @@ database/
 | ------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------- |
 | `__init__.py`             | Package marker      | Marks this folder as a Python package for module imports.                                                     |
 | `bootstrap_postgres.py`   | Bootstrap script    | Migrates data from SQLite assets into PostgreSQL, recreates tables, loads rows, and applies indexes.          |
-| `db_api.py`               | Service module      | FastAPI + SQLAlchemy data API exposing read endpoints for key tables, with SQLite/Postgres URL resolution.    |
 | `local_postgres.py`       | Runtime utility     | Starts, stops, inspects, and initializes a self-contained local PostgreSQL cluster under `.local_postgres/`.  |
 | `reset_local_postgres.py` | Maintenance utility | Stops local PostgreSQL (if running) and deletes `.local_postgres/` for a clean reset.                         |
 | `requirements.txt`        | Dependency file     | Lists Python dependencies required by the database scripts and local API tooling.                             |
